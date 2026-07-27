@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "validatedAt": "2026-07-27",
+  "passed": true,
+  "bridgeVersion": "0.1.0",
+  "rendererVersion": "1.12.7",
+  "officialDmgSha256": "3b85c13b4ce55512e86e170a7cd2a494e2db695ac888c0601e153cb85b77881b",
+  "sourceAsarSha256": "2b2483b2e1246772e0d25367ec055cbc5047ea2f0091b667c35656678f86d712",
+  "compatibilityAsarSha256": "0a890c3cbd857f33269d8d957a32c72ea65fb8cc0d5435b67506c9817e89dc5a",
+  "macOS": {
+    "displayName": "Blackglass Bridge",
+    "bundleName": "Blackglass Bridge",
+    "bundleIdentifier": "com.blackglass.bridge",
+    "executableName": "Blackglass Bridge",
+    "infoPlistSha256": "8b7af47536eaa3449c1c6a897f93f8571bf2494de76bfa2825eaeeebccfe4e51",
+    "executableSha256": "b1571b36e0820bf84948daaa2c70eb128c0228d3fa75e497c2b03bdff5e4aa52",
+    "codeDirectoryHash": "a1fd8898c58b675ffc73be203c8f1073e6019984",
+    "upstreamUrlSchemeRegistered": false,
+    "upstreamICloudContainerRegistered": false,
+    "signature": "ad-hoc",
+    "strictDeepSignatureVerification": true
+  },
+  "server": {
+    "version": "0.2.0",
+    "sha256": "6f8ca6caab29f48592e9903fb3e49a6dc7cf980778287df2f17c58015343cb12"
+  },
+  "packagedClientE2E": "pending-unlocked-macos-session"
+}

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "status": "historical-baseline",
+  "validatedAt": "2026-07-26T22:41:05Z",
+  "platform": "macOS Apple Silicon",
+  "rendererVersion": "1.12.7",
+  "compatibilityAsarSha256": "0a890c3cbd857f33269d8d957a32c72ea65fb8cc0d5435b67506c9817e89dc5a",
+  "server": {
+    "preBrandBinaryName": "obsidian-selfhost-sync-server",
+    "sha256": "98d692f272b112f10742e70429bb254ceb95bbc6c6be450b24388a8f65f76970",
+    "bytes": 3813088,
+    "architecture": "arm64"
+  },
+  "workflow": {
+    "backgroundUpload": true,
+    "coldRecovery": true,
+    "automaticReconnectAfterRestart": true,
+    "postRestartBidirectionalSync": true,
+    "portableBackupRestore": true
+  },
+  "recovery": {
+    "expectedFiles": 17,
+    "restoredFiles": 17,
+    "missing": 0,
+    "unexpected": 0,
+    "changed": 0
+  },
+  "currentReleaseQualification": false,
+  "note": "Baseline predates the Blackglass binary, region, and macOS bundle identity changes."
+}

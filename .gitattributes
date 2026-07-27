@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.dmg binary
+*.asar binary
+*.png binary
+*.jpeg binary
+*.jpg binary
+*.pdf binary
