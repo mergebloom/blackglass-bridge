@@ -271,7 +271,7 @@ export function assertReleaseValidationRecord(
   assertEvidence(value.packagedClientE2E.evidence);
   const macOS = value.artifacts.macOS;
   if (
-    macOS.schemaVersion !== 3 ||
+    macOS.schemaVersion !== 4 ||
     macOS.bundleIdentifier !== "com.blackglass.bridge" ||
     macOS.bundleName !== "Obsidian" ||
     macOS.displayName !== "Blackglass Bridge" ||
@@ -281,6 +281,7 @@ export function assertReleaseValidationRecord(
     macOS.profileMode !== 448 ||
     macOS.profilePathCanonicalAtSetup !== true ||
     macOS.explicitUserDataDirHonored !== true ||
+    macOS.defaultProfileUsesEnvironmentHome !== true ||
     macOS.upstreamUpdatesDisabled !== true ||
     macOS.embeddedRendererOnly !== true ||
     !Array.isArray(macOS.registeredUrlSchemes) ||

@@ -110,6 +110,7 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       profileMode: 0o700,
       profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
+      defaultProfileUsesEnvironmentHome: true,
       upstreamUpdatesDisabled: true,
       embeddedRendererOnly: true,
       helperBundleIdentifiers: [
@@ -127,7 +128,7 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       endpoints,
       patcher: {
         renderer: { formatVersion: 3, incisions: 3 },
-        wrapper: { formatVersion: 2, incisions: 3 },
+        wrapper: { formatVersion: 3, incisions: 3 },
       },
       reproduction: {
         officialDmgMatchedBaseline: true,
@@ -191,6 +192,7 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       profileMode: 0o700,
       profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
+      defaultProfileUsesEnvironmentHome: true,
       upstreamUpdatesDisabled: true,
       embeddedRendererOnly: true,
       helperBundleIdentifiers: [

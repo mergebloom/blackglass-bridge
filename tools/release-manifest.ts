@@ -172,7 +172,7 @@ export function assertBridgeReleaseManifest(
     value.macOS.embeddedAsarSha256 !== value.renderer.patchedSha256 ||
     value.macOS.embeddedWrapperAsarSha256 !== value.wrapper.patchedSha256 ||
     value.macOS.embeddedWrapperHeaderSha256 !== value.wrapper.patchedHeaderSha256 ||
-    value.macOS.schemaVersion !== 3 ||
+    value.macOS.schemaVersion !== 4 ||
     value.macOS.applicationTreeSha256 !== value.macOS.applicationTreeIdentity.sha256
   ) {
     throw new Error("Bridge release manifest artifact bindings are inconsistent");
@@ -187,12 +187,14 @@ export function assertBridgeReleaseManifest(
     value.macOS.profileMode !== 448 ||
     value.macOS.profilePathCanonicalAtSetup !== true ||
     value.macOS.explicitUserDataDirHonored !== true ||
+    value.macOS.defaultProfileUsesEnvironmentHome !== true ||
     value.macOS.upstreamUpdatesDisabled !== true ||
     value.macOS.embeddedRendererOnly !== true ||
     value.wrapper.profileDirectory !== "Blackglass Bridge" ||
     value.wrapper.profileMode !== 448 ||
     value.wrapper.profilePathCanonicalAtSetup !== true ||
     value.wrapper.explicitUserDataDirHonored !== true ||
+    value.wrapper.defaultProfileUsesEnvironmentHome !== true ||
     value.wrapper.upstreamUpdatesDisabled !== true ||
     value.wrapper.embeddedRendererOnly !== true ||
     !Array.isArray(value.macOS.registeredUrlSchemes) ||

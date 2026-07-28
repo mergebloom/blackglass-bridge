@@ -111,7 +111,9 @@ if (
   releaseManifest.wrapper.profileMode !== 0o700 ||
   releaseManifest.wrapper.profilePathCanonicalAtSetup !== true ||
   clientArtifact.explicitUserDataDirHonored !== true ||
-  releaseManifest.wrapper.explicitUserDataDirHonored !== true
+  releaseManifest.wrapper.explicitUserDataDirHonored !== true ||
+  clientArtifact.defaultProfileUsesEnvironmentHome !== true ||
+  releaseManifest.wrapper.defaultProfileUsesEnvironmentHome !== true
 ) {
   throw new Error("Packaged wrapper cannot safely isolate disposable E2E profiles");
 }

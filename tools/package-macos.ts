@@ -399,6 +399,8 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
           generatedWrapper.report.profilePathCanonicalAtSetup,
         explicitUserDataDirHonored:
           generatedWrapper.report.explicitUserDataDirHonored,
+        defaultProfileUsesEnvironmentHome:
+          generatedWrapper.report.defaultProfileUsesEnvironmentHome,
         upstreamUpdatesDisabled:
           generatedWrapper.report.upstreamUpdatesDisabled,
         embeddedRendererOnly: generatedWrapper.report.embeddedRendererOnly,

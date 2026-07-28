@@ -75,6 +75,7 @@ it; the tooling tree at the tag must remain byte-identical.
 - Plaintext loopback endpoints are permitted only for local testing.
 - Non-loopback deployments require authenticated TLS endpoints.
 - An explicit `--user-data-dir` is honored for disposable E2E clients; ordinary
-  launches default to the separate Blackglass Bridge profile. The wrapper
-  rejects a non-canonical path at setup and enforces directory mode `0700` for
-  both forms.
+  launches default to the separate Blackglass Bridge profile under the process
+  `HOME`. This also makes a LaunchServices-injected `HOME` authoritative for the
+  no-vault smoke. The wrapper rejects a non-canonical path at setup and enforces
+  directory mode `0700` for both forms.

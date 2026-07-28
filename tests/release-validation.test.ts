@@ -35,7 +35,7 @@ const toolingSource = {
 };
 
 const macOS = {
-  schemaVersion: 3 as const,
+  schemaVersion: 4 as const,
   bundleIdentifier: "com.blackglass.bridge" as const,
   bundleName: "Obsidian" as const,
   displayName: "Blackglass Bridge" as const,
@@ -59,6 +59,7 @@ const macOS = {
   profileMode: 448 as const,
   profilePathCanonicalAtSetup: true as const,
   explicitUserDataDirHonored: true as const,
+  defaultProfileUsesEnvironmentHome: true as const,
   upstreamUpdatesDisabled: true as const,
   embeddedRendererOnly: true as const,
   registeredUrlSchemes: [] as [],
@@ -83,7 +84,7 @@ function manifest(): BridgeReleaseManifest {
     },
     patcher: {
       renderer: { formatVersion: 3, incisions: 3 },
-      wrapper: { formatVersion: 2, incisions: 3 },
+      wrapper: { formatVersion: 3, incisions: 3 },
     },
     endpoints: {
       controlOrigin: "https://blackglass.example.com",
@@ -103,12 +104,13 @@ function manifest(): BridgeReleaseManifest {
       starterAfterSha256: digest("2"),
     },
     wrapper: {
-      patchFormatVersion: 2,
+      patchFormatVersion: 3,
       incisionCount: 3,
       profileDirectory: "Blackglass Bridge",
       profileMode: 448,
       profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
+      defaultProfileUsesEnvironmentHome: true,
       upstreamUpdatesDisabled: true,
       embeddedRendererOnly: true,
       upstreamSha256: digest("c"),

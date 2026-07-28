@@ -63,8 +63,10 @@ bun run client:launch -- \
   --app '/path/to/Blackglass Bridge.app'
 ```
 
-The packaged wrapper itself selects `~/Library/Application Support/Blackglass
-Bridge`, disables its upstream package updater, and refuses downloaded renderer
+The packaged wrapper itself selects `$HOME/Library/Application Support/Blackglass
+Bridge`, so ordinary launches retain the standard macOS location while a
+LaunchServices-injected `HOME` receives a genuinely isolated default profile.
+It disables its upstream package updater and refuses downloaded renderer
 overrides, including Finder launches. An explicit `--user-data-dir` remains
 available for disposable isolated test clients. The launcher requires existing
 profile and vault directories and refuses Obsidian's normal profile. Endpoint

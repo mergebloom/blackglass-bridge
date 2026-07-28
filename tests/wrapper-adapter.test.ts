@@ -17,12 +17,13 @@ test("macOS wrapper uses an isolated profile and disables upstream updates", () 
 
   expect(generated.buffer.length).toBe(upstream.length);
   expect(generated.report).toMatchObject({
-    patchFormatVersion: 2,
+    patchFormatVersion: 3,
     incisionCount: 3,
     profileDirectory: "Blackglass Bridge",
     profileMode: 0o700,
     profilePathCanonicalAtSetup: true,
     explicitUserDataDirHonored: true,
+    defaultProfileUsesEnvironmentHome: true,
     upstreamUpdatesDisabled: true,
     embeddedRendererOnly: true,
   });
@@ -34,19 +35,20 @@ test("macOS wrapper uses an isolated profile and disables upstream updates", () 
     profileMode: 0o700,
     profilePathCanonicalAtSetup: true,
     explicitUserDataDirHonored: true,
+    defaultProfileUsesEnvironmentHome: true,
     upstreamUpdatesDisabled: true,
     embeddedRendererOnly: true,
   });
 });
 
-test("macOS wrapper honors an explicit disposable user-data directory", () => {
+test("macOS wrapper derives its default from HOME and honors an explicit profile", () => {
   const patched = patchMacOSWrapperMain(Buffer.from(wrapperMain())).toString("utf8");
 
   expect(patched).toContain(
-    "let dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')",
+    "let H=process.env.HOME,dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')",
   );
   expect(patched).toContain(
-    "app.getPath('appData')+'/Blackglass Bridge'",
+    "H?.[0]==='/'&&H+'/Library/Application Support/Blackglass Bridge'",
   );
   expect(patched).toContain("app.setPath('userData',dataPath);");
   expect(patched).toContain("app.setPath('sessionData',dataPath);");
@@ -54,33 +56,61 @@ test("macOS wrapper honors an explicit disposable user-data directory", () => {
   expect(patched).toContain("fs.realpathSync(dataPath)!==dataPath");
 });
 
-test("macOS wrapper enforces mode 0700 for default and explicit profiles", () => {
+test("macOS wrapper isolates injected HOME and enforces mode 0700", () => {
   const root = fs.realpathSync(
     fs.mkdtempSync(nodePath.join(tmpdir(), "blackglass-wrapper-profile-")),
   );
   try {
     const patched = patchMacOSWrapperMain(Buffer.from(wrapperMain())).toString("utf8");
-    const defaultPaths = executeWrapper(patched, root, "");
-    const defaultProfile = nodePath.join(root, "Blackglass Bridge");
+    const ordinaryHome = nodePath.join(root, "ordinary-home");
+    const injectedHome = nodePath.join(root, "injected-home");
+    const defaultPaths = executeWrapper(patched, "", injectedHome);
+    const defaultProfile = nodePath.join(
+      injectedHome,
+      "Library/Application Support/Blackglass Bridge",
+    );
     expect(defaultPaths).toEqual({
       userData: defaultProfile,
       sessionData: defaultProfile,
     });
     expect(fs.lstatSync(defaultProfile).mode & 0o777).toBe(0o700);
+    expect(fs.existsSync(
+      nodePath.join(
+        ordinaryHome,
+        "Library/Application Support/Blackglass Bridge",
+      ),
+    )).toBe(false);
+
+    const ordinaryPaths = executeWrapper(patched, "", ordinaryHome);
+    expect(ordinaryPaths.userData).toBe(
+      nodePath.join(
+        ordinaryHome,
+        "Library/Application Support/Blackglass Bridge",
+      ),
+    );
+    for (const unsafeHome of [undefined, "", "relative/home"]) {
+      expect(() => executeWrapper(patched, "", unsafeHome)).toThrow();
+    }
 
     const explicitProfile = nodePath.join(root, "explicit");
     fs.mkdirSync(explicitProfile, { mode: 0o777 });
     fs.chmodSync(explicitProfile, 0o777);
-    const explicitPaths = executeWrapper(patched, root, explicitProfile);
-    expect(explicitPaths.userData).toBe(explicitProfile);
-    expect(explicitPaths.sessionData).toBe(explicitProfile);
+    for (const irrelevantHome of [undefined, "", "relative/home"]) {
+      const explicitPaths = executeWrapper(
+        patched,
+        explicitProfile,
+        irrelevantHome,
+      );
+      expect(explicitPaths.userData).toBe(explicitProfile);
+      expect(explicitPaths.sessionData).toBe(explicitProfile);
+    }
     expect(fs.lstatSync(explicitProfile).mode & 0o777).toBe(0o700);
 
     const target = nodePath.join(root, "target");
     const link = nodePath.join(root, "profile-link");
     fs.mkdirSync(target);
     fs.symlinkSync(target, link);
-    expect(() => executeWrapper(patched, root, link)).toThrow(
+    expect(() => executeWrapper(patched, link, injectedHome)).toThrow(
       "Unsafe path",
     );
   } finally {
@@ -193,15 +223,14 @@ if (isV2MoreRecent(app.getVersion(), version)) {
 
 function executeWrapper(
   source: string,
-  appData: string,
   explicitProfile: string,
+  environmentHome: string | undefined,
 ): Record<string, string> {
   const paths: Record<string, string> = {};
   const app = {
     commandLine: { getSwitchValue: () => explicitProfile },
     getPath: (name: string) => {
-      if (name !== "appData") throw new Error(`Unexpected app path: ${name}`);
-      return appData;
+      throw new Error(`Unexpected app path: ${name}`);
     },
     getVersion: () => "1.12.7",
     setPath: (name: string, value: string) => {
@@ -221,7 +250,10 @@ function executeWrapper(
     app,
     fs,
     nodePath,
-    { stdout: { on: () => undefined } },
+    {
+      env: environmentHome === undefined ? {} : { HOME: environmentHome },
+      stdout: { on: () => undefined },
+    },
     () => undefined,
     () => false,
   );

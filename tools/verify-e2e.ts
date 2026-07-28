@@ -84,7 +84,8 @@ if (
     JSON.stringify(runManifest.endpoints) ||
   releaseManifest.wrapper.profileMode !== 0o700 ||
   releaseManifest.wrapper.profilePathCanonicalAtSetup !== true ||
-  releaseManifest.wrapper.explicitUserDataDirHonored !== true
+  releaseManifest.wrapper.explicitUserDataDirHonored !== true ||
+  releaseManifest.wrapper.defaultProfileUsesEnvironmentHome !== true
 ) {
   throw new Error("E2E run manifest is inconsistent with the Bridge release manifest");
 }

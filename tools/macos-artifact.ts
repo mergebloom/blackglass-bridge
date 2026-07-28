@@ -14,7 +14,7 @@ export const ELECTRON_HELPER_VARIANTS = [
 ] as const;
 
 export interface MacOSArtifact {
-  schemaVersion: 3;
+  schemaVersion: 4;
   appPath: string;
   bundleIdentifier: "com.blackglass.bridge";
   bundleName: "Obsidian";
@@ -34,6 +34,7 @@ export interface MacOSArtifact {
   profileMode: 448;
   profilePathCanonicalAtSetup: true;
   explicitUserDataDirHonored: true;
+  defaultProfileUsesEnvironmentHome: true;
   upstreamUpdatesDisabled: true;
   embeddedRendererOnly: true;
   registeredUrlSchemes: [];
@@ -107,7 +108,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   }
   const applicationTreeIdentity = await computeTreeIdentity(appPath);
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     appPath,
     bundleIdentifier: "com.blackglass.bridge",
     bundleName: "Obsidian",
@@ -129,6 +130,8 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     profileMode: wrapperSafety.profileMode,
     profilePathCanonicalAtSetup: wrapperSafety.profilePathCanonicalAtSetup,
     explicitUserDataDirHonored: wrapperSafety.explicitUserDataDirHonored,
+    defaultProfileUsesEnvironmentHome:
+      wrapperSafety.defaultProfileUsesEnvironmentHome,
     upstreamUpdatesDisabled: wrapperSafety.upstreamUpdatesDisabled,
     embeddedRendererOnly: wrapperSafety.embeddedRendererOnly,
     registeredUrlSchemes: [],

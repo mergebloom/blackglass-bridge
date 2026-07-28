@@ -17,7 +17,7 @@ const controlOrigin = "https://blackglass.example.com";
 const chromiumHostResolverRules = "MAP blackglass.example.com 127.0.0.1:8443";
 const tlsSpkiSha256Base64 = `${"A".repeat(43)}=`;
 const artifact = {
-  schemaVersion: 3 as const,
+  schemaVersion: 4 as const,
   bundleIdentifier: "com.blackglass.bridge" as const,
   bundleName: "Obsidian" as const,
   displayName: "Blackglass Bridge" as const,
@@ -49,6 +49,7 @@ const artifact = {
   profileMode: 448 as const,
   profilePathCanonicalAtSetup: true as const,
   explicitUserDataDirHonored: true as const,
+  defaultProfileUsesEnvironmentHome: true as const,
   upstreamUpdatesDisabled: true as const,
   embeddedRendererOnly: true as const,
   registeredUrlSchemes: [] as [],

@@ -5,7 +5,7 @@ import {
   replacePackedAsarEntry,
 } from "../../../tools/asar";
 
-export const WRAPPER_PATCH_FORMAT_VERSION = 2;
+export const WRAPPER_PATCH_FORMAT_VERSION = 3;
 export const WRAPPER_INCISION_COUNT = 3;
 export const WRAPPER_PROFILE_MODE = 0o700;
 
@@ -18,9 +18,9 @@ const PROFILE_PATH_END = `stdout.on('error', function(e) {
 const PROFILE_PATH_SPAN_SHA256 =
   "1710f7c386568d09f00721ea42f35cfd952f4ab41870db028dd5a464d32c0068";
 
-const PROFILE_PATH_REPLACEMENT = `let dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')||app.getPath('appData')+'/Blackglass Bridge');
+const PROFILE_PATH_REPLACEMENT = `let H=process.env.HOME,dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')||H?.[0]==='/'&&H+'/Library/Application Support/Blackglass Bridge');
 fs.mkdirSync(dataPath,{recursive:true,mode:448});
-if(fs.realpathSync(dataPath)!==dataPath||!fs.statSync(dataPath).isDirectory())throw Error('Unsafe path');
+if(fs.realpathSync(dataPath)!==dataPath)throw Error('Unsafe path');
 fs.chmodSync(dataPath,448);
 app.setPath('userData',dataPath);
 app.setPath('sessionData',dataPath);
@@ -43,6 +43,8 @@ const PROFILE_MARKER = "app.setPath('userData',dataPath);";
 const SESSION_MARKER = "app.setPath('sessionData',dataPath);";
 const EXPLICIT_PROFILE_MARKER =
   "app.commandLine.getSwitchValue('user-data-dir')";
+const ENVIRONMENT_HOME_MARKER =
+  "let H=process.env.HOME,dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')||H?.[0]==='/'&&H+'/Library/Application Support/Blackglass Bridge');";
 const PROFILE_MODE_MARKER = "fs.chmodSync(dataPath,448);";
 const PROFILE_CANONICAL_MARKER = "fs.realpathSync(dataPath)!==dataPath";
 const UPDATER_DISABLED_MARKER = UPDATER_QUEUE_REPLACEMENT;
@@ -59,6 +61,7 @@ export interface WrapperPatchReport {
   profileMode: typeof WRAPPER_PROFILE_MODE;
   profilePathCanonicalAtSetup: true;
   explicitUserDataDirHonored: true;
+  defaultProfileUsesEnvironmentHome: true;
   upstreamUpdatesDisabled: true;
   embeddedRendererOnly: true;
   upstreamSha256: string;
@@ -86,6 +89,7 @@ export function patchMacOSWrapperAsar(
       profileMode: WRAPPER_PROFILE_MODE,
       profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
+      defaultProfileUsesEnvironmentHome: true,
       upstreamUpdatesDisabled: true,
       embeddedRendererOnly: true,
       upstreamSha256: sha256(upstream),
@@ -176,6 +180,7 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
   profileMode: typeof WRAPPER_PROFILE_MODE;
   profilePathCanonicalAtSetup: true;
   explicitUserDataDirHonored: true;
+  defaultProfileUsesEnvironmentHome: true;
   upstreamUpdatesDisabled: true;
   embeddedRendererOnly: true;
 } {
@@ -191,6 +196,11 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
     main,
     EXPLICIT_PROFILE_MARKER,
     "patched wrapper explicit profile marker",
+  );
+  requireExactlyOnce(
+    main,
+    ENVIRONMENT_HOME_MARKER,
+    "patched wrapper environment HOME marker",
   );
   requireExactlyOnce(main, PROFILE_MODE_MARKER, "patched wrapper profile mode marker");
   requireExactlyOnce(
@@ -213,6 +223,7 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
     profileMode: WRAPPER_PROFILE_MODE,
     profilePathCanonicalAtSetup: true,
     explicitUserDataDirHonored: true,
+    defaultProfileUsesEnvironmentHome: true,
     upstreamUpdatesDisabled: true,
     embeddedRendererOnly: true,
   };
