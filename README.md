@@ -4,10 +4,10 @@ Blackglass Bridge is desktop compatibility tooling for using the built-in
 Obsidian Sync experience with a self-hosted Blackglass Server.
 
 It analyzes an authorized desktop release, changes the control and data
-endpoints, enforces a separate local profile with upstream updates disabled,
-rebuilds the package integrity metadata, and creates a separately identified
-macOS application for local use. It never modifies the installed Obsidian
-application or a real user vault.
+endpoints, enforces a separate mode-`0700` local profile with upstream updates
+disabled, rebuilds the package integrity metadata, and creates a separately
+identified macOS application for local use. It never modifies the installed
+Obsidian application or a real user vault.
 
 Blackglass is independent and is not affiliated with or endorsed by Obsidian.
 
@@ -24,11 +24,13 @@ The long-term target is the existing app experience with no loss of
 functionality while its services are self-hosted. The supported table below
 states what has been implemented and requalified so far.
 
-Bridge keeps the renderer change to two semantic endpoint adaptations. Three
-fail-closed wrapper incisions isolate Blackglass state, disable the upstream
-package updater, and force the embedded qualified renderer. The exact
-artifacts are requalified with end-to-end tests so future Obsidian updates
-remain a small, repeatable maintenance task.
+Bridge uses three fixed-length renderer incisions for two semantic endpoint
+adaptations: the control origin in both the normal and no-vault starter
+renderers, plus the Sync data-host check. Three fail-closed wrapper incisions
+isolate Blackglass state with mode-`0700` enforcement, disable the upstream
+package updater, and force the embedded qualified renderer. The exact artifacts
+are requalified with end-to-end tests so future Obsidian updates remain a small,
+repeatable maintenance task.
 
 Blackglass began as a research project exploring frontier language-model
 capabilities in minified-code analysis, protocol recovery, clean-room compatible
@@ -38,7 +40,8 @@ findings are accepted only when backed by deterministic tooling and tests.
 ## How it works
 
 1. Compare the authorized renderer with its reviewed, versioned compatibility baseline.
-2. Require exact anchor, route, Sync-operation, and message-shape inventories.
+2. Require exact anchor, request-helper, network-constructor, route,
+   Sync-operation, and message-shape inventories.
 3. Generate a deterministic compatibility ASAR for the chosen server URLs.
 4. Patch the copied wrapper to isolate state, disable updates, and pin the embedded renderer.
 5. Package and sign a separate `Blackglass Bridge.app`.
@@ -107,6 +110,10 @@ vault contents are inputs or ignored local artifacts. Do not commit or
 redistribute them. Generated apps contain proprietary upstream code and are not
 notarized distribution artifacts; share this tooling and require authorized
 users to supply their own official release.
+
+Blackglass redirects the built-in account and Sync traffic; it is not a general
+network sandbox for Obsidian. Features such as Help, community plugins, embeds,
+and other upstream integrations may still contact their own external services.
 
 The copied app uses bundle identifier `com.blackglass.bridge`, does not register
 Obsidian's URL scheme or iCloud container, and uses a dedicated profile so it

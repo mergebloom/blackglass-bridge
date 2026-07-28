@@ -29,6 +29,23 @@ const anchors: CompatibilityAnchor[] = [
 ];
 
 describe("release compatibility baseline", () => {
+  test("rejects noncanonical renderer semantic versions", () => {
+    for (const version of [
+      "01.12.7",
+      "1.02.7",
+      "1.12.07",
+      "1.12.7-alpha",
+      "1.12.7+build",
+    ]) {
+      const source = rendererArchive("CONTROL_ANCHOR", {
+        "package.json": JSON.stringify({ version }),
+      });
+      expect(() => discoverRendererRelease(source, anchors), version).toThrow(
+        "Renderer package has no semantic version",
+      );
+    }
+  });
+
   test("accepts the exact reviewed artifact", () => {
     const source = rendererArchive(
       'CONTROL_ANCHOR;gw("/user/signin");send({op:"ping"});' +
@@ -98,6 +115,72 @@ describe("release compatibility baseline", () => {
     );
   });
 
+  test("rejects computed routes through the reviewed request helper", () => {
+    const source = rendererArchive(
+      'CONTROL_ANCHOR;var path="/user/signin";gw(path);send({op:"ping"});',
+    );
+    expect(() => discoverRendererRelease(source, anchors)).toThrow(
+      "Control-plane request helpers require literal routes",
+    );
+  });
+
+  test("tracks request-helper aliases, transports, and network constructors", () => {
+    const source = rendererArchive(
+      'CONTROL_ANCHOR;var mw=window.fetch,WS=window.WebSocket,U=window.URL;' +
+        'function gw(path,body){return mw(base+path,{method:"POST",body:body})}' +
+        'var request=gw;request("/user/signin",{});' +
+        'var url=new U(host),socket=new WS(url);send({op:"ping"});',
+    );
+    const discovered = discoverRendererRelease(source, anchors);
+    expect(discovered.controlPlaneRoutes).toEqual({ "/user/signin": 1 });
+    expect(discovered.controlPlaneRouteLocations).toEqual({
+      "app.js:request:/user/signin": 1,
+    });
+    expect(discovered.controlPlaneRequestHelpers).toEqual({
+      "app.js:gw->mw(base+path)": 1,
+      "app.js:request=alias(gw)": 1,
+    });
+    expect(discovered.networkConstructors).toMatchObject({
+      "app.js:binding:U=window.URL": 1,
+      "app.js:binding:WS=window.WebSocket": 1,
+      "app.js:binding:mw=window.fetch": 1,
+      "app.js:call:mw[window.fetch]": 1,
+      "app.js:new:U[window.URL]": 1,
+      "app.js:new:WS[window.WebSocket]": 1,
+      "app.js:read:window.URL": 1,
+      "app.js:read:window.WebSocket": 1,
+      "app.js:read:window.fetch": 1,
+    });
+
+    const changed = rendererArchive(
+      'CONTROL_ANCHOR;var mw=window.fetch,WS=window.WebSocket,U=window.URL;' +
+        'function gw(path,body){return mw(base+path,{method:"POST",body:body})}' +
+        'var request=gw;request("/user/signin",{});' +
+        'var url=new U(host),socket=new WS(url),socket2=new WS(url);send({op:"ping"});',
+    );
+    expect(failedChecks(analyzeRendererRelease(changed, {
+      baseline: baselineFor(source),
+      sha256: "d".repeat(64),
+    }))).toContain("network-constructors");
+  });
+
+  test("binds semantic anchors in secondary packed renderers", () => {
+    const source = rendererArchive(
+      'CONTROL_ANCHOR;gw("/user/signin");send({op:"ping"});',
+      { "starter.js": "STARTER_CONTROL_ANCHOR" },
+    );
+    const discovered = discoverRendererRelease(source, [
+      ...anchors,
+      {
+        id: "starter-control",
+        file: "starter.js",
+        literal: "STARTER_CONTROL_ANCHOR",
+        expectedMatches: 1,
+      },
+    ]);
+    expect(discovered.anchorMatches["starter-control"]).toBe(1);
+  });
+
   test("records literal operation properties separately from message shapes", () => {
     const source = rendererArchive(
       'CONTROL_ANCHOR;gw("/user/signin");send({path:a,op:"push"});',
@@ -113,14 +196,18 @@ describe("release compatibility baseline", () => {
       {
         "secondary.mjs":
           'send({op:"future",path:a});x.prototype.onMessage=function(e){var n=e.op;if(n==="ack")return}',
-        "worker.cjs": 'gw("/vault/from-worker");send({op:"worker",path:a});',
+        "worker.cjs":
+          'var wf=window.fetch;function gw(p){return wf(base+p,{method:"POST"})};' +
+          'gw("/vault/from-worker");send({op:"worker",path:a});',
       },
     );
     const changed = rendererArchive(
       'CONTROL_ANCHOR;gw("/user/signin");send({op:"ping"});',
       {
         "secondary.mjs": 'send({op:"future",path:a,hash:b});',
-        "worker.cjs": 'gw("/vault/from-worker");send({op:"worker",path:a});',
+        "worker.cjs":
+          'var wf=window.fetch;function gw(p){return wf(base+p,{method:"POST"})};' +
+          'gw("/vault/from-worker");send({op:"worker",path:a});',
       },
     );
     const discovery = discoverRendererRelease(source, anchors);
@@ -226,7 +313,7 @@ function baselineFor(
     unpackedJavaScriptFiles,
   );
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     id: "synthetic-release",
     rendererVersion: discovered.rendererVersion,
     officialDmgSha256: "c".repeat(64),
@@ -250,6 +337,9 @@ function baselineFor(
     },
     anchors,
     controlPlaneRoutes: discovered.controlPlaneRoutes,
+    controlPlaneRouteLocations: discovered.controlPlaneRouteLocations,
+    controlPlaneRequestHelpers: discovered.controlPlaneRequestHelpers,
+    networkConstructors: discovered.networkConstructors,
     syncOperations: discovered.syncOperations,
     syncOperationLocations: discovered.syncOperationLocations,
     syncMessageShapes: discovered.syncMessageShapes,
@@ -264,7 +354,7 @@ function rendererArchive(
 ): Buffer {
   return makeArchive({
     "app.js": Buffer.from(appJs),
-    "main.js": Buffer.from("desktop main"),
+    "main.js": Buffer.from("// desktop main"),
     "index.html": Buffer.from('<script src="app.js"></script>'),
     "package.json": Buffer.from(JSON.stringify({ version: "1.12.7" })),
     ...Object.fromEntries(

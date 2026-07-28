@@ -11,6 +11,11 @@ import {
   canonicalOutputPath,
 } from "./path-safety";
 import { readBridgeReleaseManifest } from "./release-manifest";
+import {
+  computeToolingSourceIdentity,
+  toolingSourceTreeEqual,
+} from "./tooling-source";
+import { isSupportedStableSemver } from "./semver";
 
 const [rootArgument, asarArgument, ...flags] = Bun.argv.slice(2);
 const parsedFlags = parseStrictFlags(flags, {
@@ -46,10 +51,11 @@ const archive = await AsarArchive.open(asar);
 const packageMetadata = JSON.parse(archive.read("package.json").toString("utf8")) as {
   version?: string;
 };
-if (!packageMetadata.version || !/^\d+\.\d+\.\d+$/.test(packageMetadata.version)) {
+if (!isSupportedStableSemver(packageMetadata.version)) {
   throw new Error("Compatibility ASAR has no semantic renderer version");
 }
-archive.read("app.js");
+const mainRenderer = archive.read("app.js");
+const starterRenderer = archive.read("starter.js");
 const adapterBytes = Buffer.from(await Bun.file(asar).arrayBuffer());
 const clientArtifact = await inspectMacOSArtifact(app);
 const releaseManifestBytes = Buffer.from(
@@ -58,6 +64,17 @@ const releaseManifestBytes = Buffer.from(
 const { manifest: releaseManifest } = await readBridgeReleaseManifest(
   releaseManifestPath,
 );
+const currentToolingSource = await computeToolingSourceIdentity();
+if (
+  releaseManifest.toolingSource.worktreeClean !== true ||
+  currentToolingSource.worktreeClean !== true ||
+  releaseManifest.toolingSource.gitRevision !== currentToolingSource.gitRevision ||
+  !toolingSourceTreeEqual(releaseManifest.toolingSource, currentToolingSource)
+) {
+  throw new Error(
+    "Prepared E2E requires the exact clean release-critical tooling source used for packaging",
+  );
+}
 if (clientArtifact.version !== packageMetadata.version) {
   throw new Error(
     `App/renderer version mismatch: ${clientArtifact.version} != ${packageMetadata.version}`,
@@ -72,9 +89,15 @@ if (
 if (
   releaseManifest.rendererVersion !== packageMetadata.version ||
   releaseManifest.renderer.patchedSha256 !==
-    createHash("sha256").update(adapterBytes).digest("hex")
+    createHash("sha256").update(adapterBytes).digest("hex") ||
+  releaseManifest.renderer.rendererAfterSha256 !==
+    createHash("sha256").update(mainRenderer).digest("hex") ||
+  releaseManifest.renderer.starterAfterSha256 !==
+    createHash("sha256").update(starterRenderer).digest("hex")
 ) {
-  throw new Error("Release manifest does not bind the prepared compatibility ASAR");
+  throw new Error(
+    "Release manifest does not bind the prepared compatibility ASAR and starter renderer",
+  );
 }
 if (
   JSON.stringify(releaseManifest.macOS) !==
@@ -83,6 +106,10 @@ if (
   throw new Error("Release manifest does not bind the packaged macOS application");
 }
 if (
+  clientArtifact.profileMode !== 0o700 ||
+  clientArtifact.profilePathCanonicalAtSetup !== true ||
+  releaseManifest.wrapper.profileMode !== 0o700 ||
+  releaseManifest.wrapper.profilePathCanonicalAtSetup !== true ||
   clientArtifact.explicitUserDataDirHonored !== true ||
   releaseManifest.wrapper.explicitUserDataDirHonored !== true
 ) {

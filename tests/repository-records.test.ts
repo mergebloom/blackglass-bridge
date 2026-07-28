@@ -19,6 +19,11 @@ import {
   assertReleaseValidationRecord,
   releaseValidationRecordFileName,
 } from "../tools/release-validation";
+import {
+  computeToolingSourceIdentityAtRevision,
+  isGeneratedValidationRecordPath,
+  toolingSourceTreeEqual,
+} from "../tools/tooling-source";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -33,15 +38,22 @@ describe("committed release records", () => {
     );
     const validationDirectory = resolve(root, "docs/validation");
     const currentRecords = (await readdir(validationDirectory)).filter((name) =>
-      /^blackglass-bridge-\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-obsidian-\d+\.\d+\.\d+-qualification\.json$/u.test(
-        name,
-      ),
+      isGeneratedValidationRecordPath(`docs/validation/${name}`),
     );
-    expect(currentRecords).toEqual([expectedName]);
+    const currentVersionRecords = currentRecords.filter((name) =>
+      name.startsWith(`blackglass-bridge-${packageMetadata.version}-`),
+    );
+    expect(currentVersionRecords).toEqual([expectedName]);
     const recordBytes = await readFile(resolve(validationDirectory, expectedName));
     expect(recordBytes.at(-1)).toBe(10);
     const validation = JSON.parse(recordBytes.toString("utf8"));
     assertReleaseValidationRecord(validation);
+    expect(
+      toolingSourceTreeEqual(
+        validation.toolingSource,
+        computeToolingSourceIdentityAtRevision(root, gitRevision()),
+      ),
+    ).toBe(true);
     expect(validation.bridgeVersion).toBe(packageMetadata.version);
     expect(validation.rendererVersion).toBe(loaded.baseline.rendererVersion);
     expect(loaded.baseline.schemaVersion).toBe(COMPATIBILITY_BASELINE_SCHEMA_VERSION);
@@ -98,6 +110,11 @@ describe("committed release records", () => {
         postRestartSync: true,
         sourceClientRemoved: true,
         coldRecovery: true,
+        finderLaunchServicesSmoke: true,
+        defaultProfileIsolation: true,
+        starterNoVaultFlow: true,
+        starterControlRouting: true,
+        noLaunchCrashOrEarlyExit: true,
       },
     });
     expect(Object.keys(loaded.baseline.javaScriptFiles)).toContain("app.js");
@@ -130,7 +147,15 @@ describe("committed release records", () => {
     const bytes = await readFile(path);
     expect(bytes.at(-1)).toBe(10);
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(
-      "1c20c418d391717e7bf08802143900f7465cd0b9d657e237164c6bcdabe25406",
+      "d01a50c27b989d1d3a2a01b1c8145bda5b8eee481d268d6ee5a8cc4c27c573e5",
     );
   });
 });
+
+function gitRevision(): string {
+  const result = Bun.spawnSync(["git", "-C", root, "rev-parse", "--verify", "HEAD"]);
+  if (result.exitCode !== 0) throw new Error("Unable to resolve repository HEAD");
+  const revision = result.stdout.toString().trim();
+  if (!/^[a-f0-9]{40}$/u.test(revision)) throw new Error("Repository HEAD is malformed");
+  return revision;
+}

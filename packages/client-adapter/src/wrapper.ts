@@ -5,47 +5,28 @@ import {
   replacePackedAsarEntry,
 } from "../../../tools/asar";
 
-export const WRAPPER_PATCH_FORMAT_VERSION = 1;
+export const WRAPPER_PATCH_FORMAT_VERSION = 2;
 export const WRAPPER_INCISION_COUNT = 3;
+export const WRAPPER_PROFILE_MODE = 0o700;
 
-const PROFILE_PATH_ANCHOR = `let currentBaseVersion = app.getVersion();
+const PROFILE_PATH_START = `let currentBaseVersion = app.getVersion();
 let currentPackageVersion = currentBaseVersion;
-let dataPath = app.getPath('userData');
-
-function pad(number) {
-	if (number < 10) {
-		return '0' + number;
-	}
-	return number;
-}
-
-function stamp() {
-	let d = new Date();
-	return d.getUTCFullYear() +
-		'-' + pad(d.getUTCMonth() + 1) +
-		'-' + pad(d.getUTCDate()) +
-		' ' + pad(d.getUTCHours()) +
-		':' + pad(d.getUTCMinutes()) +
-		':' + pad(d.getUTCSeconds());
-}
-
-function logger(logfile) {
-	let fileout = fs.openSync(logfile, 'a');
-	let stdout = process.stdout;
-
-	stdout.on('error', function(e) {
+let dataPath = app.getPath('userData');`;
+const PROFILE_PATH_END = `stdout.on('error', function(e) {
 		// \`write\` failed. Do nothing...
 	});`;
+const PROFILE_PATH_SPAN_SHA256 =
+  "1710f7c386568d09f00721ea42f35cfd952f4ab41870db028dd5a464d32c0068";
 
-const PROFILE_PATH_REPLACEMENT = `let requestedDataPath=app.commandLine.getSwitchValue('user-data-dir');
-let dataPath=requestedDataPath?path.resolve(requestedDataPath):path.join(app.getPath('appData'),'Blackglass Bridge');
-fs.mkdirSync(dataPath,{recursive:true});
+const PROFILE_PATH_REPLACEMENT = `let dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')||app.getPath('appData')+'/Blackglass Bridge');
+fs.mkdirSync(dataPath,{recursive:true,mode:448});
+if(fs.realpathSync(dataPath)!==dataPath||!fs.statSync(dataPath).isDirectory())throw Error('Unsafe path');
+fs.chmodSync(dataPath,448);
 app.setPath('userData',dataPath);
 app.setPath('sessionData',dataPath);
 let currentBaseVersion=app.getVersion(),currentPackageVersion=currentBaseVersion;
-function pad(n){return n<10?'0'+n:n}
-function stamp(){return new Date().toISOString().slice(0,19).replace('T',' ')}
-function logger(logfile){let fileout=fs.openSync(logfile,'a'),stdout=process.stdout;stdout.on('error',function(){})`;
+let stamp=()=>new Date().toISOString().replace('T',' ').slice(0,19);
+function logger(l){let fileout=fs.openSync(l,'a'),stdout=process.stdout;stdout.on('error',()=>{})`;
 
 const UPDATER_QUEUE_ANCHOR = `let queueUpdate = (manual) => {
 	let fn = () => update(manual);
@@ -62,13 +43,21 @@ const PROFILE_MARKER = "app.setPath('userData',dataPath);";
 const SESSION_MARKER = "app.setPath('sessionData',dataPath);";
 const EXPLICIT_PROFILE_MARKER =
   "app.commandLine.getSwitchValue('user-data-dir')";
+const PROFILE_MODE_MARKER = "fs.chmodSync(dataPath,448);";
+const PROFILE_CANONICAL_MARKER = "fs.realpathSync(dataPath)!==dataPath";
 const UPDATER_DISABLED_MARKER = UPDATER_QUEUE_REPLACEMENT;
 const EMBEDDED_RENDERER_MARKER = UPDATED_ASAR_SELECTION_REPLACEMENT;
+const WRAPPER_RENDERER_CALL = "fn(asarPath, updateEvents);";
+const RENDERER_EXPORT_SIGNATURE = "module.exports=function(c,i,l){";
+const RENDERER_IS_DEV_BINDING =
+  'ipcMain.on("is-dev",t=>{t.returnValue=l})';
 
 export interface WrapperPatchReport {
   patchFormatVersion: typeof WRAPPER_PATCH_FORMAT_VERSION;
   incisionCount: typeof WRAPPER_INCISION_COUNT;
   profileDirectory: "Blackglass Bridge";
+  profileMode: typeof WRAPPER_PROFILE_MODE;
+  profilePathCanonicalAtSetup: true;
   explicitUserDataDirHonored: true;
   upstreamUpdatesDisabled: true;
   embeddedRendererOnly: true;
@@ -94,6 +83,8 @@ export function patchMacOSWrapperAsar(
       patchFormatVersion: WRAPPER_PATCH_FORMAT_VERSION,
       incisionCount: WRAPPER_INCISION_COUNT,
       profileDirectory: "Blackglass Bridge",
+      profileMode: WRAPPER_PROFILE_MODE,
+      profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
       upstreamUpdatesDisabled: true,
       embeddedRendererOnly: true,
@@ -107,12 +98,50 @@ export function patchMacOSWrapperAsar(
   };
 }
 
+export function inspectEmbeddedRendererDevModeContract(
+  rendererAsar: Buffer,
+  wrapperAsar: Buffer,
+): {
+  wrapperRendererArguments: 2;
+  rendererDevModeArgument: 3;
+  packagedDevelopmentMode: false;
+} {
+  const rendererMain = AsarArchive.fromBuffer(rendererAsar)
+    .read("main.js")
+    .toString("utf8");
+  const wrapperMain = AsarArchive.fromBuffer(wrapperAsar)
+    .read("main.js")
+    .toString("utf8");
+  requireExactlyOnce(
+    wrapperMain,
+    WRAPPER_RENDERER_CALL,
+    "wrapper two-argument renderer invocation",
+  );
+  requireExactlyOnce(
+    rendererMain,
+    RENDERER_EXPORT_SIGNATURE,
+    "renderer three-argument export",
+  );
+  requireExactlyOnce(
+    rendererMain,
+    RENDERER_IS_DEV_BINDING,
+    "renderer development-mode argument binding",
+  );
+  return {
+    wrapperRendererArguments: 2,
+    rendererDevModeArgument: 3,
+    packagedDevelopmentMode: false,
+  };
+}
+
 export function patchMacOSWrapperMain(main: Buffer): Buffer {
   const source = main.toString("utf8");
-  let patched = replaceExactlyOnce(
+  let patched = replaceExactBoundedSpan(
     source,
-    PROFILE_PATH_ANCHOR,
-    paddedReplacement(PROFILE_PATH_REPLACEMENT, PROFILE_PATH_ANCHOR.length, "profile"),
+    PROFILE_PATH_START,
+    PROFILE_PATH_END,
+    PROFILE_PATH_SPAN_SHA256,
+    PROFILE_PATH_REPLACEMENT,
     "wrapper profile anchor",
   );
   patched = replaceExactlyOnce(
@@ -144,6 +173,8 @@ export function patchMacOSWrapperMain(main: Buffer): Buffer {
 
 export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
   profileDirectory: "Blackglass Bridge";
+  profileMode: typeof WRAPPER_PROFILE_MODE;
+  profilePathCanonicalAtSetup: true;
   explicitUserDataDirHonored: true;
   upstreamUpdatesDisabled: true;
   embeddedRendererOnly: true;
@@ -161,10 +192,17 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
     EXPLICIT_PROFILE_MARKER,
     "patched wrapper explicit profile marker",
   );
+  requireExactlyOnce(main, PROFILE_MODE_MARKER, "patched wrapper profile mode marker");
+  requireExactlyOnce(
+    main,
+    PROFILE_CANONICAL_MARKER,
+    "patched wrapper canonical profile marker",
+  );
   requireExactlyOnce(main, UPDATER_DISABLED_MARKER, "patched wrapper updater marker");
   requireExactlyOnce(main, EMBEDDED_RENDERER_MARKER, "embedded renderer marker");
   if (
-    main.includes(PROFILE_PATH_ANCHOR) ||
+    main.includes(PROFILE_PATH_START) ||
+    main.includes(PROFILE_PATH_END) ||
     main.includes(UPDATER_QUEUE_ANCHOR) ||
     main.includes(UPDATED_ASAR_SELECTION_ANCHOR)
   ) {
@@ -172,6 +210,8 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
   }
   return {
     profileDirectory: "Blackglass Bridge",
+    profileMode: WRAPPER_PROFILE_MODE,
+    profilePathCanonicalAtSetup: true,
     explicitUserDataDirHonored: true,
     upstreamUpdatesDisabled: true,
     embeddedRendererOnly: true,
@@ -183,6 +223,30 @@ function paddedReplacement(value: string, length: number, label: string): string
     throw new Error(`Configured wrapper ${label} replacement is too long`);
   }
   return value.padEnd(length, " ");
+}
+
+function replaceExactBoundedSpan(
+  input: string,
+  startMarker: string,
+  endMarker: string,
+  expectedSha256: string,
+  replacement: string,
+  label: string,
+): string {
+  requireExactlyOnce(input, startMarker, `${label} start`);
+  requireExactlyOnce(input, endMarker, `${label} end`);
+  const start = input.indexOf(startMarker);
+  const end = input.indexOf(endMarker) + endMarker.length;
+  if (end <= start) throw new Error(`${label} boundaries are out of order`);
+  const span = input.slice(start, end);
+  if (sha256(Buffer.from(span, "utf8")) !== expectedSha256) {
+    throw new Error(`${label} span does not match the reviewed wrapper`);
+  }
+  return (
+    input.slice(0, start) +
+    paddedReplacement(replacement, span.length, label) +
+    input.slice(end)
+  );
 }
 
 function replaceExactlyOnce(

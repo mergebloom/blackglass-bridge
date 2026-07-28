@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
+import { isSupportedSemver } from "./semver";
 
 export interface ServerArtifact {
   schemaVersion: 2;
@@ -21,7 +22,7 @@ export async function inspectServerArtifact(binaryArgument: string): Promise<Ser
 
   const versionOutput = runText([binaryPath, "--version"]);
   const match = /^blackglass-server ([0-9A-Za-z.+_-]+)$/.exec(versionOutput);
-  if (!match?.[1]) {
+  if (!isSupportedSemver(match?.[1])) {
     throw new Error(`Unexpected server version output: ${versionOutput}`);
   }
   const buildInfo = parseServerBuildInfo(
@@ -54,6 +55,7 @@ export function parseServerBuildInfo(
   };
   if (
     value.name !== "blackglass-server" ||
+    !isSupportedSemver(expectedVersion) ||
     value.version !== expectedVersion ||
     typeof value.sourceRevision !== "string" ||
     !/^[a-f0-9]{40}$/u.test(value.sourceRevision)

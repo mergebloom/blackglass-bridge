@@ -1,23 +1,23 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import ts from "typescript";
 import { AsarArchive } from "./asar";
 import {
   TREE_IDENTITY_FORMAT_VERSION,
   type TreeIdentity,
 } from "./tree-identity";
+import { isSupportedStableSemver } from "./semver";
 
-export const COMPATIBILITY_BASELINE_SCHEMA_VERSION = 3;
-export const RELEASE_ANALYSIS_FORMAT_VERSION = 4;
+export const COMPATIBILITY_BASELINE_SCHEMA_VERSION = 4;
+export const RELEASE_ANALYSIS_FORMAT_VERSION = 5;
 
 export type FileIdentity = { bytes: number; sha256: string };
 export type UnpackedJavaScriptFiles = Record<string, FileIdentity>;
 
-type AnchorFile = "app.js" | "main.js" | "index.html";
-
 export interface CompatibilityAnchor {
   id: string;
-  file: AnchorFile;
+  file: string;
   literal: string;
   expectedMatches: number;
 }
@@ -39,6 +39,9 @@ export interface CompatibilityBaseline {
   };
   anchors: CompatibilityAnchor[];
   controlPlaneRoutes: Record<string, number>;
+  controlPlaneRouteLocations: Record<string, number>;
+  controlPlaneRequestHelpers: Record<string, number>;
+  networkConstructors: Record<string, number>;
   syncOperations: Record<string, number>;
   syncOperationLocations: Record<string, number>;
   syncMessageShapes: Record<string, number>;
@@ -56,6 +59,9 @@ export interface ReleaseDiscovery {
   unpackedJavaScriptFiles: UnpackedJavaScriptFiles;
   anchorMatches: Record<string, number>;
   controlPlaneRoutes: Record<string, number>;
+  controlPlaneRouteLocations: Record<string, number>;
+  controlPlaneRequestHelpers: Record<string, number>;
+  networkConstructors: Record<string, number>;
   syncOperations: Record<string, number>;
   syncOperationLocations: Record<string, number>;
   syncMessageShapes: Record<string, number>;
@@ -92,6 +98,9 @@ export interface ReleaseAnalysisReport {
   unpackedJavaScriptReview: CompatibilityBaseline["unpackedJavaScriptReview"];
   anchorMatches: Record<string, number>;
   controlPlaneRoutes: Record<string, number>;
+  controlPlaneRouteLocations: Record<string, number>;
+  controlPlaneRequestHelpers: Record<string, number>;
+  networkConstructors: Record<string, number>;
   syncOperations: Record<string, number>;
   syncOperationLocations: Record<string, number>;
   syncMessageShapes: Record<string, number>;
@@ -107,7 +116,7 @@ export interface LoadedCompatibilityBaseline {
 }
 
 export function defaultCompatibilityBaselinePath(rendererVersion: string): string {
-  if (!/^\d+\.\d+\.\d+$/u.test(rendererVersion)) {
+  if (!isSupportedStableSemver(rendererVersion)) {
     throw new Error(`Unsafe renderer version for baseline lookup: ${rendererVersion}`);
   }
   return resolve(import.meta.dir, `../compatibility/obsidian-${rendererVersion}.json`);
@@ -180,11 +189,11 @@ export function discoverRendererRelease(
   const mainJsBuffer = archive.read("main.js");
   const indexHtmlBuffer = archive.read("index.html");
   const packageJsonBuffer = archive.read("package.json");
-  const files: Record<AnchorFile, string> = {
-    "app.js": appJsBuffer.toString("utf8"),
-    "main.js": mainJsBuffer.toString("utf8"),
-    "index.html": indexHtmlBuffer.toString("utf8"),
-  };
+  const anchorSources = new Map<string, string>([
+    ["app.js", appJsBuffer.toString("utf8")],
+    ["main.js", mainJsBuffer.toString("utf8")],
+    ["index.html", indexHtmlBuffer.toString("utf8")],
+  ]);
   const javaScriptEntries = archive.entries()
     .filter(
       (entry) =>
@@ -198,6 +207,9 @@ export function discoverRendererRelease(
   }
   const javaScriptFiles: CompatibilityBaseline["javaScriptFiles"] = {};
   const routes: string[] = [];
+  const routeLocations: string[] = [];
+  const requestHelpers: string[] = [];
+  const networkConstructors: string[] = [];
   const operations: string[] = [];
   const operationLocations: string[] = [];
   const messageShapes: string[] = [];
@@ -206,8 +218,13 @@ export function discoverRendererRelease(
   for (const entry of javaScriptEntries) {
     const buffer = archive.read(entry.path);
     const source = buffer.toString("utf8");
+    anchorSources.set(entry.path, source);
     javaScriptFiles[entry.path] = fileIdentity(buffer);
-    routes.push(...collectMatches(source, /\bgw\(\s*(["'])(\/[A-Za-z0-9_./-]+)\1/gu, 2));
+    const network = collectNetworkCompatibility(entry.path, source);
+    routes.push(...network.routes);
+    routeLocations.push(...network.routeLocations);
+    requestHelpers.push(...network.requestHelpers);
+    networkConstructors.push(...network.networkConstructors);
     const fileOperations = collectLiteralOperations(source);
     const fileShapes = collectLiteralOperationMessageShapeList(source);
     // Keep both inventories. A literal `op` property can occur in non-Sync
@@ -239,9 +256,18 @@ export function discoverRendererRelease(
     anchorMatches: Object.fromEntries(
       [...anchors]
         .sort((left, right) => left.id.localeCompare(right.id))
-        .map((item) => [item.id, countLiteral(files[item.file], item.literal)]),
+        .map((item) => {
+          const source = anchorSources.get(item.file);
+          if (source === undefined) {
+            throw new Error(`Compatibility anchor references a missing file: ${item.file}`);
+          }
+          return [item.id, countLiteral(source, item.literal)];
+        }),
     ),
     controlPlaneRoutes: countValues(routes),
+    controlPlaneRouteLocations: countValues(routeLocations),
+    controlPlaneRequestHelpers: countValues(requestHelpers),
+    networkConstructors: countValues(networkConstructors),
     syncOperations: countValues(operations),
     syncOperationLocations: countValues(operationLocations),
     syncMessageShapes: countValues(messageShapes),
@@ -282,6 +308,17 @@ export function analyzeRendererRelease(
       discovery.anchorMatches,
     ),
     check("control-plane-routes", baseline.controlPlaneRoutes, discovery.controlPlaneRoutes),
+    check(
+      "control-plane-route-locations",
+      baseline.controlPlaneRouteLocations,
+      discovery.controlPlaneRouteLocations,
+    ),
+    check(
+      "control-plane-request-helpers",
+      baseline.controlPlaneRequestHelpers,
+      discovery.controlPlaneRequestHelpers,
+    ),
+    check("network-constructors", baseline.networkConstructors, discovery.networkConstructors),
     check("sync-operations", baseline.syncOperations, discovery.syncOperations),
     check(
       "sync-operation-locations",
@@ -321,6 +358,9 @@ export function analyzeRendererRelease(
     unpackedJavaScriptReview: baseline.unpackedJavaScriptReview,
     anchorMatches: discovery.anchorMatches,
     controlPlaneRoutes: discovery.controlPlaneRoutes,
+    controlPlaneRouteLocations: discovery.controlPlaneRouteLocations,
+    controlPlaneRequestHelpers: discovery.controlPlaneRequestHelpers,
+    networkConstructors: discovery.networkConstructors,
     syncOperations: discovery.syncOperations,
     syncOperationLocations: discovery.syncOperationLocations,
     syncMessageShapes: discovery.syncMessageShapes,
@@ -404,6 +444,328 @@ function isMissingPathError(error: unknown): boolean {
 
 function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+interface NetworkCompatibilityDiscovery {
+  routes: string[];
+  routeLocations: string[];
+  requestHelpers: string[];
+  networkConstructors: string[];
+}
+
+type NetworkPrimitive = "fetch" | "URL" | "WebSocket";
+
+/**
+ * Inventories the JavaScript network boundary with a real parser. A regex can
+ * enumerate `gw("/literal")`, but silently omits `gw(variable)` and aliases of
+ * the helper. That omission is unsafe when reviewing a new minified release,
+ * so every discovered control-helper call must have a literal route.
+ */
+function collectNetworkCompatibility(
+  file: string,
+  input: string,
+): NetworkCompatibilityDiscovery {
+  const sourceFile = ts.createSourceFile(
+    file,
+    input,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindFor(file),
+  );
+  const parseDiagnostics = (
+    sourceFile as ts.SourceFile & { parseDiagnostics: readonly ts.Diagnostic[] }
+  ).parseDiagnostics;
+  if (parseDiagnostics.length > 0) {
+    const diagnostic = parseDiagnostics[0]!;
+    throw new Error(
+      `Cannot parse packed JavaScript ${file} at ${diagnostic.start ?? 0}: ` +
+        ts.flattenDiagnosticMessageText(diagnostic.messageText, " "),
+    );
+  }
+
+  const primitiveAliases = new Map<string, NetworkPrimitive>();
+  const aliasBindings: Array<{ alias: string; source: string }> = [];
+  const functions = new Map<string, ts.FunctionLikeDeclaration>();
+
+  visit(sourceFile, (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      const directPrimitive = directWindowPrimitive(node.initializer);
+      if (directPrimitive) primitiveAliases.set(node.name.text, directPrimitive);
+      if (ts.isIdentifier(node.initializer)) {
+        aliasBindings.push({ alias: node.name.text, source: node.initializer.text });
+      }
+      if (isFunctionLike(node.initializer)) functions.set(node.name.text, node.initializer);
+    } else if (ts.isFunctionDeclaration(node) && node.name) {
+      functions.set(node.name.text, node);
+    } else if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left) &&
+      ts.isIdentifier(node.right)
+    ) {
+      aliasBindings.push({ alias: node.left.text, source: node.right.text });
+    }
+  });
+  resolvePrimitiveAliases(primitiveAliases, aliasBindings);
+
+  const networkConstructors: string[] = [];
+  for (const [alias, primitive] of [...primitiveAliases].sort(([left], [right]) =>
+    compareStrings(left, right)
+  )) {
+    networkConstructors.push(`${file}:binding:${alias}=window.${primitive}`);
+  }
+
+  // `gw` is the reviewed 1.12.7 app.js helper. Other files must prove their
+  // helper from a window.fetch transport so unrelated minified identifiers do
+  // not become protocol routes merely because they happen to be named `gw`.
+  const helperNames = new Set<string>(file === "app.js" ? ["gw"] : []);
+  const requestHelpers: string[] = [];
+  for (const [name, declaration] of functions) {
+    const parameters = new Set(
+      declaration.parameters
+        .map((parameter) => ts.isIdentifier(parameter.name) ? parameter.name.text : undefined)
+        .filter((value): value is string => value !== undefined),
+    );
+    visit(declaration, (node) => {
+      if (!ts.isCallExpression(node)) return;
+      const primitive = primitiveForExpression(node.expression, primitiveAliases);
+      if (primitive !== "fetch" || node.arguments.length === 0) return;
+      if (!hasLiteralPostMethod(node.arguments[1])) return;
+      const target = compactExpression(node.expression, sourceFile);
+      const address = compactExpression(node.arguments[0]!, sourceFile);
+      if (!expressionUsesIdentifier(node.arguments[0]!, parameters)) return;
+      helperNames.add(name);
+      requestHelpers.push(`${file}:${name}->${target}(${address})`);
+    });
+  }
+
+  const helperAliases: Array<{ alias: string; source: string }> = [];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const binding of aliasBindings) {
+      if (!helperNames.has(binding.source) || helperNames.has(binding.alias)) continue;
+      helperNames.add(binding.alias);
+      helperAliases.push(binding);
+      changed = true;
+    }
+  }
+  for (const { alias, source } of helperAliases) {
+    requestHelpers.push(`${file}:${alias}=alias(${source})`);
+  }
+
+  const routes: string[] = [];
+  const routeLocations: string[] = [];
+  const rejectedCalls: string[] = [];
+  visit(sourceFile, (node) => {
+    if (ts.isPropertyAccessExpression(node)) {
+      const directPrimitive = directWindowPrimitive(node);
+      if (directPrimitive) {
+        networkConstructors.push(`${file}:read:window.${directPrimitive}`);
+      }
+      if (node.name.text === "hostname") {
+        networkConstructors.push(`${file}:read:hostname`);
+      }
+      return;
+    }
+    if (ts.isElementAccessExpression(node)) {
+      const directPrimitive = directWindowPrimitive(node);
+      if (directPrimitive) {
+        networkConstructors.push(`${file}:read:window.${directPrimitive}:computed`);
+      }
+      return;
+    }
+    if (ts.isCallExpression(node)) {
+      const primitive = primitiveForExpression(node.expression, primitiveAliases);
+      if (primitive) {
+        networkConstructors.push(
+          `${file}:call:${compactNetworkTarget(node.expression, primitive, primitiveAliases)}`,
+        );
+      }
+      if (isHostnameDescriptorCall(node, primitiveAliases)) {
+        networkConstructors.push(`${file}:read:URL.prototype.hostname`);
+      }
+      if (!ts.isIdentifier(node.expression) || !helperNames.has(node.expression.text)) return;
+      const route = literalControlRoute(node.arguments[0]);
+      if (!route) {
+        rejectedCalls.push(
+          `${file}:${node.expression.text}(${node.arguments[0]
+            ? compactExpression(node.arguments[0], sourceFile)
+            : "<missing>"})`,
+        );
+        return;
+      }
+      routes.push(route);
+      routeLocations.push(`${file}:${node.expression.text}:${route}`);
+      return;
+    }
+    if (ts.isNewExpression(node)) {
+      const primitive = primitiveForExpression(node.expression, primitiveAliases);
+      if (primitive === "URL" || primitive === "WebSocket") {
+        networkConstructors.push(
+          `${file}:new:${compactNetworkTarget(node.expression, primitive, primitiveAliases)}`,
+        );
+      }
+    }
+  });
+  if (rejectedCalls.length > 0) {
+    throw new Error(
+      "Control-plane request helpers require literal routes; rejected " +
+        rejectedCalls.sort(compareStrings).join(", "),
+    );
+  }
+  return { routes, routeLocations, requestHelpers, networkConstructors };
+}
+
+function scriptKindFor(file: string): ts.ScriptKind {
+  if (file.endsWith(".mjs")) return ts.ScriptKind.JS;
+  if (file.endsWith(".cjs")) return ts.ScriptKind.JS;
+  return ts.ScriptKind.JS;
+}
+
+function visit(root: ts.Node, callback: (node: ts.Node) => void): void {
+  const walk = (node: ts.Node): void => {
+    callback(node);
+    ts.forEachChild(node, walk);
+  };
+  walk(root);
+}
+
+function isFunctionLike(node: ts.Expression): node is ts.FunctionExpression | ts.ArrowFunction {
+  return ts.isFunctionExpression(node) || ts.isArrowFunction(node);
+}
+
+function directWindowPrimitive(node: ts.Expression): NetworkPrimitive | undefined {
+  if (
+    ts.isPropertyAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    ["window", "globalThis", "self"].includes(node.expression.text) &&
+    isNetworkPrimitive(node.name.text)
+  ) {
+    return node.name.text;
+  }
+  if (
+    ts.isElementAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    ["window", "globalThis", "self"].includes(node.expression.text) &&
+    node.argumentExpression &&
+    (ts.isStringLiteral(node.argumentExpression) ||
+      ts.isNoSubstitutionTemplateLiteral(node.argumentExpression)) &&
+    isNetworkPrimitive(node.argumentExpression.text)
+  ) {
+    return node.argumentExpression.text;
+  }
+  return undefined;
+}
+
+function isNetworkPrimitive(value: string): value is NetworkPrimitive {
+  return value === "fetch" || value === "URL" || value === "WebSocket";
+}
+
+function resolvePrimitiveAliases(
+  aliases: Map<string, NetworkPrimitive>,
+  bindings: Array<{ alias: string; source: string }>,
+): void {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const binding of bindings) {
+      const primitive = aliases.get(binding.source);
+      if (!primitive || aliases.has(binding.alias)) continue;
+      aliases.set(binding.alias, primitive);
+      changed = true;
+    }
+  }
+}
+
+function primitiveForExpression(
+  expression: ts.Expression,
+  aliases: Map<string, NetworkPrimitive>,
+): NetworkPrimitive | undefined {
+  const direct = directWindowPrimitive(expression);
+  if (direct) return direct;
+  if (ts.isIdentifier(expression)) {
+    if (isNetworkPrimitive(expression.text)) return expression.text;
+    return aliases.get(expression.text);
+  }
+  return undefined;
+}
+
+function compactNetworkTarget(
+  expression: ts.Expression,
+  primitive: NetworkPrimitive,
+  aliases: Map<string, NetworkPrimitive>,
+): string {
+  if (ts.isIdentifier(expression) && aliases.get(expression.text) === primitive) {
+    return `${expression.text}[window.${primitive}]`;
+  }
+  if (directWindowPrimitive(expression) === primitive) return `window.${primitive}`;
+  return primitive;
+}
+
+function compactExpression(node: ts.Node, sourceFile: ts.SourceFile): string {
+  const value = node.getText(sourceFile).replace(/\s+/gu, "");
+  return value.length <= 160 ? value : `${value.slice(0, 157)}...`;
+}
+
+function expressionUsesIdentifier(node: ts.Node, identifiers: Set<string>): boolean {
+  let found = false;
+  visit(node, (candidate) => {
+    if (ts.isIdentifier(candidate) && identifiers.has(candidate.text)) found = true;
+  });
+  return found;
+}
+
+function literalControlRoute(node: ts.Expression | undefined): string | undefined {
+  if (
+    !node ||
+    (!ts.isStringLiteral(node) && !ts.isNoSubstitutionTemplateLiteral(node)) ||
+    !/^\/[A-Za-z0-9_./-]+$/u.test(node.text)
+  ) {
+    return undefined;
+  }
+  return node.text;
+}
+
+function hasLiteralPostMethod(node: ts.Expression | undefined): boolean {
+  if (!node || !ts.isObjectLiteralExpression(node)) return false;
+  return node.properties.some((property) => {
+    if (!ts.isPropertyAssignment(property)) return false;
+    const name = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)
+      ? property.name.text
+      : undefined;
+    return (
+      name === "method" &&
+      (ts.isStringLiteral(property.initializer) ||
+        ts.isNoSubstitutionTemplateLiteral(property.initializer)) &&
+      property.initializer.text === "POST"
+    );
+  });
+}
+
+function isHostnameDescriptorCall(
+  node: ts.CallExpression,
+  aliases: Map<string, NetworkPrimitive>,
+): boolean {
+  if (
+    !ts.isPropertyAccessExpression(node.expression) ||
+    node.expression.name.text !== "getOwnPropertyDescriptor" ||
+    !ts.isIdentifier(node.expression.expression) ||
+    node.expression.expression.text !== "Object" ||
+    node.arguments.length !== 2
+  ) {
+    return false;
+  }
+  const [prototype, property] = node.arguments;
+  return Boolean(
+    prototype &&
+      ts.isPropertyAccessExpression(prototype) &&
+      prototype.name.text === "prototype" &&
+      primitiveForExpression(prototype.expression, aliases) === "URL" &&
+      property &&
+      (ts.isStringLiteral(property) || ts.isNoSubstitutionTemplateLiteral(property)) &&
+      property.text === "hostname",
+  );
 }
 
 function collectLiteralOperations(input: string): string[] {
@@ -534,7 +896,7 @@ function rendererVersion(archive: AsarArchive): string {
   const metadata = JSON.parse(archive.read("package.json").toString("utf8")) as {
     version?: unknown;
   };
-  if (typeof metadata.version !== "string" || !/^\d+\.\d+\.\d+$/u.test(metadata.version)) {
+  if (!isSupportedStableSemver(metadata.version)) {
     throw new Error("Renderer package has no semantic version");
   }
   return metadata.version;
@@ -606,7 +968,7 @@ function assertCompatibilityBaseline(value: unknown): asserts value is Compatibi
       throw new Error(`Compatibility baseline has invalid ${field}`);
     }
   }
-  if (!/^\d+\.\d+\.\d+$/u.test(value.rendererVersion as string)) {
+  if (!isSupportedStableSemver(value.rendererVersion)) {
     throw new Error("Compatibility baseline rendererVersion is invalid");
   }
   for (const field of [
@@ -664,12 +1026,15 @@ function assertCompatibilityBaseline(value: unknown): asserts value is Compatibi
     throw new Error("Compatibility baseline must contain anchors");
   }
   const anchorIds = new Set<string>();
+  const reviewedJavaScriptFiles = value.javaScriptFiles as Record<string, unknown>;
   for (const anchor of value.anchors) {
     if (
       !isRecord(anchor) ||
       typeof anchor.id !== "string" ||
       anchorIds.has(anchor.id) ||
-      !["app.js", "main.js", "index.html"].includes(String(anchor.file)) ||
+      typeof anchor.file !== "string" ||
+      (anchor.file !== "index.html" &&
+        !Object.prototype.hasOwnProperty.call(reviewedJavaScriptFiles, anchor.file)) ||
       typeof anchor.literal !== "string" ||
       anchor.literal.length === 0 ||
       !Number.isSafeInteger(anchor.expectedMatches) ||
@@ -681,6 +1046,9 @@ function assertCompatibilityBaseline(value: unknown): asserts value is Compatibi
   }
   for (const field of [
     "controlPlaneRoutes",
+    "controlPlaneRouteLocations",
+    "controlPlaneRequestHelpers",
+    "networkConstructors",
     "syncOperations",
     "syncOperationLocations",
     "syncMessageShapes",

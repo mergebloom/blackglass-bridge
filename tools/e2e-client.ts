@@ -123,7 +123,10 @@ export function assertClientLaunchIdentity(
       throw new Error(`Client launch identity ${field} is invalid`);
     }
   }
+  const startedAt = Date.parse(value.startedAt as string);
   if (
+    !Number.isFinite(startedAt) ||
+    new Date(startedAt).toISOString() !== value.startedAt ||
     !Number.isSafeInteger(value.pid) ||
     (value.pid as number) < 1 ||
     !Number.isSafeInteger(value.debugPort) ||

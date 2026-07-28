@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=./scripts/semver.sh
+source "${script_directory}/semver.sh"
+
 if [[ $# -gt 2 ]]; then
   echo "usage: $0 [tree-ish] [output-directory]" >&2
   exit 2
@@ -23,13 +27,17 @@ version=$(printf '%s' "$package_json" | bun -e '
   process.stdin.on("data", chunk => input += chunk);
   process.stdin.on("end", () => {
     const version = JSON.parse(input).version;
-    if (typeof version !== "string" || !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(version)) process.exit(1);
+    if (typeof version !== "string" || !/^[0-9A-Za-z.-]+$/.test(version)) process.exit(1);
     process.stdout.write(version);
   });
 ') || {
   echo "error: package.json at ${ref} has no valid semantic version" >&2
   exit 1
 }
+if ! is_supported_semver "$version"; then
+  echo "error: package.json at ${ref} has no valid semantic version" >&2
+  exit 1
+fi
 
 name="blackglass-bridge-v${version}-tooling"
 archive="${out_dir}/${name}.zip"

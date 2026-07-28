@@ -7,11 +7,15 @@ the project E2E area.
 
 ## What must pass
 
-- the exact official DMG, reviewed compatibility baseline, two-incision ASAR,
+- the exact official DMG, reviewed compatibility baseline, three-incision ASAR,
   copied app, release manifest, and Rust server binary all match by SHA-256,
   with the server binary also reporting its exact source revision;
 - two separately identified live app processes use the intended renderer,
   profile, vault, DevTools target, TLS certificate, and resolver rules;
+- a LaunchServices launch with a genuinely empty default profile opens the
+  native `starter.html` flow and completes `/user/signin` and `/vault/list` at
+  the configured control origin without registering a local vault, while the
+  created profile is observed as a real mode-`0700` directory;
 - CDP traces started before login show successful POSTs to the configured HTTPS
   control origin and a `101` handshake to the configured WSS data host, with no
   loopback fallback;
@@ -47,11 +51,49 @@ BLACKGLASS_SERVER_BINARY=/path/to/blackglass-server \
   --identity-out .data/e2e/<run>/server-initial.json
 ```
 
+Both commands block and must remain running. After the server is ready, run the
+packaged-app smoke in a third terminal and let it finish before launching the
+two E2E clients:
+
+```sh
+bun run e2e:smoke:macos -- .data/e2e/<run>
+```
+
+The smoke reserves debugging port `9320`, launches the exact prepared app via
+LaunchServices with an empty disposable default profile, authenticates through
+the starter renderer using the run's owner-only credentials, verifies a
+successful vault list through the run's TLS route, checks for crash reports and
+profile leakage, and terminates the app.
+
 Launch client A and B from their prepared profiles with distinct debug ports,
 the run's `tls-metadata.json`, and identity outputs named
 `client-a-launch.json` and `client-b-launch.json`. Start both network captures
 before using the account UI. They remain attached across the server restart and
 post-restart transfers until explicitly finalized:
+
+```sh
+bun run client:launch -- \
+  .data/e2e/<run>/client-a/user-data/obsidian-1.12.7.asar \
+  .data/e2e/<run>/client-a/user-data \
+  .data/e2e/<run>/client-a/vault \
+  --app '/path/to/Blackglass Bridge.app' \
+  --debug-port 9321 \
+  --e2e-tls-metadata .data/e2e/<run>/tls-metadata.json \
+  --identity-out .data/e2e/<run>/client-a-launch.json
+
+bun run client:launch -- \
+  .data/e2e/<run>/client-b/user-data/obsidian-1.12.7.asar \
+  .data/e2e/<run>/client-b/user-data \
+  .data/e2e/<run>/client-b/vault \
+  --app '/path/to/Blackglass Bridge.app' \
+  --debug-port 9322 \
+  --e2e-tls-metadata .data/e2e/<run>/tls-metadata.json \
+  --identity-out .data/e2e/<run>/client-b-launch.json
+```
+
+Each launcher blocks and belongs in its own terminal. After both identity files
+exist, start each capture in another terminal; these commands also block until
+their finalizers are written:
 
 ```sh
 bun run e2e:network:capture -- .data/e2e/<run> client-a
@@ -60,8 +102,24 @@ bun run e2e:network:capture -- .data/e2e/<run> client-b
 
 Through the built-in UI, client A logs in, creates an E2EE vault in Blackglass
 Server, connects, unlocks, and starts Sync. Client B logs in, selects the same
-vault, connects, unlocks, and starts Sync. `tools/e2e-ui.mjs` performs these
-interactions and writes each PNG/JSON checkpoint pair under `evidence/`.
+vault, connects, unlocks, and starts Sync. The operator opens the relevant
+native dialogs; `tools/e2e-ui.mjs` is a launch-bound CDP helper for the form
+submissions and evidence snapshots, not a full-flow orchestrator. Typical
+client-A calls are:
+
+```sh
+bun tools/e2e-ui.mjs 9321 snapshot \
+  .data/e2e/<run>/evidence/client-a/settings.png \
+  .data/e2e/<run>/evidence/client-a/settings.json
+bun tools/e2e-ui.mjs 9321 login .data/e2e/<run>/credentials.json
+bun tools/e2e-ui.mjs 9321 create-vault .data/e2e/<run>/credentials.json
+bun tools/e2e-ui.mjs 9321 unlock-vault .data/e2e/<run>/credentials.json
+```
+
+Use port `9322` for client B, select the created vault in the native chooser,
+and use the same `login`, `unlock-vault`, and `snapshot` helpers. Snapshot paths
+must use the required checkpoint stems below. The recovery client uses port
+`9323` and the same bound helpers.
 
 Use `e2e:observe` for the three allowed proof transfers and one deletion. The
 first A-to-B transfer occurs before stopping the initial server. Restart the
@@ -112,12 +170,28 @@ the same built-in UI and capture `evidence/recovery/client-b-restored.png` plus
 its JSON peer. Verify recovery, explicitly finalize its trace, and qualify:
 
 ```sh
+bun run client:launch -- \
+  .data/e2e/<run>/client-b/user-data/obsidian-1.12.7.asar \
+  .data/e2e/<run>/client-b/user-data \
+  .data/e2e/<run>/client-b/vault \
+  --app '/path/to/Blackglass Bridge.app' \
+  --debug-port 9323 \
+  --e2e-tls-metadata .data/e2e/<run>/tls-metadata.json \
+  --identity-out .data/e2e/<run>/client-b-recovery-launch.json
+```
+
+The recovery launcher blocks in its own terminal. Once its identity exists,
+start the recovery capture in another terminal, complete the built-in recovery
+UI, and then run the remaining commands:
+
+```sh
+bun run e2e:network:capture -- .data/e2e/<run> client-b-recovery
 bun run recovery:drill -- verify .data/e2e/<run> \
   .data/e2e/<run>/client-b/vault
 bun run e2e:network:finalize -- .data/e2e/<run> client-b-recovery
 bun run e2e:qualify -- .data/e2e/<run>
 ```
 
-`qualification.json` is emitted only when Sync, restart, deletion, exact
-endpoint evidence across all lifecycle phases, cold recovery, permissions, and
-current artifact identities all pass.
+`qualification.json` is emitted only when the empty-profile starter route,
+Sync, restart, deletion, exact endpoint evidence across all lifecycle phases,
+cold recovery, permissions, and current artifact identities all pass.

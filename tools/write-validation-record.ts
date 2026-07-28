@@ -70,6 +70,7 @@ const evidenceFiles = {
   recoveryLaunchSha256: "client-b-recovery-launch.json",
   recoveryUiStateSha256: "evidence/recovery/client-b-restored.json",
   recoveryScreenshotSha256: "evidence/recovery/client-b-restored.png",
+  finderLaunchSmokeSha256: "finder-launch-smoke.json",
 } as const;
 for (const [field, file] of Object.entries(evidenceFiles) as Array<
   [keyof typeof evidenceFiles, (typeof evidenceFiles)[keyof typeof evidenceFiles]]

@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { inspectPatchedMacOSWrapperAsar } from "../packages/client-adapter/src/wrapper";
 import { asarHeaderSha256 } from "./asar";
 import { computeTreeIdentity, type TreeIdentity } from "./tree-identity";
+import { isSupportedStableSemver } from "./semver";
 
 export const ELECTRON_HELPER_VARIANTS = [
   { nameSuffix: "", identifierSuffix: "" },
@@ -13,7 +14,7 @@ export const ELECTRON_HELPER_VARIANTS = [
 ] as const;
 
 export interface MacOSArtifact {
-  schemaVersion: 2;
+  schemaVersion: 3;
   appPath: string;
   bundleIdentifier: "com.blackglass.bridge";
   bundleName: "Obsidian";
@@ -30,6 +31,8 @@ export interface MacOSArtifact {
   applicationTreeIdentity: TreeIdentity;
   helperBundleIdentifiers: string[];
   profileDirectory: "Blackglass Bridge";
+  profileMode: 448;
+  profilePathCanonicalAtSetup: true;
   explicitUserDataDirHonored: true;
   upstreamUpdatesDisabled: true;
   embeddedRendererOnly: true;
@@ -70,6 +73,10 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   if (executableName !== "Obsidian") {
     throw new Error(`Unexpected Bridge runtime executable: ${executableName}`);
   }
+  const version = plistString(infoPlist, "CFBundleShortVersionString");
+  if (!isSupportedStableSemver(version)) {
+    throw new Error(`Unexpected Bridge renderer version: ${version}`);
+  }
   const helperBundleIdentifiers: string[] = [];
   for (const helper of ELECTRON_HELPER_VARIANTS) {
     const helperName = `Obsidian Helper${helper.nameSuffix}`;
@@ -100,12 +107,12 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   }
   const applicationTreeIdentity = await computeTreeIdentity(appPath);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     appPath,
     bundleIdentifier: "com.blackglass.bridge",
     bundleName: "Obsidian",
     displayName: "Blackglass Bridge",
-    version: plistString(infoPlist, "CFBundleShortVersionString"),
+    version,
     executableName: "Obsidian",
     infoPlistSha256: await sha256File(infoPlist),
     executableSha256: await sha256File(join(appPath, "Contents/MacOS", executableName)),
@@ -119,6 +126,8 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     applicationTreeIdentity,
     helperBundleIdentifiers,
     profileDirectory: wrapperSafety.profileDirectory,
+    profileMode: wrapperSafety.profileMode,
+    profilePathCanonicalAtSetup: wrapperSafety.profilePathCanonicalAtSetup,
     explicitUserDataDirHonored: wrapperSafety.explicitUserDataDirHonored,
     upstreamUpdatesDisabled: wrapperSafety.upstreamUpdatesDisabled,
     embeddedRendererOnly: wrapperSafety.embeddedRendererOnly,

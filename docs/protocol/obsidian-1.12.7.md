@@ -6,6 +6,9 @@ Status: static client inventory plus loopback server conformance tests.
 
 The renderer constructs the production base as `https://api.obsidian.md`.
 Internal development mode changes it to `http://127.0.0.1:3000`.
+The independent no-vault `starter.js` renderer constructs the same base and
+uses its own request helper for `/user/signin` and `/vault/list`; both control
+origins therefore require separate compatibility incisions.
 
 Observed account routes:
 
@@ -31,10 +34,10 @@ Observed Sync vault routes:
 - `/vault/share/invite`
 - `/vault/share/remove`
 
-The first milestone implements sign-in, sign-out, user information,
-subscription information, region listing, vault list/create/access/rename/
-delete, and an empty share list. Share mutations return a clean single-user
-error; migration is outside the milestone.
+Blackglass Server implements sign-in, sign-out, user information,
+subscription information, region listing, vault list/create/access/migrate/
+rename/delete, and an empty share list. Share mutations return a clean
+single-user error.
 
 ## Data plane
 
@@ -43,9 +46,9 @@ The Sync client persists a control-plane-provided `host`. It derives:
 - `ws://host` for `localhost` or `127.0.0.1`;
 - `wss://host` otherwise.
 
-The reference client currently accepts `127.0.0.1` or a hostname ending in
-`.obsidian.md`. The compatibility adapter will replace this with an exact
-configured-origin check.
+The upstream client accepts `127.0.0.1` or a hostname ending in
+`.obsidian.md`. The compatibility adapter replaces this with an exact
+configured-host check.
 
 Initial connection message:
 

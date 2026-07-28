@@ -23,6 +23,7 @@ import {
   pathsEqual,
 } from "./path-safety";
 import { readBridgeReleaseManifest } from "./release-manifest";
+import { isSupportedStableSemver } from "./semver";
 
 const [asarArgument, profileArgument, vaultArgument, ...flagArguments] = Bun.argv.slice(2);
 if (!asarArgument || !profileArgument || !vaultArgument) usage();
@@ -79,10 +80,11 @@ const archive = await AsarArchive.open(asar);
 const packageMetadata = JSON.parse(archive.read("package.json").toString("utf8")) as {
   version?: string;
 };
-if (!packageMetadata.version || !/^\d+\.\d+\.\d+$/u.test(packageMetadata.version)) {
+if (!isSupportedStableSemver(packageMetadata.version)) {
   throw new Error("Compatibility ASAR has no semantic package version");
 }
-archive.read("app.js");
+const rendererSha256 = sha256(archive.read("app.js"));
+const starterSha256 = sha256(archive.read("starter.js"));
 const adapterSha256 = await fileSha256(asar);
 const infoPlist = join(appBundle, "Contents/Info.plist");
 const bundleIdentifier = plistString(infoPlist, "CFBundleIdentifier");
@@ -169,9 +171,13 @@ if (e2eRequested) {
   const { manifest: releaseManifest } = await readBridgeReleaseManifest(releaseManifestPath);
   if (
     stableJson(releaseManifest.macOS) !== stableJson(publicMacOSArtifact(appArtifact)) ||
-    releaseManifest.renderer.patchedSha256 !== adapterSha256
+    releaseManifest.renderer.patchedSha256 !== adapterSha256 ||
+    releaseManifest.renderer.rendererAfterSha256 !== rendererSha256 ||
+    releaseManifest.renderer.starterAfterSha256 !== starterSha256
   ) {
-    throw new Error("Prepared release manifest does not bind the launched app and adapter");
+    throw new Error(
+      "Prepared release manifest does not bind the launched app and both renderers",
+    );
   }
   const tls = await readVerifiedE2ETls(run.root, tlsMetadataArgument);
   const identityPath = await canonicalOutputPath(identityArgument as string, "Client identity");

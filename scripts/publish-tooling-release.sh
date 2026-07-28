@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=./scripts/semver.sh
+source "${script_directory}/semver.sh"
+
 if [[ $# -lt 3 ]]; then
   echo "usage: $0 <tag> <title> <asset> [<asset> ...]" >&2
   exit 2
@@ -10,6 +14,15 @@ tag=$1
 title=$2
 shift 2
 assets=("$@")
+
+is_supported_release_tag "$tag" || {
+  echo "error: release tag is not a supported semantic version: $tag" >&2
+  exit 1
+}
+release_prerelease=false
+if [[ "$tag" == *-* ]]; then
+  release_prerelease=true
+fi
 
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 : "${GITHUB_SHA:?GITHUB_SHA is required}"
@@ -34,7 +47,8 @@ expected_names=$(mktemp)
 actual_names=$(mktemp)
 response_headers=$(mktemp)
 response_error=$(mktemp)
-trap 'rm -f "$release_json" "$assets_json" "$expected_names" "$actual_names" "$response_headers" "$response_error"' EXIT
+latest_json=$(mktemp)
+trap 'rm -f "$release_json" "$assets_json" "$expected_names" "$actual_names" "$response_headers" "$response_error" "$latest_json"' EXIT
 
 printf '%s\n' "${assets[@]##*/}" | LC_ALL=C sort > "$expected_names"
 if [[ "$(wc -l < "$expected_names" | tr -d ' ')" -ne "${#assets[@]}" ]] ||
@@ -48,6 +62,7 @@ if ! awk '/^[A-Za-z0-9._-]+$/ { next } { exit 1 }' "$expected_names"; then
 fi
 
 release_endpoint="repos/${GITHUB_REPOSITORY}/releases/tags/${tag}"
+release_created=false
 
 probe_release() {
   : > "$response_headers"
@@ -76,21 +91,45 @@ else
   if [[ "$probe_result" -ne 1 ]]; then
     exit "$probe_result"
   fi
-  gh release create "$tag" \
-    --draft \
-    --verify-tag \
-    --title "$title" \
-    --generate-notes
+  create_flags=(--draft --verify-tag --title "$title" --generate-notes --latest=false)
+  if [[ "$release_prerelease" == "true" ]]; then
+    create_flags+=(--prerelease)
+  fi
+  gh release create "$tag" "${create_flags[@]}"
+  release_created=true
 fi
 
 refresh_release() {
   gh api "$release_endpoint" > "$release_json"
   jq -e \
     --arg tag "$tag" \
-    '(.tag_name == $tag) and (.prerelease == false) and (.draft | type == "boolean")' \
+    --arg title "$title" \
+    --argjson prerelease "$release_prerelease" \
+    '(.tag_name == $tag) and (.name == $title) and (.prerelease == $prerelease) and (.draft | type == "boolean")' \
     "$release_json" >/dev/null
   release_id=$(jq -er '.id' "$release_json")
   published=$(jq -r '.draft == false' "$release_json")
+}
+
+wait_for_release_state() {
+  local expected_published=$1
+  for _attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if gh api "$release_endpoint" > "$release_json" &&
+      jq -e \
+        --arg tag "$tag" \
+        --arg title "$title" \
+        --argjson prerelease "$release_prerelease" \
+        --argjson published "$expected_published" \
+        '(.tag_name == $tag) and (.name == $title) and (.prerelease == $prerelease) and ((.draft == false) == $published)' \
+        "$release_json" >/dev/null; then
+      release_id=$(jq -er '.id' "$release_json")
+      published=$(jq -r '.draft == false' "$release_json")
+      return 0
+    fi
+    sleep 2
+  done
+  echo "error: release ${tag} did not reach its exact expected state" >&2
+  return 1
 }
 
 require_draft() {
@@ -101,7 +140,11 @@ require_draft() {
   fi
 }
 
-refresh_release
+if [[ "$release_created" == "true" ]]; then
+  wait_for_release_state false
+else
+  refresh_release
+fi
 
 refresh_assets() {
   gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
@@ -127,6 +170,40 @@ verify_asset() {
     "$assets_json" >/dev/null
 }
 
+wait_for_asset() {
+  local asset=$1
+  for _attempt in 1 2 3 4 5 6 7 8 9 10; do
+    refresh_assets
+    if verify_asset "$asset"; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+verify_not_latest() {
+  local latest_id
+  for _attempt in 1 2 3 4 5 6 7 8 9 10; do
+    : > "$response_error"
+    if gh api "repos/${GITHUB_REPOSITORY}/releases/latest" > "$latest_json" 2> "$response_error"; then
+      latest_id=$(jq -er '.id' "$latest_json")
+      if [[ "$latest_id" != "$release_id" ]]; then
+        return 0
+      fi
+    elif grep -q '(HTTP 404)' "$response_error"; then
+      return 0
+    else
+      echo "error: unable to verify GitHub Latest state" >&2
+      cat "$response_error" >&2
+      return 1
+    fi
+    sleep 2
+  done
+  echo "error: release ${tag} became GitHub Latest despite --latest=false" >&2
+  return 1
+}
+
 refresh_assets
 actual_existing=$(jq -r '.[].name' "$assets_json" | LC_ALL=C sort)
 unexpected_existing=$(comm -23 <(printf '%s\n' "$actual_existing") "$expected_names")
@@ -138,10 +215,12 @@ fi
 for asset in "${assets[@]}"; do
   name=$(basename "$asset")
   count=$(jq --arg name "$name" '[.[] | select(.name == $name)] | length' "$assets_json")
-  if [[ "$count" -eq 1 ]] && verify_asset "$asset"; then
+  if [[ "$count" -eq 1 ]] && wait_for_asset "$asset"; then
     echo "release asset already verified: $name"
     continue
   fi
+  refresh_assets
+  count=$(jq --arg name "$name" '[.[] | select(.name == $name)] | length' "$assets_json")
   if [[ "$published" == "true" ]]; then
     echo "error: published release has a missing or mismatched asset: $name" >&2
     exit 1
@@ -161,8 +240,10 @@ for asset in "${assets[@]}"; do
   fi
   require_draft
   gh release upload "$tag" "$asset"
-  refresh_assets
-  verify_asset "$asset"
+  if ! wait_for_asset "$asset"; then
+    echo "error: uploaded release asset did not become verifiably available: $name" >&2
+    exit 1
+  fi
 done
 
 jq -r '.[].name' "$assets_json" | LC_ALL=C sort > "$actual_names"
@@ -174,12 +255,27 @@ fi
 
 if [[ "$published" == "false" ]]; then
   require_draft
-  gh release edit "$tag" --draft=false --verify-tag --title "$title"
+  edit_flags=(--draft=false --verify-tag --title "$title" --latest=false)
+  if [[ "$release_prerelease" == "true" ]]; then
+    edit_flags+=(--prerelease)
+  fi
+  gh release edit "$tag" "${edit_flags[@]}"
+  wait_for_release_state true
 fi
 
-gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" > "$release_json"
-jq -e --arg tag "$tag" '(.tag_name == $tag) and (.draft == false)' "$release_json" >/dev/null
+refresh_release
+if [[ "$published" != "true" ]]; then
+  echo "error: release ${tag} did not become published" >&2
+  exit 1
+fi
+verify_not_latest
 refresh_assets
+jq -r '.[].name' "$assets_json" | LC_ALL=C sort > "$actual_names"
+if ! cmp -s "$expected_names" "$actual_names"; then
+  echo "error: published release contains unexpected or missing assets" >&2
+  diff -u "$expected_names" "$actual_names" >&2 || true
+  exit 1
+fi
 for asset in "${assets[@]}"; do
   verify_asset "$asset"
 done

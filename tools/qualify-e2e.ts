@@ -14,7 +14,17 @@ import {
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
 import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
+import {
+  assertFinderLaunchSmokeEvidence,
+  finderLaunchSmokeLayout,
+} from "./macos-launch-smoke";
+import { readVerifiedE2ETls } from "./e2e-tls";
 import { inspectServerArtifact, publicServerArtifact } from "./server-artifact";
+import { readBridgeReleaseManifest } from "./release-manifest";
+import {
+  computeToolingSourceIdentity,
+  toolingSourceTreeEqual,
+} from "./tooling-source";
 
 const [rootArgument, ...flags] = Bun.argv.slice(2);
 if (!rootArgument || flags.length !== 0) {
@@ -24,6 +34,20 @@ if (!rootArgument || flags.length !== 0) {
 
 const preparedRun = await readPreparedE2ERun(rootArgument);
 const root = preparedRun.root;
+const { manifest: releaseManifest } = await readBridgeReleaseManifest(
+  resolve(root, preparedRun.manifest.releaseManifestFileName),
+);
+const currentToolingSource = await computeToolingSourceIdentity();
+if (
+  releaseManifest.toolingSource.worktreeClean !== true ||
+  currentToolingSource.worktreeClean !== true ||
+  releaseManifest.toolingSource.gitRevision !== currentToolingSource.gitRevision ||
+  !toolingSourceTreeEqual(releaseManifest.toolingSource, currentToolingSource)
+) {
+  throw new Error(
+    "E2E qualification tooling source differs from the clean packaged source",
+  );
+}
 
 const [
   runManifest,
@@ -123,6 +147,24 @@ if (
 ) {
   throw new Error("A qualified client or server artifact changed after the E2E run");
 }
+const finderSmokePath = finderLaunchSmokeLayout(root).evidencePath;
+const verifiedTls = await readVerifiedE2ETls(root);
+const finderSmokeBytes = await readFile(finderSmokePath);
+const finderSmoke = JSON.parse(finderSmokeBytes.toString("utf8")) as unknown;
+assertFinderLaunchSmokeEvidence(finderSmoke, {
+  root,
+  runManifestSha256: preparedRun.manifestSha256,
+  releaseManifestSha256: preparedRun.manifest.releaseManifestSha256,
+  appPath: recordedClient.appPath,
+  artifact: publicMacOSArtifact(recordedClient),
+  controlOrigin: preparedRun.manifest.endpoints.controlOrigin,
+  tlsMetadataSha256: verifiedTls.metadataSha256,
+  chromiumHostResolverRules: verifiedTls.metadata.chromiumHostResolverRules,
+  tlsSpkiSha256Base64: verifiedTls.metadata.spkiSha256Base64,
+});
+if (((await stat(finderSmokePath)).mode & 0o777) !== 0o600) {
+  throw new Error("Unsafe Finder launch smoke evidence permissions");
+}
 if (
   syncReport.referenceClient?.releaseManifestSha256 !==
     runManifest.releaseManifestSha256 ||
@@ -166,6 +208,9 @@ for (const role of ["client-a", "client-b"] as const) {
   const identityPath = resolve(root, `${role}-launch.json`);
   const identityBytes = await readFile(identityPath);
   const identity = await readClientLaunchIdentity(identityPath);
+  if (Date.parse(identity.startedAt) <= Date.parse(finderSmoke.completedAt)) {
+    throw new Error("Finder launch smoke must complete before packaged E2E clients launch");
+  }
   const identitySha256 = sha256(identityBytes);
   const path = e2eNetworkEvidencePath(root, role);
   const finalizePath = e2eNetworkFinalizePath(root, role);
@@ -268,6 +313,7 @@ for (const file of [
   "client-artifact.json",
   "server-artifact.json",
   "server-restarted.json",
+  "finder-launch-smoke.json",
   "observations/transfer-e2e-sync-proof.json",
   "observations/transfer-reverse-sync-proof.json",
   "observations/transfer-deletion-sync-proof.json",
@@ -285,13 +331,14 @@ for (const file of [
 }
 
 const qualification = {
-  schemaVersion: 2,
+  schemaVersion: 4,
   qualifiedAt: new Date().toISOString(),
   passed: true,
   platform: "macOS Apple Silicon",
   bridgeVersion: runManifest.bridgeVersion,
   rendererVersion: runManifest.rendererVersion,
   endpoints: runManifest.endpoints,
+  toolingSource: releaseManifest.toolingSource,
   artifacts: {
     client: publicMacOSArtifact(recordedClient),
     compatibilityAsarSha256: runManifest.compatibilityAsarSha256,
@@ -306,6 +353,11 @@ const qualification = {
     postRestartSync: true,
     sourceClientRemoved: true,
     coldRecovery: true,
+    finderLaunchServicesSmoke: true,
+    defaultProfileIsolation: true,
+    starterNoVaultFlow: true,
+    starterControlRouting: true,
+    noLaunchCrashOrEarlyExit: true,
   },
   recovery: {
     expectedFiles: recoveryReport.expectedFiles,
@@ -323,6 +375,7 @@ const qualification = {
     recoveryLaunchSha256: recoveryIdentitySha256,
     recoveryUiStateSha256: sha256(recoveryUiStateBytes),
     recoveryScreenshotSha256: sha256(recoveryScreenshotBytes),
+    finderLaunchSmokeSha256: sha256(finderSmokeBytes),
     networkEvidenceSha256: rawNetworkEvidence,
     networkFinalizeSha256: rawNetworkFinalizers,
   },

@@ -87,3 +87,8 @@ For every upstream release:
 
 An unqualified upstream client update is expected to fail closed rather than
 silently falling back to Obsidian's servers.
+
+Package and qualify from a clean committed tooling tree. After qualification,
+commit only the generated `docs/validation/*-qualification.json` record and tag
+that linear descendant. The release workflow verifies that the source commit is
+an ancestor and that the release-critical tooling tree is otherwise unchanged.

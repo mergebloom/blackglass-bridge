@@ -30,5 +30,17 @@ describe("server artifact metadata", () => {
     ]) {
       expect(() => parseServerBuildInfo(JSON.stringify(value), "0.2.2")).toThrow();
     }
+    for (const version of ["01.2.3", "1.2.3-01", "1.2.3+build"]) {
+      expect(() =>
+        parseServerBuildInfo(
+          JSON.stringify({
+            name: "blackglass-server",
+            version,
+            sourceRevision,
+          }),
+          version,
+        ),
+      ).toThrow();
+    }
   });
 });

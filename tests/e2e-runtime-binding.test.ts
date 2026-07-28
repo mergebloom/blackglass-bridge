@@ -11,6 +11,39 @@ import { readVerifiedE2ETls } from "../tools/e2e-tls";
 const projectRoot = resolve(import.meta.dir, "..");
 
 describe("E2E runtime binding", () => {
+  test("rejects malformed launch chronology", () => {
+    const identity = {
+      schemaVersion: 2,
+      runManifestSha256: "a".repeat(64),
+      releaseManifestSha256: "b".repeat(64),
+      startedAt: "2026-07-28T12:00:00.000Z",
+      pid: 100,
+      launchCommand: "/Applications/Blackglass Bridge.app/Contents/MacOS/Obsidian",
+      debugPort: 9321,
+      debugListenerPid: 100,
+      debugListenerCommand: "/Applications/Blackglass Bridge.app/Contents/MacOS/Obsidian",
+      debugTargetId: "renderer",
+      debugTargetUrl: "file:///app/index.html",
+      executablePath: "/Applications/Blackglass Bridge.app/Contents/MacOS/Obsidian",
+      executableSha256: "c".repeat(64),
+      appBundlePath: "/Applications/Blackglass Bridge.app",
+      appArtifactSha256: "d".repeat(64),
+      appArtifact: { schemaVersion: 2 },
+      adapterPath: "/tmp/obsidian-1.12.7.asar",
+      adapterSha256: "e".repeat(64),
+      profilePath: "/tmp/client-a/user-data",
+      vaultPath: "/tmp/client-a/vault",
+      tlsMetadataPath: "/tmp/tls-metadata.json",
+      tlsMetadataSha256: "f".repeat(64),
+      tlsSpkiSha256Base64: `${"A".repeat(43)}=`,
+    };
+    expect(() => assertClientLaunchIdentity(identity)).not.toThrow();
+    expect(() => assertClientLaunchIdentity({
+      ...identity,
+      startedAt: "not-a-date",
+    })).toThrow("process or artifact binding");
+  });
+
   test("binds client layout and generated TLS files to one prepared run", async () => {
     const e2eRoot = resolve(projectRoot, ".data/e2e");
     await mkdir(e2eRoot, { recursive: true });

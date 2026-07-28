@@ -9,10 +9,25 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
+  release-static-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: shellcheck scripts/*.sh
+      - name: Lint GitHub Actions workflows
+        run: >-
+          docker run --rm
+          -v "$PWD:/repo:ro"
+          -w /repo
+          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+          .github/workflows/ci.yml
+          .github/workflows/release.yml
+
   macos-gate:
     runs-on: macos-14
     timeout-minutes: 15
@@ -26,7 +41,7 @@ jobs:
       - run: bun run check
 
   release:
-    needs: macos-gate
+    needs: [release-static-gate, macos-gate]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -48,6 +63,18 @@ jobs:
             exit 1
           }
       - run: npm ci
+      - name: Verify tag matches the qualified tooling source
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          version=$(node -p "require('./package.json').version")
+          records=(docs/validation/blackglass-bridge-"${version}"-obsidian-*-qualification.json)
+          test "${#records[@]}" -eq 1 || {
+            echo "Expected exactly one canonical release qualification record" >&2
+            exit 1
+          }
+          bun run tooling:verify-qualified -- "${records[0]}" "$GITHUB_SHA"
       - run: bun run check
       - name: Build deterministic tooling release assets
         shell: bash

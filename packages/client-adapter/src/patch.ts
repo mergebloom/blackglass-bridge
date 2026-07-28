@@ -6,8 +6,8 @@ const CONTROL_ORIGIN_EXPRESSION =
 const DATA_HOST_CONDITION =
   '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h';
 
-export const RENDERER_PATCH_FORMAT_VERSION = 2;
-export const RENDERER_INCISION_COUNT = 2;
+export const RENDERER_PATCH_FORMAT_VERSION = 3;
+export const RENDERER_INCISION_COUNT = 3;
 
 export interface AdapterOptions {
   controlOrigin: string;
@@ -23,6 +23,8 @@ export interface AdapterReport {
   patchedSha256: string;
   rendererBeforeSha256: string;
   rendererAfterSha256: string;
+  starterBeforeSha256: string;
+  starterAfterSha256: string;
 }
 
 export function patchRenderer(
@@ -63,6 +65,30 @@ export function patchRenderer(
   return output;
 }
 
+export function patchStarterRenderer(
+  starter: Buffer,
+  options: AdapterOptions,
+): Buffer {
+  const canonical = canonicalAdapterOptions(options);
+  const source = starter.toString("utf8");
+  const controlReplacement = paddedExpression(
+    JSON.stringify(canonical.controlOrigin),
+    CONTROL_ORIGIN_EXPRESSION.length,
+    "starter control origin",
+  );
+  const patched = replaceExactlyOnce(
+    source,
+    CONTROL_ORIGIN_EXPRESSION,
+    controlReplacement,
+    "starter control origin expression",
+  );
+  const output = Buffer.from(patched, "utf8");
+  if (output.length !== starter.length) {
+    throw new Error("Starter patch unexpectedly changed the byte length");
+  }
+  return output;
+}
+
 export function patchAsar(
   upstream: Buffer,
   options: AdapterOptions,
@@ -70,14 +96,18 @@ export function patchAsar(
   const canonical = canonicalAdapterOptions(options);
   const archive = AsarArchive.fromBuffer(upstream);
   const rendererBefore = archive.read("app.js");
+  const starterBefore = archive.read("starter.js");
   const rendererAfter = patchRenderer(rendererBefore, canonical);
-  const output = replacePackedAsarEntry(upstream, "app.js", rendererAfter);
+  const starterAfter = patchStarterRenderer(starterBefore, canonical);
+  const rendererOutput = replacePackedAsarEntry(upstream, "app.js", rendererAfter);
+  const output = replacePackedAsarEntry(rendererOutput, "starter.js", starterAfter);
 
   // Re-open and verify the generated artifact before returning it.
   const generated = AsarArchive.fromBuffer(output);
   const verifiedRenderer = generated.read("app.js");
-  if (!verifiedRenderer.equals(rendererAfter)) {
-    throw new Error("Generated ASAR did not preserve the patched renderer");
+  const verifiedStarter = generated.read("starter.js");
+  if (!verifiedRenderer.equals(rendererAfter) || !verifiedStarter.equals(starterAfter)) {
+    throw new Error("Generated ASAR did not preserve both patched renderers");
   }
 
   return {
@@ -91,6 +121,8 @@ export function patchAsar(
       patchedSha256: sha256(output),
       rendererBeforeSha256: sha256(rendererBefore),
       rendererAfterSha256: sha256(rendererAfter),
+      starterBeforeSha256: sha256(starterBefore),
+      starterAfterSha256: sha256(starterAfter),
     },
   };
 }
@@ -118,6 +150,10 @@ export function canonicalAdapterOptions(options: AdapterOptions): AdapterOptions
   if (control.hostname.endsWith(".")) {
     throw new Error("Control origin hostname must not have a trailing dot");
   }
+  if (control.port === "0") {
+    throw new Error("Control origin port must be between 1 and 65535");
+  }
+  validateNetworkHostname(control.hostname, "Control origin");
   const isLoopback =
     control.hostname === "127.0.0.1" ||
     control.hostname === "localhost" ||
@@ -175,7 +211,86 @@ function parseDataHost(host: string): URL {
   ) {
     throw new Error("Data host must include a hostname");
   }
+  validateDataHostname(parsed.hostname, parsed.port);
   return parsed;
+}
+
+function validateDataHostname(hostname: string, port: string): void {
+  validateNetworkHostname(hostname, "Data host");
+
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    const address = hostname.slice(1, -1);
+    if (address === "::1") {
+      throw new Error("Data host must not use an unusable IPv6 address");
+    }
+    return;
+  }
+
+  const ipv4Parts = hostname.split(".");
+  if (
+    ipv4Parts.length === 4 &&
+    ipv4Parts.every((part) => /^\d+$/u.test(part))
+  ) {
+    const octets = ipv4Parts.map(Number);
+    const first = octets[0]!;
+    if (first === 127 && (hostname !== "127.0.0.1" || !port)) {
+      throw new Error("Data host must not use an unusable IPv4 address");
+    }
+    return;
+  }
+
+  if (
+    (hostname === "localhost" && !port) ||
+    (hostname.startsWith("localhost") && hostname !== "localhost") ||
+    (hostname.startsWith("127.0.0.1") && hostname !== "127.0.0.1")
+  ) {
+    throw new Error("Data host must be a canonical hostname with valid DNS labels");
+  }
+}
+
+function validateNetworkHostname(hostname: string, label: string): void {
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    const address = hostname.slice(1, -1).toLowerCase();
+    if (address === "::" || address.startsWith("ff")) {
+      throw new Error(`${label} must not use an unusable IPv6 address`);
+    }
+    return;
+  }
+
+  const ipv4Parts = hostname.split(".");
+  if (
+    ipv4Parts.length === 4 &&
+    ipv4Parts.every((part) => /^\d+$/u.test(part))
+  ) {
+    const octets = ipv4Parts.map(Number);
+    const first = octets[0]!;
+    if (
+      octets.some((octet) => octet < 0 || octet > 255) ||
+      hostname === "0.0.0.0" ||
+      hostname === "255.255.255.255" ||
+      (first >= 224 && first <= 239)
+    ) {
+      throw new Error(`${label} must not use an unusable IPv4 address`);
+    }
+    return;
+  }
+
+  if (/^[\d.]+$/u.test(hostname)) {
+    throw new Error(`${label} contains an invalid IPv4 address`);
+  }
+  if (
+    hostname.length > 253 ||
+    !hostname.split(".").every(
+      (part) =>
+        part.length > 0 &&
+        part.length <= 63 &&
+        /^[a-z0-9-]+$/u.test(part) &&
+        !part.startsWith("-") &&
+        !part.endsWith("-"),
+    )
+  ) {
+    throw new Error(`${label} must be a canonical hostname with valid DNS labels`);
+  }
 }
 
 function paddedExpression(

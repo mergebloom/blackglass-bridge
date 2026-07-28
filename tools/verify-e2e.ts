@@ -26,6 +26,7 @@ import {
   type MacOSArtifact,
 } from "./macos-artifact";
 import { readBridgeReleaseManifest } from "./release-manifest";
+import { isSupportedStableSemver } from "./semver";
 
 const rootArgument = Bun.argv[2];
 if (!rootArgument) {
@@ -48,12 +49,23 @@ const runManifest = preparedRun.manifest as typeof preparedRun.manifest & {
 };
 if (
   runManifest.schemaVersion !== 2 ||
-  !/^obsidian-\d+\.\d+\.\d+\.asar$/u.test(runManifest.adapterFileName) ||
+  !isRendererAdapterFileName(runManifest.adapterFileName) ||
   runManifest.releaseManifestFileName !== "bridge-release-manifest.json" ||
   !/^[a-f0-9]{64}$/u.test(runManifest.releaseManifestSha256) ||
   runManifest.explicitUserDataDirHonored !== true
 ) {
   throw new Error("Unsupported or malformed E2E run manifest");
+}
+
+function isRendererAdapterFileName(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const prefix = "obsidian-";
+  const suffix = ".asar";
+  return (
+    value.startsWith(prefix) &&
+    value.endsWith(suffix) &&
+    isSupportedStableSemver(value.slice(prefix.length, -suffix.length))
+  );
 }
 const releaseManifestPath = resolve(root, runManifest.releaseManifestFileName);
 const releaseManifestBytes = Buffer.from(await Bun.file(releaseManifestPath).arrayBuffer());
@@ -70,6 +82,8 @@ if (
     runManifest.compatibilityAsarSha256 ||
   JSON.stringify(releaseManifest.endpoints) !==
     JSON.stringify(runManifest.endpoints) ||
+  releaseManifest.wrapper.profileMode !== 0o700 ||
+  releaseManifest.wrapper.profilePathCanonicalAtSetup !== true ||
   releaseManifest.wrapper.explicitUserDataDirHonored !== true
 ) {
   throw new Error("E2E run manifest is inconsistent with the Bridge release manifest");

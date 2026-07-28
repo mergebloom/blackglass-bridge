@@ -1,13 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  copyFile,
-  lstat,
-  mkdtemp,
-  readFile,
-  rename,
-  rmdir,
-  writeFile,
-} from "node:fs/promises";
+import { copyFile, lstat, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
   patchAsar,
@@ -15,6 +7,7 @@ import {
   RENDERER_PATCH_FORMAT_VERSION,
 } from "../packages/client-adapter/src/patch";
 import {
+  inspectEmbeddedRendererDevModeContract,
   patchMacOSWrapperAsar,
   WRAPPER_INCISION_COUNT,
   WRAPPER_PATCH_FORMAT_VERSION,
@@ -41,8 +34,13 @@ import {
   type BridgeReleaseManifest,
 } from "./release-manifest";
 import { computeTreeIdentity } from "./tree-identity";
+import { computeToolingSourceIdentity } from "./tooling-source";
+import { withPackageStaging } from "./package-staging";
+import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 
-const [sourceArgument, asarArgument, outputArgument, ...flags] = Bun.argv.slice(2);
+const [sourceArgument, asarArgument, outputArgument, ...flags] = Bun.argv.slice(
+  2,
+);
 if (!sourceArgument || !asarArgument || !outputArgument) {
   usage();
 }
@@ -61,20 +59,37 @@ const dataHost = parsedFlags.values.get("--data-host");
 const manifestArgument = parsedFlags.values.get("--manifest");
 const baselineArgument = parsedFlags.values.get("--baseline");
 const officialDmgArgument = parsedFlags.values.get("--official-dmg");
-if (!controlOrigin || !dataHost || !manifestArgument || !officialDmgArgument) usage();
+if (!controlOrigin || !dataHost || !manifestArgument || !officialDmgArgument) {
+  usage();
+}
 
-const sourceApp = await canonicalExistingPath(sourceArgument, "Source app", "directory");
-const patchedAsar = await canonicalExistingPath(asarArgument, "Patched ASAR", "file");
+const sourceApp = await canonicalExistingPath(
+  sourceArgument,
+  "Source app",
+  "directory",
+);
+const patchedAsar = await canonicalExistingPath(
+  asarArgument,
+  "Patched ASAR",
+  "file",
+);
 const officialDmg = await canonicalExistingPath(
   officialDmgArgument,
   "Official release DMG",
   "file",
 );
 const baselinePath = baselineArgument
-  ? await canonicalExistingPath(baselineArgument, "Compatibility baseline", "file")
+  ? await canonicalExistingPath(
+    baselineArgument,
+    "Compatibility baseline",
+    "file",
+  )
   : undefined;
 const outputApp = await canonicalOutputPath(outputArgument, "Output app");
-const manifestPath = await canonicalOutputPath(manifestArgument, "Release manifest");
+const manifestPath = await canonicalOutputPath(
+  manifestArgument,
+  "Release manifest",
+);
 if (!sourceApp.endsWith(".app") || !outputApp.endsWith(".app")) {
   throw new Error("Source and output must be .app bundles");
 }
@@ -82,7 +97,9 @@ if (!manifestPath.endsWith(".json")) {
   throw new Error("Release manifest output must be a .json file");
 }
 if (dirname(manifestPath) !== dirname(outputApp)) {
-  throw new Error("Output app and release manifest must use the same canonical directory");
+  throw new Error(
+    "Output app and release manifest must use the same canonical directory",
+  );
 }
 assertNonOverlappingPaths([
   { label: "Source app", path: sourceApp },
@@ -102,9 +119,11 @@ const sourceAsarBytes = await readFile(sourceAsar);
 const patchedAsarBytes = await readFile(patchedAsar);
 const sourceArchive = AsarArchive.fromBuffer(sourceAsarBytes);
 const patchedArchive = AsarArchive.fromBuffer(patchedAsarBytes);
+const toolingSource = await computeToolingSourceIdentity();
 const sourceVersion = readVersion(sourceArchive);
 const patchedVersion = readVersion(patchedArchive);
 patchedArchive.read("app.js");
+patchedArchive.read("starter.js");
 const unpackedJavaScriptFiles = await discoverUnpackedJavaScriptFiles(
   join(sourceApp, "Contents/Resources"),
 );
@@ -114,12 +133,23 @@ const qualification = await qualifyRendererRelease(
   unpackedJavaScriptFiles,
 );
 const officialDmgSha256 = await sha256File(officialDmg);
-if (officialDmgSha256 !== qualification.loadedBaseline.baseline.officialDmgSha256) {
-  throw new Error("Official release DMG does not match the reviewed compatibility baseline");
+if (
+  officialDmgSha256 !== qualification.loadedBaseline.baseline.officialDmgSha256
+) {
+  throw new Error(
+    "Official release DMG does not match the reviewed compatibility baseline",
+  );
 }
 const sourceAppTree = await computeTreeIdentity(sourceApp);
-if (!treeIdentityEqual(sourceAppTree, qualification.loadedBaseline.baseline.sourceAppTree)) {
-  throw new Error("Source app tree does not match the reviewed official DMG baseline");
+if (
+  !treeIdentityEqual(
+    sourceAppTree,
+    qualification.loadedBaseline.baseline.sourceAppTree,
+  )
+) {
+  throw new Error(
+    "Source app tree does not match the reviewed official DMG baseline",
+  );
 }
 const reproducedRenderer = patchAsar(sourceAsarBytes, {
   controlOrigin,
@@ -142,8 +172,8 @@ const bundleVersion = runText([
   "raw",
   "-o",
   "-",
-    sourceInfoPlist,
-  ]);
+  sourceInfoPlist,
+]);
 if (sourceVersion !== patchedVersion || sourceVersion !== bundleVersion) {
   throw new Error(
     `Version mismatch: bundle=${bundleVersion}, source=${sourceVersion}, adapter=${patchedVersion}`,
@@ -151,9 +181,10 @@ if (sourceVersion !== patchedVersion || sourceVersion !== bundleVersion) {
 }
 
 const sourceWrapperBytes = await readFile(sourceWrapperAsar);
+inspectEmbeddedRendererDevModeContract(sourceAsarBytes, sourceWrapperBytes);
 if (
   generatedSha256(sourceWrapperBytes) !==
-  qualification.loadedBaseline.baseline.sourceWrapperAsarSha256
+    qualification.loadedBaseline.baseline.sourceWrapperAsarSha256
 ) {
   throw new Error(
     "Upstream Electron wrapper does not match the reviewed compatibility baseline",
@@ -161,9 +192,14 @@ if (
 }
 const sourceWrapperDeclaredSha256 = electronAsarIntegrityHash(sourceInfoPlist);
 if (asarHeaderSha256(sourceWrapperBytes) !== sourceWrapperDeclaredSha256) {
-  throw new Error("Upstream Electron wrapper hash does not match Info.plist integrity metadata");
+  throw new Error(
+    "Upstream Electron wrapper hash does not match Info.plist integrity metadata",
+  );
 }
-const sourceBundleIdentifier = plistString(sourceInfoPlist, "CFBundleIdentifier");
+const sourceBundleIdentifier = plistString(
+  sourceInfoPlist,
+  "CFBundleIdentifier",
+);
 const sourceDisplayName = plistString(sourceInfoPlist, "CFBundleDisplayName");
 const sourceBundleName = plistString(sourceInfoPlist, "CFBundleName");
 const sourceExecutableName = plistString(sourceInfoPlist, "CFBundleExecutable");
@@ -198,165 +234,212 @@ await validatePreservedElectronHelpers(
   sourceBundleIdentifier,
 );
 
-const stagingRoot = await mkdtemp(join(dirname(outputApp), ".blackglass-package-"));
-const stagedApp = join(stagingRoot, basename(outputApp));
-const stagedManifest = join(stagingRoot, basename(manifestPath));
-run(["ditto", sourceApp, stagedApp]);
-const stagedCopyTree = await computeTreeIdentity(stagedApp);
-if (!treeIdentityEqual(stagedCopyTree, sourceAppTree)) {
-  throw new Error("Staged app copy does not match the reviewed source tree");
-}
-const infoPlist = join(stagedApp, "Contents/Info.plist");
-const packagedAsar = join(stagedApp, "Contents/Resources/obsidian.asar");
-await copyFile(patchedAsar, packagedAsar);
-if ((await sha256File(packagedAsar)) !== patchedAsarSha256) {
-  throw new Error("Packaged renderer hash does not match the adapter input");
-}
-const generatedWrapper = patchMacOSWrapperAsar(sourceWrapperBytes);
-const packagedWrapperAsar = join(stagedApp, "Contents/Resources/app.asar");
-await writeFile(packagedWrapperAsar, generatedWrapper.buffer);
-setElectronAsarIntegrityHash(infoPlist, generatedWrapper.report.patchedHeaderSha256);
-if (
-  (await sha256File(packagedWrapperAsar)) !== generatedWrapper.report.patchedSha256 ||
-  electronAsarIntegrityHash(infoPlist) !== generatedWrapper.report.patchedHeaderSha256
-) {
-  throw new Error("Packaged Electron wrapper integrity metadata is inconsistent");
-}
-run(["plutil", "-replace", "CFBundleDisplayName", "-string", "Blackglass Bridge", infoPlist]);
-run(["plutil", "-replace", "CFBundleIdentifier", "-string", "com.blackglass.bridge", infoPlist]);
-const helperBundleIdentifiers = await validatePreservedElectronHelpers(
-  stagedApp,
-  sourceDisplayName,
-  sourceBundleIdentifier,
-);
-run(["plutil", "-remove", "CFBundleURLTypes", infoPlist]);
-if (hasPlistKey(infoPlist, "NSUbiquitousContainers")) {
-  run(["plutil", "-remove", "NSUbiquitousContainers", infoPlist]);
-}
-for (const key of [
-  "NSAppleEventsUsageDescription",
-  "NSCalendarsUsageDescription",
-  "NSCameraUsageDescription",
-  "NSContactsUsageDescription",
-  "NSRemindersUsageDescription",
-]) {
-  if (!hasPlistKey(infoPlist, key)) continue;
-  const description = plistString(infoPlist, key);
+await withPackageStaging(outputApp, async (stagingRoot) => {
+  const stagedApp = join(stagingRoot, basename(outputApp));
+  const stagedManifest = join(stagingRoot, basename(manifestPath));
+  run(["ditto", sourceApp, stagedApp]);
+  const stagedCopyTree = await computeTreeIdentity(stagedApp);
+  if (!treeIdentityEqual(stagedCopyTree, sourceAppTree)) {
+    throw new Error("Staged app copy does not match the reviewed source tree");
+  }
+  const infoPlist = join(stagedApp, "Contents/Info.plist");
+  const packagedAsar = join(stagedApp, "Contents/Resources/obsidian.asar");
+  await copyFile(patchedAsar, packagedAsar);
+  if ((await sha256File(packagedAsar)) !== patchedAsarSha256) {
+    throw new Error("Packaged renderer hash does not match the adapter input");
+  }
+  const generatedWrapper = patchMacOSWrapperAsar(sourceWrapperBytes);
+  inspectEmbeddedRendererDevModeContract(
+    patchedAsarBytes,
+    generatedWrapper.buffer,
+  );
+  const packagedWrapperAsar = join(stagedApp, "Contents/Resources/app.asar");
+  await writeFile(packagedWrapperAsar, generatedWrapper.buffer);
+  setElectronAsarIntegrityHash(
+    infoPlist,
+    generatedWrapper.report.patchedHeaderSha256,
+  );
+  if (
+    (await sha256File(packagedWrapperAsar)) !==
+      generatedWrapper.report.patchedSha256 ||
+    electronAsarIntegrityHash(infoPlist) !==
+      generatedWrapper.report.patchedHeaderSha256
+  ) {
+    throw new Error(
+      "Packaged Electron wrapper integrity metadata is inconsistent",
+    );
+  }
   run([
     "plutil",
     "-replace",
-    key,
+    "CFBundleDisplayName",
     "-string",
-    description.replaceAll("Obsidian", "Blackglass Bridge"),
+    "Blackglass Bridge",
     infoPlist,
   ]);
-}
-assertPlistString(infoPlist, "CFBundleDisplayName", "Blackglass Bridge");
-assertPlistString(infoPlist, "CFBundleName", sourceBundleName);
-assertPlistString(infoPlist, "CFBundleIdentifier", "com.blackglass.bridge");
-assertPlistString(infoPlist, "CFBundleExecutable", sourceExecutableName);
-if (hasPlistKey(infoPlist, "CFBundleURLTypes")) {
-  throw new Error("Packaged app must not claim the upstream obsidian:// URL scheme");
-}
-run(["codesign", "--force", "--deep", "--sign", "-", stagedApp]);
-run(["codesign", "--verify", "--deep", "--strict", stagedApp]);
+  run([
+    "plutil",
+    "-replace",
+    "CFBundleIdentifier",
+    "-string",
+    "com.blackglass.bridge",
+    infoPlist,
+  ]);
+  const helperBundleIdentifiers = await validatePreservedElectronHelpers(
+    stagedApp,
+    sourceDisplayName,
+    sourceBundleIdentifier,
+  );
+  run(["plutil", "-remove", "CFBundleURLTypes", infoPlist]);
+  if (hasPlistKey(infoPlist, "NSUbiquitousContainers")) {
+    run(["plutil", "-remove", "NSUbiquitousContainers", infoPlist]);
+  }
+  for (
+    const key of [
+      "NSAppleEventsUsageDescription",
+      "NSCalendarsUsageDescription",
+      "NSCameraUsageDescription",
+      "NSContactsUsageDescription",
+      "NSMicrophoneUsageDescription",
+      "NSRemindersUsageDescription",
+    ]
+  ) {
+    if (!hasPlistKey(infoPlist, key)) continue;
+    const description = plistString(infoPlist, key);
+    run([
+      "plutil",
+      "-replace",
+      key,
+      "-string",
+      description.replaceAll("Obsidian", "Blackglass Bridge"),
+      infoPlist,
+    ]);
+  }
+  assertPlistString(infoPlist, "CFBundleDisplayName", "Blackglass Bridge");
+  assertPlistString(infoPlist, "CFBundleName", sourceBundleName);
+  assertPlistString(infoPlist, "CFBundleIdentifier", "com.blackglass.bridge");
+  assertPlistString(infoPlist, "CFBundleExecutable", sourceExecutableName);
+  if (hasPlistKey(infoPlist, "CFBundleURLTypes")) {
+    throw new Error(
+      "Packaged app must not claim the upstream obsidian:// URL scheme",
+    );
+  }
+  run(["codesign", "--force", "--deep", "--sign", "-", stagedApp]);
+  run(["codesign", "--verify", "--deep", "--strict", stagedApp]);
 
-const macOSArtifact = await inspectMacOSArtifact(stagedApp);
-const bridgeVersion = await readBridgeVersion();
-const releaseManifest: BridgeReleaseManifest = {
-  schemaVersion: BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION,
-  bridgeVersion,
-  rendererVersion: sourceVersion,
-  compatibilityBaseline: qualification.report.baseline,
-  source: {
-    officialDmgSha256,
-    appTree: sourceAppTree,
-    rendererAsarSha256: sourceAsarSha256,
-    wrapperAsarSha256: generatedWrapper.report.upstreamSha256,
-  },
-  patcher: {
-    renderer: {
-      formatVersion: RENDERER_PATCH_FORMAT_VERSION,
-      incisions: RENDERER_INCISION_COUNT,
+  const macOSArtifact = await inspectMacOSArtifact(stagedApp);
+  const bridgeVersion = await readBridgeVersion();
+  const releaseManifest: BridgeReleaseManifest = {
+    schemaVersion: BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION,
+    bridgeVersion,
+    rendererVersion: sourceVersion,
+    compatibilityBaseline: qualification.report.baseline,
+    source: {
+      officialDmgSha256,
+      appTree: sourceAppTree,
+      rendererAsarSha256: sourceAsarSha256,
+      wrapperAsarSha256: generatedWrapper.report.upstreamSha256,
     },
-    wrapper: {
-      formatVersion: WRAPPER_PATCH_FORMAT_VERSION,
-      incisions: WRAPPER_INCISION_COUNT,
+    patcher: {
+      renderer: {
+        formatVersion: RENDERER_PATCH_FORMAT_VERSION,
+        incisions: RENDERER_INCISION_COUNT,
+      },
+      wrapper: {
+        formatVersion: WRAPPER_PATCH_FORMAT_VERSION,
+        incisions: WRAPPER_INCISION_COUNT,
+      },
     },
-  },
-  endpoints: {
-    controlOrigin: reproducedRenderer.report.controlOrigin,
-    dataHost: reproducedRenderer.report.dataHost,
-  },
-  renderer: reproducedRenderer.report,
-  wrapper: generatedWrapper.report,
-  macOS: publicMacOSArtifact(macOSArtifact),
-  reproduction: {
-    officialDmgMatchedBaseline: true,
-    sourceAppTreeMatchedBaseline: true,
-    stagedCopyTreeMatchedSource: true,
-    reviewedSourceRenderer: true,
-    sourceWrapperMatchesBaseline: true,
-    rendererByteIdentical: true,
-    packagedRendererByteIdentical: true,
-    packagedWrapperIntegrityVerified: true,
-  },
-};
-assertBridgeReleaseManifest(releaseManifest);
-await writeFile(stagedManifest, `${JSON.stringify(releaseManifest, null, 2)}\n`, {
-  flag: "wx",
-  mode: 0o600,
-});
-await publishAtomically(stagedApp, outputApp, stagedManifest, manifestPath);
-await rmdir(stagingRoot);
-
-console.log(
-  JSON.stringify(
+    endpoints: {
+      controlOrigin: reproducedRenderer.report.controlOrigin,
+      dataHost: reproducedRenderer.report.dataHost,
+    },
+    toolingSource,
+    renderer: reproducedRenderer.report,
+    wrapper: generatedWrapper.report,
+    macOS: publicMacOSArtifact(macOSArtifact),
+    reproduction: {
+      officialDmgMatchedBaseline: true,
+      sourceAppTreeMatchedBaseline: true,
+      stagedCopyTreeMatchedSource: true,
+      reviewedSourceRenderer: true,
+      sourceWrapperMatchesBaseline: true,
+      rendererByteIdentical: true,
+      packagedRendererByteIdentical: true,
+      packagedWrapperIntegrityVerified: true,
+    },
+  };
+  assertBridgeReleaseManifest(releaseManifest);
+  await writeFile(
+    stagedManifest,
+    `${JSON.stringify(releaseManifest, null, 2)}\n`,
     {
-      version: sourceVersion,
-      sourceApp,
-      outputApp,
-      sourceAsarSha256,
-      patchedAsarSha256,
-      wrapperUpstreamSha256: generatedWrapper.report.upstreamSha256,
-      wrapperPatchedSha256: generatedWrapper.report.patchedSha256,
-      wrapperUpstreamHeaderSha256: generatedWrapper.report.upstreamHeaderSha256,
-      wrapperPatchedHeaderSha256: generatedWrapper.report.patchedHeaderSha256,
-      profileDirectory: generatedWrapper.report.profileDirectory,
-      explicitUserDataDirHonored:
-        generatedWrapper.report.explicitUserDataDirHonored,
-      upstreamUpdatesDisabled: generatedWrapper.report.upstreamUpdatesDisabled,
-      embeddedRendererOnly: generatedWrapper.report.embeddedRendererOnly,
-      sourceBundleIdentifier,
-      bundleIdentifier: releaseManifest.macOS.bundleIdentifier,
-      bundleName: releaseManifest.macOS.bundleName,
-      displayName: releaseManifest.macOS.displayName,
-      executableName: releaseManifest.macOS.executableName,
-      helperBundleIdentifiers,
-      registeredUrlSchemes: [],
-      signature: "ad-hoc",
-      manifestPath,
-      releaseManifest,
+      flag: "wx",
+      mode: 0o600,
     },
-    null,
-    2,
-  ),
-);
+  );
+  await publishAtomically(stagedApp, outputApp, stagedManifest, manifestPath);
+
+  console.log(
+    JSON.stringify(
+      {
+        version: sourceVersion,
+        sourceApp,
+        outputApp,
+        sourceAsarSha256,
+        patchedAsarSha256,
+        wrapperUpstreamSha256: generatedWrapper.report.upstreamSha256,
+        wrapperPatchedSha256: generatedWrapper.report.patchedSha256,
+        wrapperUpstreamHeaderSha256:
+          generatedWrapper.report.upstreamHeaderSha256,
+        wrapperPatchedHeaderSha256: generatedWrapper.report.patchedHeaderSha256,
+        profileDirectory: generatedWrapper.report.profileDirectory,
+        profileMode: generatedWrapper.report.profileMode,
+        profilePathCanonicalAtSetup:
+          generatedWrapper.report.profilePathCanonicalAtSetup,
+        explicitUserDataDirHonored:
+          generatedWrapper.report.explicitUserDataDirHonored,
+        upstreamUpdatesDisabled:
+          generatedWrapper.report.upstreamUpdatesDisabled,
+        embeddedRendererOnly: generatedWrapper.report.embeddedRendererOnly,
+        sourceBundleIdentifier,
+        bundleIdentifier: releaseManifest.macOS.bundleIdentifier,
+        bundleName: releaseManifest.macOS.bundleName,
+        displayName: releaseManifest.macOS.displayName,
+        executableName: releaseManifest.macOS.executableName,
+        helperBundleIdentifiers,
+        registeredUrlSchemes: [],
+        signature: "ad-hoc",
+        manifestPath,
+        releaseManifest,
+      },
+      null,
+      2,
+    ),
+  );
+});
 
 function readVersion(archive: AsarArchive): string {
-  const metadata = JSON.parse(archive.read("package.json").toString("utf8")) as {
+  const metadata = JSON.parse(
+    archive.read("package.json").toString("utf8"),
+  ) as {
     version?: string;
   };
-  if (!metadata.version) {
-    throw new Error("ASAR has no package version");
+  if (!isSupportedStableSemver(metadata.version)) {
+    throw new Error("ASAR has no supported semantic package version");
   }
   return metadata.version;
 }
 
 function run(arguments_: string[]): void {
-  const result = Bun.spawnSync(arguments_, { stdout: "inherit", stderr: "inherit" });
+  const result = Bun.spawnSync(arguments_, {
+    stdout: "inherit",
+    stderr: "inherit",
+  });
   if (result.exitCode !== 0) {
-    throw new Error(`${arguments_[0]} failed with exit code ${result.exitCode}`);
+    throw new Error(
+      `${arguments_[0]} failed with exit code ${result.exitCode}`,
+    );
   }
 }
 
@@ -379,7 +462,11 @@ function hasPlistKey(infoPlist: string, key: string): boolean {
   }).exitCode === 0;
 }
 
-function assertPlistString(infoPlist: string, key: string, expected: string): void {
+function assertPlistString(
+  infoPlist: string,
+  key: string,
+  expected: string,
+): void {
   const actual = plistString(infoPlist, key);
   if (actual !== expected) {
     throw new Error(`Packaged plist ${key} is ${actual}, expected ${expected}`);
@@ -418,8 +505,7 @@ async function readBridgeVersion(): Promise<string> {
     await readFile(join(import.meta.dir, "../package.json"), "utf8"),
   ) as { version?: unknown };
   if (
-    typeof metadata.version !== "string" ||
-    !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(metadata.version)
+    !isSupportedSemver(metadata.version)
   ) {
     throw new Error("Bridge package has no semantic version");
   }
@@ -440,7 +526,9 @@ async function publishAtomically(
       await rename(outputApp, stagedApp);
     } catch (rollbackError) {
       throw new Error(
-        `Release manifest publication failed and app rollback also failed: ${String(error)}; ${String(rollbackError)}`,
+        `Release manifest publication failed and app rollback also failed: ${
+          String(error)
+        }; ${String(rollbackError)}`,
       );
     }
     throw error;
@@ -473,21 +561,38 @@ async function validatePreservedElectronHelpers(
     const sourceHelperName = `${sourceDisplayName} Helper${helper.nameSuffix}`;
     const sourceHelperApp = join(frameworks, `${sourceHelperName}.app`);
     const helperInfoPlist = join(sourceHelperApp, "Contents/Info.plist");
-    const sourceHelperIdentifier = `${sourceBundleIdentifier}.helper${helper.identifierSuffix}`;
-    const helperExecutable = join(sourceHelperApp, "Contents/MacOS", sourceHelperName);
+    const sourceHelperIdentifier =
+      `${sourceBundleIdentifier}.helper${helper.identifierSuffix}`;
+    const helperExecutable = join(
+      sourceHelperApp,
+      "Contents/MacOS",
+      sourceHelperName,
+    );
 
     try {
-      if (!(await lstat(sourceHelperApp)).isDirectory()) throw new Error("not a directory");
+      if (!(await lstat(sourceHelperApp)).isDirectory()) {
+        throw new Error("not a directory");
+      }
     } catch {
-      throw new Error(`Missing expected Electron helper bundle: ${sourceHelperApp}`);
+      throw new Error(
+        `Missing expected Electron helper bundle: ${sourceHelperApp}`,
+      );
     }
-    assertPlistString(helperInfoPlist, "CFBundleIdentifier", sourceHelperIdentifier);
+    assertPlistString(
+      helperInfoPlist,
+      "CFBundleIdentifier",
+      sourceHelperIdentifier,
+    );
     assertPlistString(helperInfoPlist, "CFBundleDisplayName", sourceHelperName);
     assertPlistString(helperInfoPlist, "CFBundleExecutable", sourceHelperName);
     try {
-      if (!(await lstat(helperExecutable)).isFile()) throw new Error("not a file");
+      if (!(await lstat(helperExecutable)).isFile()) {
+        throw new Error("not a file");
+      }
     } catch {
-      throw new Error(`Missing expected Electron helper executable: ${helperExecutable}`);
+      throw new Error(
+        `Missing expected Electron helper executable: ${helperExecutable}`,
+      );
     }
     helperBundleIdentifiers.push(sourceHelperIdentifier);
   }

@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { BridgeReleaseManifest } from "../tools/release-manifest";
+import {
+  assertBridgeReleaseManifest,
+  type BridgeReleaseManifest,
+} from "../tools/release-manifest";
 import { canonicalOutputPath } from "../tools/path-safety";
 import {
   assertReleaseValidationRecord,
@@ -21,9 +24,18 @@ const tree = (character: string) => ({
   symlinks: 1,
   fileBytes: 42,
 });
+const toolingSource = {
+  formatVersion: 1 as const,
+  scope: "release-critical-v1" as const,
+  gitRevision: "f".repeat(40),
+  worktreeClean: true,
+  treeSha256: digest("0"),
+  files: 42,
+  fileBytes: 4_200,
+};
 
 const macOS = {
-  schemaVersion: 2 as const,
+  schemaVersion: 3 as const,
   bundleIdentifier: "com.blackglass.bridge" as const,
   bundleName: "Obsidian" as const,
   displayName: "Blackglass Bridge" as const,
@@ -44,6 +56,8 @@ const macOS = {
     "md.obsidian.helper.Renderer",
   ],
   profileDirectory: "Blackglass Bridge" as const,
+  profileMode: 448 as const,
+  profilePathCanonicalAtSetup: true as const,
   explicitUserDataDirHonored: true as const,
   upstreamUpdatesDisabled: true as const,
   embeddedRendererOnly: true as const,
@@ -53,12 +67,12 @@ const macOS = {
 
 function manifest(): BridgeReleaseManifest {
   return {
-    schemaVersion: 2,
+    schemaVersion: 4,
     bridgeVersion: "0.1.1",
     rendererVersion: "1.12.7",
     compatibilityBaseline: {
       id: "obsidian-macos-1.12.7",
-      schemaVersion: 3,
+      schemaVersion: 4,
       sha256: digest("8"),
     },
     source: {
@@ -68,27 +82,32 @@ function manifest(): BridgeReleaseManifest {
       wrapperAsarSha256: digest("c"),
     },
     patcher: {
-      renderer: { formatVersion: 2, incisions: 2 },
-      wrapper: { formatVersion: 1, incisions: 3 },
+      renderer: { formatVersion: 3, incisions: 3 },
+      wrapper: { formatVersion: 2, incisions: 3 },
     },
     endpoints: {
       controlOrigin: "https://blackglass.example.com",
       dataHost: "blackglass-data.example.com",
     },
+    toolingSource,
     renderer: {
-      patchFormatVersion: 2,
-      incisionCount: 2,
+      patchFormatVersion: 3,
+      incisionCount: 3,
       controlOrigin: "https://blackglass.example.com",
       dataHost: "blackglass-data.example.com",
       upstreamSha256: digest("b"),
       patchedSha256: digest("3"),
       rendererBeforeSha256: digest("d"),
       rendererAfterSha256: digest("e"),
+      starterBeforeSha256: digest("1"),
+      starterAfterSha256: digest("2"),
     },
     wrapper: {
-      patchFormatVersion: 1,
+      patchFormatVersion: 2,
       incisionCount: 3,
       profileDirectory: "Blackglass Bridge",
+      profileMode: 448,
+      profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
       upstreamUpdatesDisabled: true,
       embeddedRendererOnly: true,
@@ -115,7 +134,7 @@ function manifest(): BridgeReleaseManifest {
 
 function qualification(): ReleaseQualification {
   return {
-    schemaVersion: 2,
+    schemaVersion: 4,
     qualifiedAt: "2026-07-28T12:00:00.000Z",
     passed: true,
     platform: "macOS Apple Silicon",
@@ -125,6 +144,7 @@ function qualification(): ReleaseQualification {
       controlOrigin: "https://blackglass.example.com",
       dataHost: "blackglass-data.example.com",
     },
+    toolingSource,
     artifacts: {
       client: macOS,
       compatibilityAsarSha256: digest("3"),
@@ -148,6 +168,11 @@ function qualification(): ReleaseQualification {
       postRestartSync: true,
       sourceClientRemoved: true,
       coldRecovery: true,
+      finderLaunchServicesSmoke: true,
+      defaultProfileIsolation: true,
+      starterNoVaultFlow: true,
+      starterControlRouting: true,
+      noLaunchCrashOrEarlyExit: true,
     },
     recovery: {
       expectedFiles: 14,
@@ -165,6 +190,7 @@ function qualification(): ReleaseQualification {
       recoveryLaunchSha256: digest("6"),
       recoveryUiStateSha256: digest("7"),
       recoveryScreenshotSha256: digest("8"),
+      finderLaunchSmokeSha256: digest("f"),
       networkEvidenceSha256: {
         "client-a": digest("9"),
         "client-b": digest("a"),
@@ -251,6 +277,46 @@ describe("generated release validation records", () => {
       symlinks: 0,
     };
     expect(() => assertReleaseValidationRecord(record)).toThrow();
+  });
+
+  test("rejects noncanonical semantic versions in manifests and records", () => {
+    const invalidBridgeVersions = [
+      "01.2.3",
+      "1.02.3",
+      "1.2.03",
+      "1.2.3-alpha..1",
+      "1.2.3-alpha.",
+      "1.2.3-.alpha",
+      "1.2.3-alpha.01",
+      "1.2.3+build",
+    ];
+    for (const version of invalidBridgeVersions) {
+      const candidateManifest = structuredClone(manifest()) as any;
+      candidateManifest.bridgeVersion = version;
+      expect(() => assertBridgeReleaseManifest(candidateManifest), version).toThrow();
+
+      const candidateRecord = buildReleaseValidationRecord({
+        manifest: manifest(),
+        qualification: qualification(),
+        qualificationSha256: digest("f"),
+      }) as any;
+      candidateRecord.bridgeVersion = version;
+      expect(() => assertReleaseValidationRecord(candidateRecord), version).toThrow();
+    }
+
+    for (const version of ["01.12.7", "1.12.07", "1.12.7-alpha"]) {
+      const candidateManifest = structuredClone(manifest()) as any;
+      candidateManifest.rendererVersion = version;
+      expect(() => assertBridgeReleaseManifest(candidateManifest), version).toThrow();
+
+      const candidateRecord = buildReleaseValidationRecord({
+        manifest: manifest(),
+        qualification: qualification(),
+        qualificationSha256: digest("f"),
+      }) as any;
+      candidateRecord.rendererVersion = version;
+      expect(() => assertReleaseValidationRecord(candidateRecord), version).toThrow();
+    }
   });
 
   test("refuses overwrite and symlink output targets", async () => {

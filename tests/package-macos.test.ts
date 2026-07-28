@@ -107,6 +107,8 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       displayName: "Blackglass Bridge",
       executableName: "Obsidian",
       profileDirectory: "Blackglass Bridge",
+      profileMode: 0o700,
+      profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
       upstreamUpdatesDisabled: true,
       embeddedRendererOnly: true,
@@ -120,12 +122,12 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       signature: "ad-hoc",
     });
     expect(report.releaseManifest).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 4,
       rendererVersion: "1.12.7",
       endpoints,
       patcher: {
-        renderer: { formatVersion: 2, incisions: 2 },
-        wrapper: { formatVersion: 1, incisions: 3 },
+        renderer: { formatVersion: 3, incisions: 3 },
+        wrapper: { formatVersion: 2, incisions: 3 },
       },
       reproduction: {
         officialDmgMatchedBaseline: true,
@@ -158,6 +160,9 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
     expect(plistString(infoPlist, "CFBundleDisplayName")).toBe("Blackglass Bridge");
     expect(plistString(infoPlist, "CFBundleName")).toBe("Obsidian");
     expect(plistString(infoPlist, "CFBundleExecutable")).toBe("Obsidian");
+    expect(plistString(infoPlist, "NSMicrophoneUsageDescription")).toBe(
+      "Allow Blackglass Bridge to record audio.",
+    );
     expect(await Bun.file(join(outputApp, "Contents/MacOS/Obsidian")).exists()).toBe(true);
     expect(hasPlistKey(infoPlist, "CFBundleURLTypes")).toBe(false);
     expect(hasPlistKey(infoPlist, "NSUbiquitousContainers")).toBe(false);
@@ -183,6 +188,8 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       displayName: "Blackglass Bridge",
       executableName: "Obsidian",
       profileDirectory: "Blackglass Bridge",
+      profileMode: 0o700,
+      profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
       upstreamUpdatesDisabled: true,
       embeddedRendererOnly: true,
@@ -269,7 +276,12 @@ function makeRendererArchive(): Buffer {
       `var dw=${controlExpression};if(${hostnameCondition})throw Error();` +
         'gw("/user/signin");socket.send({op:"ping"});',
     ),
-    "main.js": Buffer.from('ipcMain.on("is-dev",()=>{});'),
+    "main.js": Buffer.from(
+      'module.exports=function(c,i,l){ipcMain.on("is-dev",t=>{t.returnValue=l})}',
+    ),
+    "starter.js": Buffer.from(
+      `var sa=${controlExpression};gw("/user/signin");`,
+    ),
     "index.html": Buffer.from('<script src="app.js"></script>'),
     "package.json": Buffer.from(JSON.stringify({ version: "1.12.7" })),
   });
@@ -317,7 +329,7 @@ async function testCompatibilityBaseline(
     unpackedJavaScriptFiles,
   );
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     id: "synthetic-obsidian-1.12.7",
     rendererVersion: discovered.rendererVersion,
     officialDmgSha256: createHash("sha256")
@@ -337,6 +349,9 @@ async function testCompatibilityBaseline(
     },
     anchors,
     controlPlaneRoutes: discoveredWithUnpacked.controlPlaneRoutes,
+    controlPlaneRouteLocations: discoveredWithUnpacked.controlPlaneRouteLocations,
+    controlPlaneRequestHelpers: discoveredWithUnpacked.controlPlaneRequestHelpers,
+    networkConstructors: discoveredWithUnpacked.networkConstructors,
     syncOperations: discoveredWithUnpacked.syncOperations,
     syncOperationLocations: discoveredWithUnpacked.syncOperationLocations,
     syncMessageShapes: discoveredWithUnpacked.syncMessageShapes,
@@ -476,6 +491,14 @@ queueUpdate();
 let updatedAsarPath = '';
 let version = '';
 let candidateFile = '';
+function loadApp(asarPath) {
+	let fn = require(path.join(asarPath, 'main.js'));
+	if (fn) {
+		fn(asarPath, updateEvents);
+		return true;
+	}
+	return false;
+}
 if (isV2MoreRecent(app.getVersion(), version)) {
 \t\tupdatedAsarPath = path.join(dataPath, candidateFile);
 \t\tupdatedAsarVersion = version;
@@ -506,6 +529,7 @@ function sourceInfoPlist(wrapperSha256: string): string {
     <key>CFBundleURLSchemes</key><array><string>obsidian</string></array>
   </dict></array>
   <key>NSUbiquitousContainers</key><dict><key>iCloud.md.obsidian</key><dict/></dict>
+  <key>NSMicrophoneUsageDescription</key><string>Allow Obsidian to record audio.</string>
 </dict></plist>
 `;
 }

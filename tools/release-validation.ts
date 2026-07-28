@@ -11,20 +11,26 @@ import {
 import type { MacOSArtifact } from "./macos-artifact";
 import type { BridgeReleaseManifest } from "./release-manifest";
 import type { ServerArtifact } from "./server-artifact";
+import {
+  assertToolingSourceIdentity,
+  type ToolingSourceIdentity,
+} from "./tooling-source";
+import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 
-export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 3;
+export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 5;
 
 type PublicMacOSArtifact = Omit<MacOSArtifact, "appPath">;
 type PublicServerArtifact = Omit<ServerArtifact, "binaryPath">;
 
 export interface ReleaseQualification {
-  schemaVersion: 2;
+  schemaVersion: 4;
   qualifiedAt: string;
   passed: true;
   platform: "macOS Apple Silicon";
   bridgeVersion: string;
   rendererVersion: string;
   endpoints: AdapterOptions;
+  toolingSource: ToolingSourceIdentity;
   artifacts: {
     client: PublicMacOSArtifact;
     compatibilityAsarSha256: string;
@@ -39,6 +45,11 @@ export interface ReleaseQualification {
     postRestartSync: true;
     sourceClientRemoved: true;
     coldRecovery: true;
+    finderLaunchServicesSmoke: true;
+    defaultProfileIsolation: true;
+    starterNoVaultFlow: true;
+    starterControlRouting: true;
+    noLaunchCrashOrEarlyExit: true;
   };
   recovery: {
     expectedFiles: number;
@@ -56,6 +67,7 @@ export interface ReleaseQualification {
     recoveryLaunchSha256: string;
     recoveryUiStateSha256: string;
     recoveryScreenshotSha256: string;
+    finderLaunchSmokeSha256: string;
     networkEvidenceSha256: {
       "client-a": string;
       "client-b": string;
@@ -79,6 +91,7 @@ export interface ReleaseValidationRecord {
   compatibilityBaseline: BridgeReleaseManifest["compatibilityBaseline"];
   source: BridgeReleaseManifest["source"];
   endpoints: AdapterOptions;
+  toolingSource: ToolingSourceIdentity;
   patcher: BridgeReleaseManifest["patcher"];
   artifacts: {
     compatibilityAsarSha256: string;
@@ -101,7 +114,10 @@ export function releaseValidationRecordFileName(
   bridgeVersion: string,
   rendererVersion: string,
 ): string {
-  if (!isSemver(bridgeVersion) || !/^\d+\.\d+\.\d+$/u.test(rendererVersion)) {
+  if (
+    !isSupportedSemver(bridgeVersion) ||
+    !isSupportedStableSemver(rendererVersion)
+  ) {
     throw new Error("Cannot name a validation record for invalid release versions");
   }
   return `blackglass-bridge-${bridgeVersion}-obsidian-${rendererVersion}-qualification.json`;
@@ -124,6 +140,7 @@ export function buildReleaseValidationRecord(input: {
     compatibilityBaseline: manifest.compatibilityBaseline,
     source: manifest.source,
     endpoints: manifest.endpoints,
+    toolingSource: manifest.toolingSource,
     patcher: manifest.patcher,
     artifacts: {
       compatibilityAsarSha256: manifest.renderer.patchedSha256,
@@ -151,7 +168,7 @@ export function assertReleaseQualification(
 ): asserts value is ReleaseQualification {
   if (
     !isRecord(value) ||
-    value.schemaVersion !== 2 ||
+    value.schemaVersion !== 4 ||
     value.passed !== true ||
     value.platform !== "macOS Apple Silicon" ||
     value.bridgeVersion !== manifest.bridgeVersion ||
@@ -165,6 +182,13 @@ export function assertReleaseQualification(
     !isPublicServerArtifact(value.artifacts.server)
   ) {
     throw new Error("Qualification does not bind the exact release artifacts");
+  }
+  assertToolingSourceIdentity(value.toolingSource);
+  if (
+    value.toolingSource.worktreeClean !== true ||
+    !same(value.toolingSource, manifest.toolingSource)
+  ) {
+    throw new Error("Qualification does not bind the clean release tooling source");
   }
   if (!isPassedWorkflow(value.workflow)) {
     throw new Error("Qualification does not contain the required passed workflow");
@@ -184,10 +208,10 @@ export function assertReleaseValidationRecord(
     value.generatedBy !== "tools/write-validation-record.ts" ||
     value.passed !== true ||
     !isIsoDate(value.validatedAt) ||
-    !isSemver(value.bridgeVersion) ||
-    !/^\d+\.\d+\.\d+$/u.test(String(value.rendererVersion ?? "")) ||
+    !isSupportedSemver(value.bridgeVersion) ||
+    !isSupportedStableSemver(value.rendererVersion) ||
     !isRecord(value.compatibilityBaseline) ||
-    value.compatibilityBaseline.schemaVersion !== 3 ||
+    value.compatibilityBaseline.schemaVersion !== 4 ||
     typeof value.compatibilityBaseline.id !== "string" ||
     !isSha256(value.compatibilityBaseline.sha256) ||
     !isRecord(value.source) ||
@@ -198,6 +222,7 @@ export function assertReleaseValidationRecord(
     !isRecord(value.endpoints) ||
     typeof value.endpoints.controlOrigin !== "string" ||
     typeof value.endpoints.dataHost !== "string" ||
+    !isRecord(value.toolingSource) ||
     !isRecord(value.patcher) ||
     !isRecord(value.artifacts) ||
     !isSha256(value.artifacts.compatibilityAsarSha256) ||
@@ -211,6 +236,10 @@ export function assertReleaseValidationRecord(
     !isSha256(value.packagedClientE2E.qualificationSha256)
   ) {
     throw new Error("Invalid release validation record");
+  }
+  assertToolingSourceIdentity(value.toolingSource);
+  if (value.toolingSource.worktreeClean !== true) {
+    throw new Error("Release validation record does not bind a clean tooling source");
   }
   let canonicalEndpoints: AdapterOptions;
   try {
@@ -242,13 +271,15 @@ export function assertReleaseValidationRecord(
   assertEvidence(value.packagedClientE2E.evidence);
   const macOS = value.artifacts.macOS;
   if (
-    macOS.schemaVersion !== 2 ||
+    macOS.schemaVersion !== 3 ||
     macOS.bundleIdentifier !== "com.blackglass.bridge" ||
     macOS.bundleName !== "Obsidian" ||
     macOS.displayName !== "Blackglass Bridge" ||
     macOS.executableName !== "Obsidian" ||
     macOS.version !== value.rendererVersion ||
     macOS.profileDirectory !== "Blackglass Bridge" ||
+    macOS.profileMode !== 448 ||
+    macOS.profilePathCanonicalAtSetup !== true ||
     macOS.explicitUserDataDirHonored !== true ||
     macOS.upstreamUpdatesDisabled !== true ||
     macOS.embeddedRendererOnly !== true ||
@@ -297,6 +328,7 @@ function assertEvidence(value: unknown): void {
     !isSha256(value.recoveryLaunchSha256) ||
     !isSha256(value.recoveryUiStateSha256) ||
     !isSha256(value.recoveryScreenshotSha256) ||
+    !isSha256(value.finderLaunchSmokeSha256) ||
     !isRecord(value.networkEvidenceSha256) ||
     !isSha256(value.networkEvidenceSha256["client-a"]) ||
     !isSha256(value.networkEvidenceSha256["client-b"]) ||
@@ -323,7 +355,12 @@ function isPassedWorkflow(value: unknown): value is ReleaseQualification["workfl
       value.gracefulServerRestart === true &&
       value.postRestartSync === true &&
       value.sourceClientRemoved === true &&
-      value.coldRecovery === true,
+      value.coldRecovery === true &&
+      value.finderLaunchServicesSmoke === true &&
+      value.defaultProfileIsolation === true &&
+      value.starterNoVaultFlow === true &&
+      value.starterControlRouting === true &&
+      value.noLaunchCrashOrEarlyExit === true,
   );
 }
 
@@ -345,7 +382,7 @@ function isPublicServerArtifact(value: unknown): value is PublicServerArtifact {
       value.schemaVersion === 2 &&
       value.name === "blackglass-server" &&
       value.binaryName === "blackglass-server" &&
-      isSemver(value.version) &&
+      isSupportedSemver(value.version) &&
       typeof value.sourceRevision === "string" &&
       /^[a-f0-9]{40}$/u.test(value.sourceRevision) &&
       isSha256(value.sha256) &&
@@ -381,10 +418,6 @@ function isTreeIdentity(value: unknown): boolean {
 
 function isIsoDate(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
-}
-
-function isSemver(value: unknown): value is string {
-  return typeof value === "string" && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(value);
 }
 
 function isSha256(value: unknown): value is string {

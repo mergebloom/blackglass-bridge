@@ -14,11 +14,16 @@ import {
 } from "../packages/client-adapter/src/wrapper";
 import type { MacOSArtifact } from "./macos-artifact";
 import {
+  assertToolingSourceIdentity,
+  type ToolingSourceIdentity,
+} from "./tooling-source";
+import {
   TREE_IDENTITY_FORMAT_VERSION,
   type TreeIdentity,
 } from "./tree-identity";
+import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 
-export const BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION = 2;
+export const BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION = 4;
 
 export interface BridgeReleaseManifest {
   schemaVersion: typeof BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION;
@@ -46,6 +51,7 @@ export interface BridgeReleaseManifest {
     };
   };
   endpoints: AdapterOptions;
+  toolingSource: ToolingSourceIdentity;
   renderer: AdapterReport;
   wrapper: WrapperPatchReport;
   macOS: Omit<MacOSArtifact, "appPath">;
@@ -78,16 +84,16 @@ export function assertBridgeReleaseManifest(
   }
   if (
     typeof value.bridgeVersion !== "string" ||
-    !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(value.bridgeVersion) ||
+    !isSupportedSemver(value.bridgeVersion) ||
     typeof value.rendererVersion !== "string" ||
-    !/^\d+\.\d+\.\d+$/u.test(value.rendererVersion)
+    !isSupportedStableSemver(value.rendererVersion)
   ) {
     throw new Error("Bridge release manifest has invalid versions");
   }
   if (
     !isRecord(value.compatibilityBaseline) ||
     typeof value.compatibilityBaseline.id !== "string" ||
-    value.compatibilityBaseline.schemaVersion !== 3 ||
+    value.compatibilityBaseline.schemaVersion !== 4 ||
     !isSha256(value.compatibilityBaseline.sha256)
   ) {
     throw new Error("Bridge release manifest has an invalid compatibility baseline");
@@ -115,6 +121,7 @@ export function assertBridgeReleaseManifest(
   if (!isRecord(value.endpoints)) {
     throw new Error("Bridge release manifest has no endpoints");
   }
+  assertToolingSourceIdentity(value.toolingSource);
   const endpoints = canonicalAdapterOptions({
     controlOrigin: String(value.endpoints.controlOrigin ?? ""),
     dataHost: String(value.endpoints.dataHost ?? ""),
@@ -133,6 +140,8 @@ export function assertBridgeReleaseManifest(
     value.renderer.patchedSha256,
     value.renderer.rendererBeforeSha256,
     value.renderer.rendererAfterSha256,
+    value.renderer.starterBeforeSha256,
+    value.renderer.starterAfterSha256,
     value.wrapper.upstreamSha256,
     value.wrapper.patchedSha256,
     value.wrapper.upstreamHeaderSha256,
@@ -163,7 +172,7 @@ export function assertBridgeReleaseManifest(
     value.macOS.embeddedAsarSha256 !== value.renderer.patchedSha256 ||
     value.macOS.embeddedWrapperAsarSha256 !== value.wrapper.patchedSha256 ||
     value.macOS.embeddedWrapperHeaderSha256 !== value.wrapper.patchedHeaderSha256 ||
-    value.macOS.schemaVersion !== 2 ||
+    value.macOS.schemaVersion !== 3 ||
     value.macOS.applicationTreeSha256 !== value.macOS.applicationTreeIdentity.sha256
   ) {
     throw new Error("Bridge release manifest artifact bindings are inconsistent");
@@ -175,10 +184,14 @@ export function assertBridgeReleaseManifest(
     value.macOS.executableName !== "Obsidian" ||
     value.macOS.version !== value.rendererVersion ||
     value.macOS.profileDirectory !== "Blackglass Bridge" ||
+    value.macOS.profileMode !== 448 ||
+    value.macOS.profilePathCanonicalAtSetup !== true ||
     value.macOS.explicitUserDataDirHonored !== true ||
     value.macOS.upstreamUpdatesDisabled !== true ||
     value.macOS.embeddedRendererOnly !== true ||
     value.wrapper.profileDirectory !== "Blackglass Bridge" ||
+    value.wrapper.profileMode !== 448 ||
+    value.wrapper.profilePathCanonicalAtSetup !== true ||
     value.wrapper.explicitUserDataDirHonored !== true ||
     value.wrapper.upstreamUpdatesDisabled !== true ||
     value.wrapper.embeddedRendererOnly !== true ||
