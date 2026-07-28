@@ -9,6 +9,7 @@ import {
   macOSArtifactBindingSha256,
   type FinderLaunchSmokeEvidence,
 } from "../tools/macos-launch-smoke";
+import { APPROVED_MACOS_ENTITLEMENTS } from "../tools/macos-code-signing";
 
 const digest = (character: string): string => character.repeat(64);
 const root = "/workspace/blackglass-bridge/.data/e2e/release";
@@ -19,7 +20,7 @@ const tlsSpkiSha256Base64 = `${"A".repeat(43)}=`;
 const launchHomePath = "/private/tmp/blackglass-launch-ABC123/h";
 const nativeHomePath = "/Users/example";
 const artifact = {
-  schemaVersion: 6 as const,
+  schemaVersion: 7 as const,
   bundleIdentifier: "com.blackglass.bridge" as const,
   bundleName: "Obsidian" as const,
   displayName: "Blackglass Bridge" as const,
@@ -53,6 +54,86 @@ const artifact = {
     "md.obsidian.helper.Plugin",
     "md.obsidian.helper.Renderer",
   ],
+  codeSigning: {
+    formatVersion: 1 as const,
+    signature: "ad-hoc" as const,
+    allReviewedTargetsHardenedRuntime: true as const,
+    approvedEntitlements: [...APPROVED_MACOS_ENTITLEMENTS],
+    targets: [
+      {
+        role: "application" as const,
+        identifier: "com.blackglass.bridge",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "cli" as const,
+        identifier: "obsidian-cli",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "helper" as const,
+        identifier: "md.obsidian.helper",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "helper" as const,
+        identifier: "md.obsidian.helper.GPU",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "helper" as const,
+        identifier: "md.obsidian.helper.Plugin",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "helper" as const,
+        identifier: "md.obsidian.helper.Renderer",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "auxiliary" as const,
+        identifier: "ShipIt",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "auxiliary" as const,
+        identifier: "chrome_crashpad_handler",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "framework" as const,
+        identifier: "com.github.Electron.framework",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "none" as const,
+      },
+      {
+        role: "framework" as const,
+        identifier: "org.mantle.Mantle",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "none" as const,
+      },
+      {
+        role: "framework" as const,
+        identifier: "com.electron.reactive",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "none" as const,
+      },
+      {
+        role: "framework" as const,
+        identifier: "com.github.Squirrel",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "none" as const,
+      },
+    ],
+  },
   profileDirectory: "Blackglass Bridge" as const,
   profileMode: 448 as const,
   profilePathCanonicalAtSetup: true as const,

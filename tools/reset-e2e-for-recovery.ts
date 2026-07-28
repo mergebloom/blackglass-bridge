@@ -15,6 +15,16 @@ import {
   pathExists,
   pathsEqual,
 } from "./path-safety";
+import {
+  assertCanonicalRecoveryCorpusIdentity,
+  assertCanonicalRecoveryCorpusManifest,
+} from "./recovery-corpus";
+import {
+  SOURCE_LOSS_RESET_SCHEMA_VERSION,
+  assertSourceLossResetRecord,
+  treeIdentitiesEqual,
+  type SourceLossResetRecord,
+} from "./source-loss-reset";
 import { computeTreeIdentity } from "./tree-identity";
 
 const [rootArgument, ...flags] = Bun.argv.slice(2);
@@ -28,7 +38,7 @@ const root = run.root;
 const existingResetPath = join(root, "source-loss-reset.json");
 const existingTrashPath = join(root, ".source-loss-trash");
 if (await pathExists(existingResetPath)) {
-  await finalizePublishedReset(root, run.manifestSha256, existingResetPath, existingTrashPath);
+  await finalizePublishedReset(run, existingResetPath, existingTrashPath);
   process.exit(0);
 }
 if (await pathExists(existingTrashPath)) {
@@ -54,14 +64,21 @@ const sourceLossTrash = await canonicalOutputPath(
 );
 const recoveryManifest = JSON.parse(await readFile(recoveryManifestPath, "utf8")) as {
   schemaVersion?: unknown;
+  runManifestSha256?: unknown;
   syncReportSha256?: unknown;
+  corpus?: unknown;
+  files?: unknown;
 };
 if (
-  recoveryManifest.schemaVersion !== 2 ||
+  recoveryManifest.schemaVersion !== 3 ||
+  recoveryManifest.runManifestSha256 !== run.manifestSha256 ||
   recoveryManifest.syncReportSha256 !== reportSha256
 ) {
   throw new Error("Recovery capture is not bound to the completed Sync report");
 }
+assertCanonicalRecoveryCorpusIdentity(recoveryManifest.corpus);
+assertCanonicalRecoveryCorpusManifest(recoveryManifest.files);
+const recoveryManifestSha256 = await fileSha256(recoveryManifestPath);
 
 const clientArtifactPath = await canonicalExistingPath(
   join(root, "client-artifact.json"),
@@ -185,11 +202,11 @@ await writeFile(
 );
 
 const resetRecord = {
-  schemaVersion: 2,
+  schemaVersion: SOURCE_LOSS_RESET_SCHEMA_VERSION,
   resetAt: new Date().toISOString(),
   runManifestSha256: run.manifestSha256,
   syncReportSha256: reportSha256,
-  recoveryManifestSha256: await fileSha256(recoveryManifestPath),
+  recoveryManifestSha256,
   removed: {
     clientA: clientATree,
     clientB: clientBTree,
@@ -203,6 +220,14 @@ const resetRecord = {
     initialVaultFiles: 0,
   },
 };
+assertSourceLossResetRecord(resetRecord, {
+  runManifestSha256: run.manifestSha256,
+  syncReportSha256: reportSha256,
+  recoveryManifestSha256,
+  compatibilityAsarSha256: run.manifest.compatibilityAsarSha256,
+  profilePath: join(root, "client-b", "user-data"),
+  vaultPath: join(root, "client-b", "vault"),
+});
 await writeFile(resetTemporary, `${JSON.stringify(resetRecord, null, 2)}\n`, {
   flag: "wx",
   mode: 0o600,
@@ -232,6 +257,7 @@ await writeFile(resetTemporary, `${JSON.stringify(resetRecord, null, 2)}\n`, {
     clientBMoved = true;
     await rename(freshClient, join(root, "client-b"));
     freshClientInstalled = true;
+    await assertRetiredClientTreesMatch(sourceLossTrash, resetRecord.removed);
     await rename(resetTemporary, resetOutput);
     resetPublished = true;
     await rm(sourceLossTrash, { recursive: true, force: false });
@@ -315,19 +341,47 @@ function asError(error: unknown): Error {
 }
 
 async function finalizePublishedReset(
-  runRoot: string,
-  runManifestSha256: string,
+  run: Awaited<ReturnType<typeof readPreparedE2ERun>>,
   resetPath: string,
   trashPath: string,
 ): Promise<void> {
+  const runRoot = run.root;
+  const reportPath = await canonicalExistingPath(
+    join(runRoot, "report.json"),
+    "Sync report",
+    "file",
+  );
+  const recoveryManifestPath = await canonicalExistingPath(
+    join(runRoot, "recovery-manifest.json"),
+    "Recovery manifest",
+    "file",
+  );
+  const [reportSha256, recoveryManifestBytes] = await Promise.all([
+    fileSha256(reportPath),
+    readFile(recoveryManifestPath),
+  ]);
+  const recoveryManifest = JSON.parse(recoveryManifestBytes.toString("utf8")) as any;
+  if (
+    recoveryManifest.schemaVersion !== 3 ||
+    recoveryManifest.runManifestSha256 !== run.manifestSha256 ||
+    recoveryManifest.syncReportSha256 !== reportSha256
+  ) {
+    throw new Error("Existing recovery capture is not bound to this prepared run");
+  }
+  assertCanonicalRecoveryCorpusIdentity(recoveryManifest.corpus);
+  assertCanonicalRecoveryCorpusManifest(recoveryManifest.files);
+  const recoveryManifestSha256 = sha256(recoveryManifestBytes);
+
   const resetBytes = await readFile(resetPath);
   const reset = JSON.parse(resetBytes.toString("utf8")) as any;
-  if (
-    reset.schemaVersion !== 2 ||
-    reset.runManifestSha256 !== runManifestSha256
-  ) {
-    throw new Error("Existing source-loss reset is not bound to this prepared run");
-  }
+  assertSourceLossResetRecord(reset, {
+    runManifestSha256: run.manifestSha256,
+    syncReportSha256: reportSha256,
+    recoveryManifestSha256,
+    compatibilityAsarSha256: run.manifest.compatibilityAsarSha256,
+    profilePath: join(runRoot, "client-b", "user-data"),
+    vaultPath: join(runRoot, "client-b", "vault"),
+  });
   if (!await pathExists(trashPath)) {
     throw new Error("Source-loss reset is already complete");
   }
@@ -347,18 +401,68 @@ async function finalizePublishedReset(
   const marker = JSON.parse(await readFile(markerPath, "utf8")) as any;
   if (
     marker.schemaVersion !== 1 ||
-    marker.runManifestSha256 !== runManifestSha256
+    marker.runManifestSha256 !== run.manifestSha256
   ) {
     throw new Error("Published source-loss transition marker is inconsistent");
   }
-  const lockPath = await acquireSourceLossResetLock(runRoot, runManifestSha256);
+  if (await pathExists(join(runRoot, "client-a"))) {
+    throw new Error("Published source-loss reset unexpectedly retained client-a");
+  }
+  const freshProfile = await canonicalExistingPath(
+    reset.freshClient.profilePath,
+    "Published fresh recovery profile",
+    "directory",
+  );
+  const freshVault = await canonicalExistingPath(
+    reset.freshClient.vaultPath,
+    "Published fresh recovery vault",
+    "directory",
+  );
+  if (
+    !pathsEqual(freshProfile, join(runRoot, "client-b", "user-data")) ||
+    !pathsEqual(freshVault, join(runRoot, "client-b", "vault")) ||
+    await fileSha256(join(freshProfile, run.manifest.adapterFileName)) !==
+      run.manifest.compatibilityAsarSha256
+  ) {
+    throw new Error("Published source-loss reset has no intact fresh recovery client");
+  }
+
+  await assertRetiredClientTreesMatch(canonicalTrash, reset.removed);
+
+  const lockPath = await acquireSourceLossResetLock(runRoot, run.manifestSha256);
   try {
     await assertNoPreparedClientLeases(runRoot, ["client-a", "client-b"]);
     await rm(canonicalTrash, { recursive: true, force: false });
   } finally {
-    await releaseSourceLossResetLock(lockPath, runManifestSha256);
+    await releaseSourceLossResetLock(lockPath, run.manifestSha256);
   }
   console.log(JSON.stringify({ finalized: true, reset }, null, 2));
+}
+
+async function assertRetiredClientTreesMatch(
+  trashRoot: string,
+  expected: SourceLossResetRecord["removed"],
+): Promise<void> {
+  const retiredClientA = await canonicalExistingPath(
+    join(trashRoot, "client-a"),
+    "Retired client-a tree",
+    "directory",
+  );
+  const retiredClientB = await canonicalExistingPath(
+    join(trashRoot, "client-b"),
+    "Retired client-b tree",
+    "directory",
+  );
+  const [retiredClientAIdentity, retiredClientBIdentity] = await Promise.all([
+    computeTreeIdentity(retiredClientA),
+    computeTreeIdentity(retiredClientB),
+  ]);
+  if (
+    !treeIdentitiesEqual(retiredClientAIdentity, expected.clientA) ||
+    !treeIdentitiesEqual(retiredClientBIdentity, expected.clientB)
+  ) {
+    throw new Error("Source-loss transition trees changed before cleanup");
+  }
 }
 
 function assertNoActiveDisposableClients(appPath: string, profiles: string[]): void {

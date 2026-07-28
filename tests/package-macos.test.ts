@@ -4,7 +4,9 @@ import {
   copyFile,
   mkdir,
   mkdtemp,
+  readFile,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,6 +14,11 @@ import { join, resolve } from "node:path";
 import { expect, test } from "bun:test";
 import { patchAsar } from "../packages/client-adapter/src/patch";
 import { inspectMacOSArtifact } from "../tools/macos-artifact";
+import {
+  APPROVED_MACOS_ENTITLEMENTS,
+  approvedMacOSEntitlementsPlist,
+  inspectSourceMacOSCodeSigning,
+} from "../tools/macos-code-signing";
 import { asarHeaderSha256 } from "../tools/asar";
 import { assertBridgeReleaseManifest } from "../tools/release-manifest";
 import {
@@ -62,14 +69,26 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       writeFile(join(contents, "Info.plist"), sourceInfoPlist(sourceWrapperSha256)),
       writeFile(officialDmgPath, "synthetic official DMG"),
       copyFile("/usr/bin/true", join(executableDirectory, "Obsidian")),
-      writeFile(
-        join(executableDirectory, "obsidian-cli"),
-        "#!/bin/sh\n# .obsidian-cli.sock .obsidian-cli.sock\n",
-      ),
+      readFile("/usr/bin/true").then((binary) => {
+        const cliBinary = Buffer.from(binary);
+        const firstSliceOffset =
+          cliBinary.readUInt32BE(0) === 0xca_fe_ba_be
+            ? cliBinary.readUInt32BE(16)
+            : 0;
+        Buffer.from(".obsidian-cli.sock .obsidian-cli.sock").copy(
+          cliBinary,
+          firstSliceOffset + 4096,
+        );
+        return writeFile(join(executableDirectory, "obsidian-cli"), cliBinary);
+      }),
       ...sourceHelperBundles(frameworks),
+      ...sourceFrameworkBundles(frameworks),
     ]);
     await chmod(join(executableDirectory, "Obsidian"), 0o755);
     await chmod(join(executableDirectory, "obsidian-cli"), 0o755);
+    const entitlementsPath = join(directory, "source-entitlements.plist");
+    await writeFile(entitlementsPath, approvedMacOSEntitlementsPlist());
+    signSyntheticSource(sourceApp, entitlementsPath);
     await writeFile(
       baselinePath,
       `${JSON.stringify(await testCompatibilityBaseline(
@@ -126,11 +145,17 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
         "md.obsidian.helper.Plugin",
         "md.obsidian.helper.Renderer",
       ],
+      codeSigning: {
+        formatVersion: 1,
+        signature: "ad-hoc",
+        allReviewedTargetsHardenedRuntime: true,
+        approvedEntitlements: [...APPROVED_MACOS_ENTITLEMENTS],
+      },
       registeredUrlSchemes: [],
       signature: "ad-hoc",
     });
     expect(report.releaseManifest).toMatchObject({
-      schemaVersion: 6,
+      schemaVersion: 7,
       rendererVersion: "1.12.7",
       endpoints,
       patcher: {
@@ -148,6 +173,7 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
         packagedRendererByteIdentical: true,
         packagedWrapperIntegrityVerified: true,
         packagedCliSocketVerified: true,
+        reviewedCodeSigningPreserved: true,
       },
     });
     expect(JSON.parse(await Bun.file(manifestPath).text())).toEqual(
@@ -192,6 +218,7 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       ).toBe(true);
     }
     expect(await inspectMacOSArtifact(outputApp)).toMatchObject({
+      schemaVersion: 7,
       bundleIdentifier: "com.blackglass.bridge",
       version: "1.12.7",
       bundleName: "Obsidian",
@@ -217,9 +244,23 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
         "md.obsidian.helper.Plugin",
         "md.obsidian.helper.Renderer",
       ],
+      codeSigning: {
+        formatVersion: 1,
+        signature: "ad-hoc",
+        allReviewedTargetsHardenedRuntime: true,
+        approvedEntitlements: [...APPROVED_MACOS_ENTITLEMENTS],
+        targets: expectedPackagedSigningTargets(),
+      },
       embeddedAsarSha256: createHash("sha256").update(patchedAsar).digest("hex"),
       registeredUrlSchemes: [],
     });
+
+    const strippedApp = join(directory, "Stripped Bridge.app");
+    runCommand(["ditto", outputApp, strippedApp]);
+    runCommand(["codesign", "--force", "--deep", "--sign", "-", strippedApp]);
+    await expect(inspectMacOSArtifact(strippedApp)).rejects.toThrow(
+      "code-signing metadata",
+    );
 
     const mismatchedOutput = join(directory, "Mismatched Bridge.app");
     const mismatchedManifest = join(directory, "mismatched-release.json");
@@ -279,6 +320,26 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
     expect(changedSourceResult.stderr.toString()).toContain("Source app tree");
     expect(await Bun.file(changedSourceOutput).exists()).toBe(false);
     expect(await Bun.file(changedSourceManifest).exists()).toBe(false);
+
+    const helperWithoutEntitlements = join(
+      sourceApp,
+      "Contents/Frameworks/Obsidian Helper.app",
+    );
+    runCommand([
+      "codesign",
+      "--force",
+      "--sign",
+      "-",
+      "--identifier",
+      "md.obsidian.helper",
+      "--options",
+      "runtime",
+      "--timestamp=none",
+      helperWithoutEntitlements,
+    ]);
+    expect(() => inspectSourceMacOSCodeSigning(sourceApp)).toThrow(
+      "entitlements",
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -454,6 +515,46 @@ function sourceHelperBundles(frameworks: string): Promise<void>[] {
   });
 }
 
+function sourceFrameworkBundles(frameworks: string): Promise<void>[] {
+  const definitions = [
+    { name: "Electron Framework", identifier: "com.github.Electron.framework" },
+    { name: "Mantle", identifier: "org.mantle.Mantle" },
+    { name: "ReactiveObjC", identifier: "com.electron.reactive" },
+    { name: "Squirrel", identifier: "com.github.Squirrel" },
+  ];
+  return definitions.map(async ({ name, identifier }) => {
+    const framework = join(frameworks, `${name}.framework`);
+    const versions = join(framework, "Versions");
+    const current = join(versions, "A");
+    const resources = join(current, "Resources");
+    await mkdir(resources, { recursive: true });
+    await Promise.all([
+      copyFile("/usr/bin/true", join(current, name)),
+      writeFile(
+        join(resources, "Info.plist"),
+        frameworkInfoPlist(name, identifier),
+      ),
+      symlink("A", join(versions, "Current")),
+      symlink(`Versions/Current/${name}`, join(framework, name)),
+      symlink("Versions/Current/Resources", join(framework, "Resources")),
+    ]);
+    await chmod(join(current, name), 0o755);
+    if (name === "Electron Framework") {
+      const helpers = join(current, "Helpers");
+      await mkdir(helpers, { recursive: true });
+      await copyFile(
+        "/usr/bin/true",
+        join(helpers, "chrome_crashpad_handler"),
+      );
+      await chmod(join(helpers, "chrome_crashpad_handler"), 0o755);
+    }
+    if (name === "Squirrel") {
+      await copyFile("/usr/bin/true", join(resources, "ShipIt"));
+      await chmod(join(resources, "ShipIt"), 0o755);
+    }
+  });
+}
+
 function helperInfoPlist(name: string, identifier: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -463,6 +564,152 @@ function helperInfoPlist(name: string, identifier: string): string {
   <key>CFBundleIdentifier</key><string>${identifier}</string>
 </dict></plist>
 `;
+}
+
+function frameworkInfoPlist(name: string, identifier: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>${name}</string>
+  <key>CFBundleIdentifier</key><string>${identifier}</string>
+  <key>CFBundlePackageType</key><string>FMWK</string>
+</dict></plist>
+`;
+}
+
+function signSyntheticSource(appPath: string, entitlementsPath: string): void {
+  const targets = [
+    {
+      path: join(
+        appPath,
+        "Contents/Frameworks/Squirrel.framework/Versions/A/Resources/ShipIt",
+      ),
+      identifier: "ShipIt",
+      entitlements: true,
+    },
+    {
+      path: join(
+        appPath,
+        "Contents/Frameworks/Electron Framework.framework/Versions/A/Helpers/chrome_crashpad_handler",
+      ),
+      identifier: "chrome_crashpad_handler",
+      entitlements: true,
+    },
+    ...[
+      ["Electron Framework", "com.github.Electron.framework"],
+      ["Mantle", "org.mantle.Mantle"],
+      ["ReactiveObjC", "com.electron.reactive"],
+      ["Squirrel", "com.github.Squirrel"],
+    ].map(([name, identifier]) => ({
+      path: join(appPath, "Contents/Frameworks", `${name}.framework`),
+      identifier: identifier!,
+      entitlements: false,
+    })),
+    {
+      path: join(appPath, "Contents/MacOS/obsidian-cli"),
+      identifier: "obsidian-cli",
+      entitlements: true,
+    },
+    ...upstreamHelperBundles().map((helper) => ({
+      path: join(appPath, "Contents/Frameworks", `${helper.name}.app`),
+      identifier: helper.identifier,
+      entitlements: true,
+    })),
+    { path: appPath, identifier: "md.obsidian", entitlements: true },
+  ];
+  for (const target of targets) {
+    const arguments_ = [
+      "codesign",
+      "--force",
+      "--sign",
+      "-",
+      "--identifier",
+      target.identifier,
+      "--options",
+      "runtime",
+      "--timestamp=none",
+    ];
+    if (target.entitlements) {
+      arguments_.push(
+        "--entitlements",
+        entitlementsPath,
+        "--generate-entitlement-der",
+      );
+    }
+    arguments_.push(target.path);
+    runCommand(arguments_);
+  }
+  runCommand(["codesign", "--verify", "--deep", "--strict", appPath]);
+}
+
+function expectedPackagedSigningTargets(): Array<Record<string, string>> {
+  return [
+    {
+      role: "application",
+      identifier: "com.blackglass.bridge",
+      entitlementPolicy: "approved",
+    },
+    {
+      role: "cli",
+      identifier: "obsidian-cli",
+      entitlementPolicy: "approved",
+    },
+    {
+      role: "helper",
+      identifier: "md.obsidian.helper",
+      entitlementPolicy: "approved",
+    },
+    {
+      role: "helper",
+      identifier: "md.obsidian.helper.GPU",
+      entitlementPolicy: "approved",
+    },
+    {
+      role: "helper",
+      identifier: "md.obsidian.helper.Plugin",
+      entitlementPolicy: "approved",
+    },
+    {
+      role: "helper",
+      identifier: "md.obsidian.helper.Renderer",
+      entitlementPolicy: "approved",
+    },
+    {
+      role: "auxiliary",
+      identifier: "ShipIt",
+      entitlementPolicy: "approved",
+    },
+    {
+      role: "auxiliary",
+      identifier: "chrome_crashpad_handler",
+      entitlementPolicy: "approved",
+    },
+    {
+      role: "framework",
+      identifier: "com.github.Electron.framework",
+      entitlementPolicy: "none",
+    },
+    {
+      role: "framework",
+      identifier: "org.mantle.Mantle",
+      entitlementPolicy: "none",
+    },
+    {
+      role: "framework",
+      identifier: "com.electron.reactive",
+      entitlementPolicy: "none",
+    },
+    {
+      role: "framework",
+      identifier: "com.github.Squirrel",
+      entitlementPolicy: "none",
+    },
+  ];
+}
+
+function runCommand(arguments_: string[]): void {
+  const result = Bun.spawnSync(arguments_, { stdout: "pipe", stderr: "pipe" });
+  expect(result.exitCode, result.stderr.toString()).toBe(0);
 }
 
 function sourceWrapperMain(): string {

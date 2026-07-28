@@ -11,6 +11,8 @@ import { join } from "node:path";
 import {
   TOOLING_SOURCE_DIRECTORIES,
   TOOLING_SOURCE_FILES,
+  TOOLING_SOURCE_IDENTITY_FORMAT_VERSION,
+  TOOLING_SOURCE_SCOPE,
   assertValidationOnlyDescendant,
   computeToolingSourceIdentity,
   computeToolingSourceIdentityAtRevision,
@@ -33,6 +35,10 @@ describe("release-critical tooling source identity", () => {
     const root = await createRepository();
     try {
       const clean = await computeToolingSourceIdentity(root);
+      expect(clean.formatVersion).toBe(TOOLING_SOURCE_IDENTITY_FORMAT_VERSION);
+      expect(clean.formatVersion).toBe(2);
+      expect(clean.scope).toBe(TOOLING_SOURCE_SCOPE);
+      expect(clean.scope).toBe("release-critical-v1");
       expect(clean.worktreeClean).toBe(true);
       expect(clean.gitRevision).toMatch(/^[a-f0-9]{40}$/u);
 

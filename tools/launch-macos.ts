@@ -42,6 +42,7 @@ import {
 } from "./path-safety";
 import { readBridgeReleaseManifest } from "./release-manifest";
 import { isSupportedStableSemver } from "./semver";
+import { stableJson } from "./stable-json";
 
 const [asarArgument, profileArgument, vaultArgument, ...flagArguments] = Bun.argv.slice(2);
 if (!asarArgument || !profileArgument || !vaultArgument) usage();
@@ -880,17 +881,6 @@ function processInfo(pid: number): { parentPid: number; command: string } {
   const match = /^(\d+)\s+(.+)$/su.exec(output);
   if (!match) throw new Error(`Malformed process identity for ${pid}`);
   return { parentPid: Number(match[1]), command: match[2]! };
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function plistString(infoPlist: string, key: string): string {

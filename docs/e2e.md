@@ -155,14 +155,21 @@ The verifier requires these checkpoint stems:
 
 ## Source-loss recovery
 
-Add the mixed fixture to client A, wait for background Sync to advance the
-database, and capture it:
+Add the versioned mixed fixture to client A, wait for background Sync to advance
+the database, and capture it:
 
 ```sh
 bun run recovery:drill -- create .data/e2e/<run>/client-a/vault
 bun run recovery:drill -- capture .data/e2e/<run> \
   .data/e2e/<run>/client-a/vault
 ```
+
+The capture refuses a missing or changed canonical member. Its reviewed corpus
+contains six Markdown notes plus PNG, SVG, PDF, canvas, CSV, JSON, and JavaScript
+files; exact paths, sizes, digests, and the extension summary remain bound through
+the recovery report and final validation record. In both the initial and recovery
+Sync setup, enable images, PDFs, and unsupported/other file types before starting
+Sync.
 
 Stop both clients. The reset command permanently removes only the two validated
 disposable client trees and creates a new empty client B:
@@ -201,4 +208,6 @@ bun run e2e:qualify -- .data/e2e/<run>
 
 `qualification.json` is emitted only when the empty-profile starter route,
 Sync, restart, deletion, exact endpoint evidence across all lifecycle phases,
-cold recovery, permissions, and current artifact identities all pass.
+byte-identical user-content recovery including the canonical mixed corpus
+(`.obsidian/` local settings are excluded), permissions, and current artifact
+identities all pass.

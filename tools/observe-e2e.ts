@@ -38,7 +38,7 @@ const destination = join(root, destinationName, "vault", relativePath);
 await assertNoSymlinkSegments(source);
 await assertNoSymlinkSegments(destination);
 
-const slug = relativePath.replace(/\.md$/u, "").toLocaleLowerCase().replaceAll(" ", "-");
+const slug = relativePath.replace(/\.md$/u, "").toLowerCase().replaceAll(" ", "-");
 const output = join(root, "observations", `${action}-${slug}.json`);
 if (await exists(output)) throw new Error(`Refusing to overwrite E2E observation: ${output}`);
 

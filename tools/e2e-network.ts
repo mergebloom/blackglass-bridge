@@ -10,6 +10,7 @@ import {
   assertPathWithin,
   canonicalExistingPath,
 } from "./path-safety";
+import { stableJson } from "./stable-json";
 
 export const E2E_NETWORK_SCHEMA_VERSION = 1;
 
@@ -174,17 +175,6 @@ function isSafeResolverHostname(host: string): boolean {
       /^\[[0-9a-f:]+\]$/iu.test(host) ||
       /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/iu.test(host))
   );
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (isRecord(value)) {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function isSha256(value: unknown): value is string {

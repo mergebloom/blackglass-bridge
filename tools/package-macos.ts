@@ -26,6 +26,11 @@ import {
   publicMacOSArtifact,
 } from "./macos-artifact";
 import {
+  approvedMacOSEntitlementsPlist,
+  inspectSourceMacOSCodeSigning,
+  signMacOSAppAdHoc,
+} from "./macos-code-signing";
+import {
   discoverUnpackedJavaScriptFiles,
   qualifyRendererRelease,
 } from "./release-compatibility";
@@ -242,10 +247,16 @@ await validatePreservedElectronHelpers(
   sourceDisplayName,
   sourceBundleIdentifier,
 );
+const sourceCodeSigning = inspectSourceMacOSCodeSigning(sourceApp);
 
 await withPackageStaging(outputApp, async (stagingRoot) => {
   const stagedApp = join(stagingRoot, basename(outputApp));
   const stagedManifest = join(stagingRoot, basename(manifestPath));
+  const stagedEntitlements = join(stagingRoot, "blackglass-entitlements.plist");
+  await writeFile(stagedEntitlements, approvedMacOSEntitlementsPlist(), {
+    flag: "wx",
+    mode: 0o600,
+  });
   run(["ditto", sourceApp, stagedApp]);
   const stagedCopyTree = await computeTreeIdentity(stagedApp);
   if (!treeIdentityEqual(stagedCopyTree, sourceAppTree)) {
@@ -341,8 +352,11 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       "Packaged app must not claim the upstream obsidian:// URL scheme",
     );
   }
-  run(["codesign", "--force", "--deep", "--sign", "-", stagedApp]);
-  run(["codesign", "--verify", "--deep", "--strict", stagedApp]);
+  const codeSigning = signMacOSAppAdHoc(
+    stagedApp,
+    stagedEntitlements,
+    sourceCodeSigning,
+  );
 
   const macOSArtifact = await inspectMacOSArtifact(stagedApp);
   const bridgeVersion = await readBridgeVersion();
@@ -391,6 +405,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       packagedRendererByteIdentical: true,
       packagedWrapperIntegrityVerified: true,
       packagedCliSocketVerified: true,
+      reviewedCodeSigningPreserved: true,
     },
   };
   assertBridgeReleaseManifest(releaseManifest);
@@ -440,6 +455,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
         displayName: releaseManifest.macOS.displayName,
         executableName: releaseManifest.macOS.executableName,
         helperBundleIdentifiers,
+        codeSigning,
         registeredUrlSchemes: [],
         signature: "ad-hoc",
         manifestPath,

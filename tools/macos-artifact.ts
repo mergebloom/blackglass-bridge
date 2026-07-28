@@ -10,6 +10,10 @@ import {
   CLI_BINARY_INCISION_COUNT,
   inspectPatchedCliBinary,
 } from "./cli-binary";
+import {
+  inspectPackagedMacOSCodeSigning,
+  type MacOSCodeSigningEvidence,
+} from "./macos-code-signing";
 import { computeTreeIdentity, type TreeIdentity } from "./tree-identity";
 import { isSupportedStableSemver } from "./semver";
 
@@ -21,7 +25,7 @@ export const ELECTRON_HELPER_VARIANTS = [
 ] as const;
 
 export interface MacOSArtifact {
-  schemaVersion: 6;
+  schemaVersion: 7;
   appPath: string;
   bundleIdentifier: "com.blackglass.bridge";
   bundleName: "Obsidian";
@@ -43,6 +47,7 @@ export interface MacOSArtifact {
   applicationTreeSha256: string;
   applicationTreeIdentity: TreeIdentity;
   helperBundleIdentifiers: string[];
+  codeSigning: MacOSCodeSigningEvidence;
   profileDirectory: "Blackglass Bridge";
   profileMode: 448;
   profilePathCanonicalAtSetup: true;
@@ -81,6 +86,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     throw new Error("Blackglass Bridge must not register an upstream iCloud container");
   }
   run(["codesign", "--verify", "--deep", "--strict", appPath]);
+  const codeSigning = inspectPackagedMacOSCodeSigning(appPath);
   const signatureDetails = runText(["codesign", "-d", "--verbose=4", appPath], true);
   const codeDirectoryHash = /^CDHash=(\S+)$/m.exec(signatureDetails)?.[1];
   if (!codeDirectoryHash) throw new Error("Packaged app signature has no CDHash");
@@ -132,7 +138,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   );
   const applicationTreeIdentity = await computeTreeIdentity(appPath);
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     appPath,
     bundleIdentifier: "com.blackglass.bridge",
     bundleName: "Obsidian",
@@ -154,6 +160,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     applicationTreeSha256: applicationTreeIdentity.sha256,
     applicationTreeIdentity,
     helperBundleIdentifiers,
+    codeSigning,
     profileDirectory: wrapperSafety.profileDirectory,
     profileMode: wrapperSafety.profileMode,
     profilePathCanonicalAtSetup: wrapperSafety.profilePathCanonicalAtSetup,

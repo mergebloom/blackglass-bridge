@@ -8,6 +8,7 @@ import {
   type TreeIdentity,
 } from "./tree-identity";
 import { isSupportedStableSemver } from "./semver";
+import { stableJson } from "./stable-json";
 
 export const COMPATIBILITY_BASELINE_SCHEMA_VERSION = 4;
 export const RELEASE_ANALYSIS_FORMAT_VERSION = 5;
@@ -201,7 +202,7 @@ export function discoverRendererRelease(
         !entry.node.files &&
         !entry.node.unpacked,
     )
-    .sort((left, right) => left.path.localeCompare(right.path));
+    .sort((left, right) => compareStrings(left.path, right.path));
   if (javaScriptEntries.length === 0) {
     throw new Error("Renderer archive contains no packed JavaScript files");
   }
@@ -255,7 +256,7 @@ export function discoverRendererRelease(
     unpackedJavaScriptFiles: sortedFileIdentityInventory(unpackedJavaScriptFiles),
     anchorMatches: Object.fromEntries(
       [...anchors]
-        .sort((left, right) => left.id.localeCompare(right.id))
+        .sort((left, right) => compareStrings(left.id, right.id))
         .map((item) => {
           const source = anchorSources.get(item.file);
           if (source === undefined) {
@@ -303,7 +304,7 @@ export function analyzeRendererRelease(
       Object.fromEntries(
         baseline.anchors
           .map((item) => [item.id, item.expectedMatches] as const)
-          .sort(([left], [right]) => left.localeCompare(right)),
+          .sort(([left], [right]) => compareStrings(left, right)),
       ),
       discovery.anchorMatches,
     ),
@@ -1487,7 +1488,9 @@ function collectMatches(input: string, pattern: RegExp, group: number): string[]
 function countValues(values: Iterable<string>): Record<string, number> {
   const counts = new Map<string, number>();
   for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
-  return Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
+  return Object.fromEntries(
+    [...counts].sort(([left], [right]) => compareStrings(left, right)),
+  );
 }
 
 function check(id: string, expected: unknown, actual: unknown): CompatibilityCheck {
@@ -1497,17 +1500,6 @@ function check(id: string, expected: unknown, actual: unknown): CompatibilityChe
     expected,
     actual,
   };
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function sha256(value: Uint8Array): string {

@@ -15,6 +15,7 @@ import {
   canonicalExistingPath,
   pathsEqual,
 } from "./path-safety";
+import { stableJson } from "./stable-json";
 
 export const E2E_TLS_METADATA_SCHEMA_VERSION = 2;
 
@@ -206,17 +207,6 @@ function stripIpv6Brackets(host: string): string {
 
 function sha256(value: Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (isRecord(value)) {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function isSha256(value: unknown): value is string {

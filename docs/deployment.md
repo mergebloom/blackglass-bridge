@@ -48,12 +48,19 @@ publishes the app and manifest after every check passes. The output is ad-hoc
 signed for local authorized use; it is not notarized for
 redistribution. Its bundle identifier is `com.blackglass.bridge`; the packager
 removes upstream URL-scheme and iCloud-container registrations so it can coexist
-with normal Obsidian. The outer filename and display name are Blackglass Bridge,
-but the upstream `Obsidian` bundle name, main executable, and Electron helper
-topology are deliberately preserved. Launch it with a dedicated profile:
+with normal Obsidian. Consequently, `obsidian://` deep links and registered
+Obsidian iCloud-container behavior are outside the current parity target. The
+outer filename and display name are Blackglass Bridge, but the upstream
+`Obsidian` bundle name, main executable, and Electron helper topology are
+deliberately preserved. Ad-hoc signing reapplies the exact reviewed entitlement
+and hardened-runtime contracts to the outer app, patched CLI, helpers, framework
+auxiliaries, and framework bundles; packaging and artifact inspection fail
+closed on drift.
 
 The copied wrapper still contains upstream proprietary code and artwork. Keep
 it out of source control and distribution artifacts.
+
+Launch it with a dedicated profile:
 
 ```sh
 bun run client:launch -- \

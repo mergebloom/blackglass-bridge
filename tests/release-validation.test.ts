@@ -7,7 +7,10 @@ import {
   type BridgeReleaseManifest,
 } from "../tools/release-manifest";
 import { canonicalOutputPath } from "../tools/path-safety";
+import { APPROVED_MACOS_ENTITLEMENTS } from "../tools/macos-code-signing";
+import { canonicalRecoveryCorpusIdentity } from "../tools/recovery-corpus";
 import {
+  RELEASE_VALIDATION_RECORD_SCHEMA_VERSION,
   assertReleaseValidationRecord,
   buildReleaseValidationRecord,
   releaseValidationRecordFileName,
@@ -25,7 +28,7 @@ const tree = (character: string) => ({
   fileBytes: 42,
 });
 const toolingSource = {
-  formatVersion: 1 as const,
+  formatVersion: 2 as const,
   scope: "release-critical-v1" as const,
   gitRevision: "f".repeat(40),
   worktreeClean: true,
@@ -35,7 +38,7 @@ const toolingSource = {
 };
 
 const macOS = {
-  schemaVersion: 6 as const,
+  schemaVersion: 7 as const,
   bundleIdentifier: "com.blackglass.bridge" as const,
   bundleName: "Obsidian" as const,
   displayName: "Blackglass Bridge" as const,
@@ -62,6 +65,86 @@ const macOS = {
     "md.obsidian.helper.Plugin",
     "md.obsidian.helper.Renderer",
   ],
+  codeSigning: {
+    formatVersion: 1 as const,
+    signature: "ad-hoc" as const,
+    allReviewedTargetsHardenedRuntime: true as const,
+    approvedEntitlements: [...APPROVED_MACOS_ENTITLEMENTS],
+    targets: [
+      {
+        role: "application" as const,
+        identifier: "com.blackglass.bridge",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "cli" as const,
+        identifier: "obsidian-cli",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "helper" as const,
+        identifier: "md.obsidian.helper",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "helper" as const,
+        identifier: "md.obsidian.helper.GPU",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "helper" as const,
+        identifier: "md.obsidian.helper.Plugin",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "helper" as const,
+        identifier: "md.obsidian.helper.Renderer",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "auxiliary" as const,
+        identifier: "ShipIt",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "auxiliary" as const,
+        identifier: "chrome_crashpad_handler",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "approved" as const,
+      },
+      {
+        role: "framework" as const,
+        identifier: "com.github.Electron.framework",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "none" as const,
+      },
+      {
+        role: "framework" as const,
+        identifier: "org.mantle.Mantle",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "none" as const,
+      },
+      {
+        role: "framework" as const,
+        identifier: "com.electron.reactive",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "none" as const,
+      },
+      {
+        role: "framework" as const,
+        identifier: "com.github.Squirrel",
+        runtimeVersion: "26.0.0",
+        entitlementPolicy: "none" as const,
+      },
+    ],
+  },
   profileDirectory: "Blackglass Bridge" as const,
   profileMode: 448 as const,
   profilePathCanonicalAtSetup: true as const,
@@ -77,7 +160,7 @@ const macOS = {
 
 function manifest(): BridgeReleaseManifest {
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     bridgeVersion: "0.1.1",
     rendererVersion: "1.12.7",
     compatibilityBaseline: {
@@ -157,13 +240,14 @@ function manifest(): BridgeReleaseManifest {
       packagedRendererByteIdentical: true,
       packagedWrapperIntegrityVerified: true,
       packagedCliSocketVerified: true,
+      reviewedCodeSigningPreserved: true,
     },
   };
 }
 
 function qualification(): ReleaseQualification {
   return {
-    schemaVersion: 4,
+    schemaVersion: 6,
     qualifiedAt: "2026-07-28T12:00:00.000Z",
     passed: true,
     platform: "macOS Apple Silicon",
@@ -204,8 +288,9 @@ function qualification(): ReleaseQualification {
       noLaunchCrashOrEarlyExit: true,
     },
     recovery: {
-      expectedFiles: 14,
-      restoredFiles: 14,
+      expectedFiles: 15,
+      restoredFiles: 15,
+      corpus: canonicalRecoveryCorpusIdentity(),
       missing: 0,
       unexpected: 0,
       changed: 0,
@@ -242,6 +327,7 @@ describe("generated release validation records", () => {
       qualificationSha256: digest("f"),
     });
     expect(() => assertReleaseValidationRecord(record)).not.toThrow();
+    expect(record.schemaVersion).toBe(RELEASE_VALIDATION_RECORD_SCHEMA_VERSION);
     expect(record.artifacts.server.version).toBe("0.2.2");
     expect(record.artifacts.server.sourceRevision).toBe("c".repeat(40));
     expect(record.packagedClientE2E.passed).toBe(true);
@@ -275,6 +361,13 @@ describe("generated release validation records", () => {
       (value: any) => (value.wrapper.nativeHomeFallbackPreserved = false),
       (value: any) => (value.macOS.rendererCliRuntimeRootValidated = false),
       (value: any) => (value.macOS.nativeHomeFallbackPreserved = false),
+      (value: any) => value.macOS.codeSigning.approvedEntitlements.pop(),
+      (value: any) =>
+        (value.macOS.codeSigning.allReviewedTargetsHardenedRuntime = false),
+      (value: any) =>
+        (value.macOS.codeSigning.targets[2].identifier = "changed.helper"),
+      (value: any) =>
+        (value.reproduction.reviewedCodeSigningPreserved = false),
       (value: any) =>
         (value.macOS.cliExecutableSha256 = value.cli.upstreamSha256),
       (value: any) => (value.cli.patchedSha256 = value.cli.upstreamSha256),
@@ -302,6 +395,12 @@ describe("generated release validation records", () => {
     for (const mutate of [
       (value: any) => (value.workflow.coldRecovery = false),
       (value: any) => (value.recovery.restoredFiles = 13),
+      (value: any) => {
+        value.recovery.expectedFiles = 12;
+        value.recovery.restoredFiles = 12;
+      },
+      (value: any) => (value.recovery.corpus.manifestSha256 = digest("0")),
+      (value: any) => (value.recovery.corpus.types[".png"] = 0),
       (value: any) => (value.evidence.syncReportSha256 = "changed"),
     ]) {
       const candidate = structuredClone(qualification()) as any;

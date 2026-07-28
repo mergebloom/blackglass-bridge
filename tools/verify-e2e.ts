@@ -27,6 +27,7 @@ import {
 } from "./macos-artifact";
 import { readBridgeReleaseManifest } from "./release-manifest";
 import { isSupportedStableSemver } from "./semver";
+import { stableJson } from "./stable-json";
 
 const rootArgument = Bun.argv[2];
 if (!rootArgument) {
@@ -602,7 +603,7 @@ for (const checkpoint of uiCheckpoints) {
     }
   }
   for (const forbiddenText of checkpoint.forbiddenText) {
-    if (state.bodyText.toLocaleLowerCase().includes(forbiddenText.toLocaleLowerCase())) {
+    if (state.bodyText.toLowerCase().includes(forbiddenText.toLowerCase())) {
       throw new Error(`UI checkpoint ${statePath} contains failure text: ${forbiddenText}`);
     }
   }
@@ -692,17 +693,6 @@ function sha256(input: Uint8Array): string {
 
 async function fileSha256(path: string): Promise<string> {
   return sha256(await readFile(path));
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 type SyncObservation = {

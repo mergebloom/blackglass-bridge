@@ -21,6 +21,7 @@ import {
   CLI_BINARY_PATCH_FORMAT_VERSION,
   type CliBinaryPatchReport,
 } from "./cli-binary";
+import { assertMacOSCodeSigningEvidence } from "./macos-code-signing";
 import type { MacOSArtifact } from "./macos-artifact";
 import {
   assertToolingSourceIdentity,
@@ -32,7 +33,7 @@ import {
 } from "./tree-identity";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 
-export const BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION = 6;
+export const BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION = 7;
 
 export interface BridgeReleaseManifest {
   schemaVersion: typeof BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION;
@@ -80,6 +81,7 @@ export interface BridgeReleaseManifest {
     packagedRendererByteIdentical: true;
     packagedWrapperIntegrityVerified: true;
     packagedCliSocketVerified: true;
+    reviewedCodeSigningPreserved: true;
   };
 }
 
@@ -160,6 +162,7 @@ export function assertBridgeReleaseManifest(
   ) {
     throw new Error("Bridge release manifest is missing artifact identities");
   }
+  assertMacOSCodeSigningEvidence(value.macOS.codeSigning);
   for (const hash of [
     value.renderer.upstreamSha256,
     value.renderer.patchedSha256,
@@ -216,12 +219,12 @@ export function assertBridgeReleaseManifest(
     value.macOS.rendererCliRuntimeRootValidated !== true ||
     value.macOS.embeddedWrapperAsarSha256 !== value.wrapper.patchedSha256 ||
     value.macOS.embeddedWrapperHeaderSha256 !== value.wrapper.patchedHeaderSha256 ||
-    // Deep signing rewrites the Mach-O code signature after the byte-for-byte
-    // socket patch. Preserve both phase identities while rejecting an
-    // unchanged packaged CLI; inspectMacOSArtifact separately proves the
-    // signed executable still has the exact patched socket inventory.
+    // Explicit ad-hoc signing rewrites the Mach-O code signature after the
+    // byte-for-byte socket patch. Preserve both phase identities while
+    // rejecting an unchanged packaged CLI; inspectMacOSArtifact separately
+    // proves the signed executable still has the exact patched socket inventory.
     value.macOS.cliExecutableSha256 === value.cli.upstreamSha256 ||
-    value.macOS.schemaVersion !== 6 ||
+    value.macOS.schemaVersion !== 7 ||
     value.macOS.applicationTreeSha256 !== value.macOS.applicationTreeIdentity.sha256
   ) {
     throw new Error("Bridge release manifest artifact bindings are inconsistent");
@@ -272,7 +275,8 @@ export function assertBridgeReleaseManifest(
     value.reproduction.rendererByteIdentical !== true ||
     value.reproduction.packagedRendererByteIdentical !== true ||
     value.reproduction.packagedWrapperIntegrityVerified !== true ||
-    value.reproduction.packagedCliSocketVerified !== true
+    value.reproduction.packagedCliSocketVerified !== true ||
+    value.reproduction.reviewedCodeSigningPreserved !== true
   ) {
     throw new Error("Bridge release manifest does not attest deterministic reproduction");
   }

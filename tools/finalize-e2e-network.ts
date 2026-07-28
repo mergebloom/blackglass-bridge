@@ -11,6 +11,14 @@ import {
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
 import { canonicalOutputPath } from "./path-safety";
+import {
+  assertCanonicalRecoveryCorpusIdentity,
+  assertCanonicalRecoveryCorpusManifest,
+} from "./recovery-corpus";
+import {
+  assertRecoveryReportResetBinding,
+  assertSourceLossResetRecord,
+} from "./source-loss-reset";
 
 const [rootArgument, roleArgument, ...extraArguments] = Bun.argv.slice(2);
 if (
@@ -41,24 +49,61 @@ const outputPath = await canonicalOutputPath(
 let record: E2ENetworkCaptureFinalize;
 if (role === "client-b-recovery") {
   const resetPath = resolve(run.root, "source-loss-reset.json");
+  const recoveryManifestPath = resolve(run.root, "recovery-manifest.json");
+  const syncReportPath = resolve(run.root, "report.json");
   const reportPath = resolve(run.root, "recovery-report.json");
   const statePath = resolve(run.root, "evidence/recovery/client-b-restored.json");
   const screenshotPath = resolve(run.root, "evidence/recovery/client-b-restored.png");
-  const [resetBytes, reportBytes, stateBytes, screenshotBytes, launchBytes] =
-    await Promise.all([
-      readFile(resetPath),
-      readFile(reportPath),
-      readFile(statePath),
-      readFile(screenshotPath),
-      readFile(launch.identityPath),
-    ]);
+  const [
+    resetBytes,
+    recoveryManifestBytes,
+    syncReportBytes,
+    reportBytes,
+    stateBytes,
+    screenshotBytes,
+    launchBytes,
+  ] = await Promise.all([
+    readFile(resetPath),
+    readFile(recoveryManifestPath),
+    readFile(syncReportPath),
+    readFile(reportPath),
+    readFile(statePath),
+    readFile(screenshotPath),
+    readFile(launch.identityPath),
+  ]);
   const reset = JSON.parse(resetBytes.toString("utf8")) as any;
+  const recoveryManifest = JSON.parse(
+    recoveryManifestBytes.toString("utf8"),
+  ) as any;
   const report = JSON.parse(reportBytes.toString("utf8")) as any;
   const state = JSON.parse(stateBytes.toString("utf8")) as any;
   const screenshotSha256 = sha256(screenshotBytes);
+  const recoveryManifestSha256 = sha256(recoveryManifestBytes);
+  const sourceLossResetSha256 = sha256(resetBytes);
   if (
-    reset.schemaVersion !== 2 ||
-    report.schemaVersion !== 2 ||
+    recoveryManifest.schemaVersion !== 3 ||
+    recoveryManifest.runManifestSha256 !== run.manifestSha256 ||
+    recoveryManifest.syncReportSha256 !== sha256(syncReportBytes)
+  ) {
+    throw new Error("Cold-recovery manifest is not bound to the completed Sync run");
+  }
+  assertCanonicalRecoveryCorpusIdentity(recoveryManifest.corpus);
+  assertCanonicalRecoveryCorpusManifest(recoveryManifest.files);
+  assertSourceLossResetRecord(reset, {
+    runManifestSha256: run.manifestSha256,
+    syncReportSha256: sha256(syncReportBytes),
+    recoveryManifestSha256,
+    compatibilityAsarSha256: run.manifest.compatibilityAsarSha256,
+    profilePath: resolve(run.root, "client-b/user-data"),
+    vaultPath: resolve(run.root, "client-b/vault"),
+  });
+  assertRecoveryReportResetBinding(report, {
+    recoveryManifestSha256,
+    sourceLossResetSha256,
+    resetAt: reset.resetAt,
+  });
+  if (
+    report.schemaVersion !== 3 ||
     report.ok !== true ||
     state.schemaVersion !== 1 ||
     state.launchIdentitySha256 !== launch.identitySha256 ||
@@ -80,7 +125,7 @@ if (role === "client-b-recovery") {
     handshakeNotBefore: launch.identity.startedAt,
     runManifestSha256: run.manifestSha256,
     context: {
-      sourceLossResetSha256: sha256(resetBytes),
+      sourceLossResetSha256,
       recoveryLaunchSha256: sha256(launchBytes),
       recoveryReportSha256: sha256(reportBytes),
       recoveryUiStateSha256: sha256(stateBytes),

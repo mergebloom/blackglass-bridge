@@ -36,6 +36,7 @@ import {
   canonicalExistingPath,
   pathExists,
 } from "./path-safety";
+import { stableJson } from "./stable-json";
 
 const [rootArgument, ...flags] = Bun.argv.slice(2);
 if (!rootArgument || flags.length !== 0) {
@@ -1381,15 +1382,4 @@ function isMissingOrDenied(error: unknown): boolean {
     "code" in error &&
     ["ENOENT", "EACCES", "EPERM"].includes(String(error.code))
   );
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }

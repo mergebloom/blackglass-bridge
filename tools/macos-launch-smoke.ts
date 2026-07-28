@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import type { MacOSArtifact } from "./macos-artifact";
 import { assertPathWithin, pathsEqual } from "./path-safety";
+import { stableJson } from "./stable-json";
 
 export const FINDER_LAUNCH_SMOKE_SCHEMA_VERSION = 6;
 export const FINDER_LAUNCH_MINIMUM_HEALTH_MS = 8_000;
@@ -319,17 +320,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function same(left: unknown, right: unknown): boolean {
   return stableJson(left) === stableJson(right);
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (isRecord(value)) {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function sha256(value: Uint8Array): string {

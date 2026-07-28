@@ -21,8 +21,16 @@ import {
 } from "./macos-launch-smoke";
 import { readVerifiedE2ETls } from "./e2e-tls";
 import { pathExists } from "./path-safety";
+import {
+  assertCanonicalRecoveryCorpusIdentity,
+  assertCanonicalRecoveryCorpusManifest,
+} from "./recovery-corpus";
 import { inspectServerArtifact, publicServerArtifact } from "./server-artifact";
 import { readBridgeReleaseManifest } from "./release-manifest";
+import {
+  assertRecoveryReportResetBinding,
+  assertSourceLossResetRecord,
+} from "./source-loss-reset";
 import {
   computeToolingSourceIdentity,
   toolingSourceTreeEqual,
@@ -71,12 +79,15 @@ if (
   runManifest.schemaVersion !== 2 ||
   syncReport.schemaVersion !== 2 ||
   syncReport.passed !== true ||
-  recoveryManifest.schemaVersion !== 2 ||
-  recoveryReport.schemaVersion !== 2 ||
+  recoveryManifest.schemaVersion !== 3 ||
+  recoveryReport.schemaVersion !== 3 ||
   recoveryReport.ok !== true
 ) {
   throw new Error("E2E qualification inputs are incomplete or did not pass");
 }
+assertCanonicalRecoveryCorpusIdentity(recoveryManifest.corpus);
+assertCanonicalRecoveryCorpusManifest(recoveryManifest.files);
+assertCanonicalRecoveryCorpusIdentity(recoveryReport.corpus);
 if (
   !Array.isArray(syncReport.observations) ||
   syncReport.observations.length !== 4 ||
@@ -101,7 +112,9 @@ if (
 if (
   recoveryReport.clientAExists !== false ||
   recoveryReport.databaseRegressed !== false ||
-  recoveryReport.expectedFiles < 10 ||
+  !Number.isSafeInteger(recoveryReport.expectedFiles) ||
+  recoveryReport.expectedFiles !== recoveryManifest.files.length ||
+  recoveryReport.expectedFiles < recoveryReport.corpus.files ||
   recoveryReport.restoredFiles !== recoveryReport.expectedFiles ||
   recoveryReport.missing?.length !== 0 ||
   recoveryReport.unexpected?.length !== 0 ||
@@ -112,6 +125,7 @@ if (
 
 const runManifestSha256 = await fileSha256("run-manifest.json");
 const syncReportSha256 = await fileSha256("report.json");
+const recoveryManifestSha256 = await fileSha256("recovery-manifest.json");
 const serverArtifactFileSha256 = await fileSha256("server-artifact.json");
 if (
   recoveryManifest.runManifestSha256 !== runManifestSha256 ||
@@ -281,12 +295,25 @@ assertNetworkEvidence(recoveryNetwork, {
 });
 const sourceLossResetBytes = await readFile(resolve(root, "source-loss-reset.json"));
 const sourceLossReset = JSON.parse(sourceLossResetBytes.toString("utf8")) as any;
+const sourceLossResetSha256 = sha256(sourceLossResetBytes);
+assertSourceLossResetRecord(sourceLossReset, {
+  runManifestSha256,
+  syncReportSha256,
+  recoveryManifestSha256,
+  compatibilityAsarSha256: preparedRun.manifest.compatibilityAsarSha256,
+  profilePath: resolve(root, "client-b/user-data"),
+  vaultPath: resolve(root, "client-b/vault"),
+});
+assertRecoveryReportResetBinding(recoveryReport, {
+  recoveryManifestSha256,
+  sourceLossResetSha256,
+  resetAt: sourceLossReset.resetAt,
+});
 if (
-  sourceLossReset.schemaVersion !== 2 ||
   await pathExists(resolve(root, ".source-loss-reset.lock")) ||
   await pathExists(resolve(root, ".source-loss-trash"))
 ) {
-  throw new Error("Cold-recovery source-loss reset uses an unsupported schema");
+  throw new Error("Cold-recovery source-loss transition is still active");
 }
 for (const client of ["client-a", "client-b"] as const) {
   const retired = sourceLossReset.retiredRuntimeHomes?.[client];
@@ -313,9 +340,10 @@ const recoveryReportBytes = await readFile(resolve(root, "recovery-report.json")
 const recoveryUiState = JSON.parse(recoveryUiStateBytes.toString("utf8")) as any;
 const recoveryContext = recoveryFinalize.context as any;
 if (
+  Date.parse(recoveryBinding.identity.startedAt) <= Date.parse(sourceLossReset.resetAt) ||
   recoveryFinalize.phase !== "cold-recovery" ||
   recoveryFinalize.handshakeNotBefore !== recoveryBinding.identity.startedAt ||
-  recoveryContext.sourceLossResetSha256 !== sha256(sourceLossResetBytes) ||
+  recoveryContext.sourceLossResetSha256 !== sourceLossResetSha256 ||
   recoveryContext.recoveryLaunchSha256 !== recoveryIdentitySha256 ||
   recoveryContext.recoveryReportSha256 !== sha256(recoveryReportBytes) ||
   recoveryContext.recoveryUiStateSha256 !== sha256(recoveryUiStateBytes) ||
@@ -357,7 +385,7 @@ for (const file of [
 }
 
 const qualification = {
-  schemaVersion: 4,
+  schemaVersion: 6,
   qualifiedAt: new Date().toISOString(),
   passed: true,
   platform: "macOS Apple Silicon",
@@ -388,6 +416,7 @@ const qualification = {
   recovery: {
     expectedFiles: recoveryReport.expectedFiles,
     restoredFiles: recoveryReport.restoredFiles,
+    corpus: recoveryReport.corpus,
     missing: 0,
     unexpected: 0,
     changed: 0,
@@ -395,9 +424,9 @@ const qualification = {
   evidence: {
     runManifestSha256,
     syncReportSha256,
-    recoveryManifestSha256: await fileSha256("recovery-manifest.json"),
+    recoveryManifestSha256,
     recoveryReportSha256: await fileSha256("recovery-report.json"),
-    sourceLossResetSha256: sha256(sourceLossResetBytes),
+    sourceLossResetSha256,
     recoveryLaunchSha256: recoveryIdentitySha256,
     recoveryUiStateSha256: sha256(recoveryUiStateBytes),
     recoveryScreenshotSha256: sha256(recoveryScreenshotBytes),

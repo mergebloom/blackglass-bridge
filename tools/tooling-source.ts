@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
+import { compareCodeUnitStrings } from "./stable-json";
 
-export const TOOLING_SOURCE_IDENTITY_FORMAT_VERSION = 1;
+export const TOOLING_SOURCE_IDENTITY_FORMAT_VERSION = 2;
 export const TOOLING_SOURCE_SCOPE = "release-critical-v1" as const;
 
 export const TOOLING_SOURCE_FILES = [
@@ -57,7 +58,9 @@ export async function computeToolingSourceIdentity(
     throw new Error("Tooling source identity requires a Git worktree");
   }
   assertRequiredScope(trackedPaths);
-  for (const path of trackedPaths.filter(isToolingSourcePath).sort()) {
+  for (const path of trackedPaths
+    .filter(isToolingSourcePath)
+    .sort(compareCodeUnitStrings)) {
     await addToolingFile(root, join(root, path), records);
   }
   const git = gitIdentity(root);
@@ -260,7 +263,7 @@ function buildToolingSourceIdentity(
   worktreeClean: boolean,
 ): ToolingSourceIdentity {
   const ordered = [...records.values()].sort((left, right) =>
-    left.path.localeCompare(right.path),
+    compareCodeUnitStrings(left.path, right.path),
   );
   if (ordered.length === 0) throw new Error("Tooling source scope is empty");
   const digest = createHash("sha256");

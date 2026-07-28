@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { ClientLaunchIdentity } from "./e2e-client";
 import type { PreparedE2ERunManifest } from "./e2e-network";
+import { stableJson } from "./stable-json";
 
 export const E2E_NETWORK_EVIDENCE_SCHEMA_VERSION = 2;
 
@@ -437,17 +438,6 @@ function assertNoEndpointBypass(
 
 export function isControlPlanePath(pathname: string): boolean {
   return /^\/(?:publish|subscription|user|vault)(?:\/|$)/u.test(pathname);
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (isRecord(value)) {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

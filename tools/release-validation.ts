@@ -14,22 +14,27 @@ import {
   CLI_BINARY_INCISION_COUNT,
   CLI_BINARY_PATCH_FORMAT_VERSION,
 } from "./cli-binary";
+import { assertMacOSCodeSigningEvidence } from "./macos-code-signing";
 import type { MacOSArtifact } from "./macos-artifact";
 import type { BridgeReleaseManifest } from "./release-manifest";
 import type { ServerArtifact } from "./server-artifact";
+import {
+  assertCanonicalRecoveryCorpusIdentity,
+  type RecoveryCorpusIdentity,
+} from "./recovery-corpus";
 import {
   assertToolingSourceIdentity,
   type ToolingSourceIdentity,
 } from "./tooling-source";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 
-export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 6;
+export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 8;
 
 type PublicMacOSArtifact = Omit<MacOSArtifact, "appPath">;
 type PublicServerArtifact = Omit<ServerArtifact, "binaryPath">;
 
 export interface ReleaseQualification {
-  schemaVersion: 4;
+  schemaVersion: 6;
   qualifiedAt: string;
   passed: true;
   platform: "macOS Apple Silicon";
@@ -60,6 +65,7 @@ export interface ReleaseQualification {
   recovery: {
     expectedFiles: number;
     restoredFiles: number;
+    corpus: RecoveryCorpusIdentity;
     missing: 0;
     unexpected: 0;
     changed: 0;
@@ -174,7 +180,7 @@ export function assertReleaseQualification(
 ): asserts value is ReleaseQualification {
   if (
     !isRecord(value) ||
-    value.schemaVersion !== 4 ||
+    value.schemaVersion !== 6 ||
     value.passed !== true ||
     value.platform !== "macOS Apple Silicon" ||
     value.bridgeVersion !== manifest.bridgeVersion ||
@@ -280,8 +286,9 @@ export function assertReleaseValidationRecord(
   }
   assertEvidence(value.packagedClientE2E.evidence);
   const macOS = value.artifacts.macOS;
+  assertMacOSCodeSigningEvidence(macOS.codeSigning);
   if (
-    macOS.schemaVersion !== 6 ||
+    macOS.schemaVersion !== 7 ||
     macOS.bundleIdentifier !== "com.blackglass.bridge" ||
     macOS.bundleName !== "Obsidian" ||
     macOS.displayName !== "Blackglass Bridge" ||
@@ -385,10 +392,15 @@ function isPassedWorkflow(value: unknown): value is ReleaseQualification["workfl
 }
 
 function isPassedRecovery(value: unknown): value is ReleaseQualification["recovery"] {
+  if (!isRecord(value)) return false;
+  try {
+    assertCanonicalRecoveryCorpusIdentity(value.corpus);
+  } catch {
+    return false;
+  }
   return Boolean(
-    isRecord(value) &&
-      Number.isSafeInteger(value.expectedFiles) &&
-      (value.expectedFiles as number) >= 10 &&
+    Number.isSafeInteger(value.expectedFiles) &&
+      (value.expectedFiles as number) >= value.corpus.files &&
       value.restoredFiles === value.expectedFiles &&
       value.missing === 0 &&
       value.unexpected === 0 &&
