@@ -3,10 +3,11 @@
 Blackglass Bridge is desktop compatibility tooling for using the built-in
 Obsidian Sync experience with a self-hosted Blackglass Server.
 
-It analyzes an authorized desktop release, changes only the control and data
-endpoints, rebuilds the package integrity metadata, and creates a separately
-identified macOS application for local use. It never modifies the installed
-Obsidian application or a real user vault.
+It analyzes an authorized desktop release, changes the control and data
+endpoints, enforces a separate local profile with upstream updates disabled,
+rebuilds the package integrity metadata, and creates a separately identified
+macOS application for local use. It never modifies the installed Obsidian
+application or a real user vault.
 
 Blackglass is independent and is not affiliated with or endorsed by Obsidian.
 
@@ -19,10 +20,15 @@ location while retaining the familiar application workflow. This provides data
 sovereignty and content privacy; the server remains able to observe limited
 operational metadata.
 
-Bridge keeps the client-side change to two semantic endpoint adaptations and
-requalifies the exact artifacts with end-to-end tests. That boundary is meant
-to make future Obsidian updates a small, repeatable maintenance task instead of
-maintaining a permanent application fork.
+The long-term target is the existing app experience with no loss of
+functionality while its services are self-hosted. The supported table below
+states what has been implemented and requalified so far.
+
+Bridge keeps the renderer change to two semantic endpoint adaptations. Three
+fail-closed wrapper incisions isolate Blackglass state, disable the upstream
+package updater, and force the embedded qualified renderer. The exact
+artifacts are requalified with end-to-end tests so future Obsidian updates
+remain a small, repeatable maintenance task.
 
 Blackglass began as a research project exploring frontier language-model
 capabilities in minified-code analysis, protocol recovery, clean-room compatible
@@ -31,11 +37,12 @@ findings are accepted only when backed by deterministic tooling and tests.
 
 ## How it works
 
-1. Inspect the authorized renderer and locate semantic endpoint anchors.
-2. Require exactly one match for each anchor and fail closed otherwise.
+1. Compare the authorized renderer with its reviewed, versioned compatibility baseline.
+2. Require exact anchor, route, Sync-operation, and message-shape inventories.
 3. Generate a deterministic compatibility ASAR for the chosen server URLs.
-4. Package and sign a separate `Blackglass Bridge.app` with an isolated profile.
-5. Qualify that exact client and server artifact pair with Sync and recovery E2E.
+4. Patch the copied wrapper to isolate state, disable updates, and pin the embedded renderer.
+5. Package and sign a separate `Blackglass Bridge.app`.
+6. Qualify that exact client and server artifact pair with Sync and recovery E2E.
 
 The client adapter is release-specific. The Sync protocol and durable data live
 in the separate Blackglass Server project, normally checked out beside this one
@@ -56,21 +63,27 @@ with later Obsidian releases are not qualified yet.
 
 ## Quick start
 
-Requirements: Bun 1.3 or newer and an authorized official Obsidian application
-or renderer artifact.
+Requirements: Bun 1.3 or newer and an authorized official Obsidian DMG.
 
 ```sh
 bun install
-bun run analyze:release -- /path/to/obsidian.asar
+bun run analyze:release -- \
+  '/Volumes/Obsidian/Obsidian.app/Contents/Resources/obsidian.asar' \
+  --resources '/Volumes/Obsidian/Obsidian.app/Contents/Resources'
 bun run patch:client -- \
-  /path/to/obsidian.asar \
+  '/Volumes/Obsidian/Obsidian.app/Contents/Resources/obsidian.asar' \
   /tmp/blackglass-bridge.asar \
+  --resources '/Volumes/Obsidian/Obsidian.app/Contents/Resources' \
   --control-origin http://127.0.0.1:3000 \
   --data-host 127.0.0.1:3003
 bun run package:macos -- \
   '/Volumes/Obsidian/Obsidian.app' \
   /tmp/blackglass-bridge.asar \
-  '/path/to/Blackglass Bridge.app'
+  '/path/to/Blackglass Bridge.app' \
+  --control-origin http://127.0.0.1:3000 \
+  --data-host 127.0.0.1:3003 \
+  --official-dmg /path/to/Obsidian.dmg \
+  --manifest /path/to/blackglass-bridge-release.json
 bun run check
 ```
 
@@ -80,11 +93,12 @@ For a real deployment, use HTTPS/WSS endpoints and follow the
 
 ## Updating for a new Obsidian release
 
-Each upstream release must be treated as unknown: retain its hash, rerun static
-analysis and exact-match adapter tests, generate a new app, then pass Sync and
-source-loss recovery E2E against the intended server binary. A changed or
-ambiguous semantic anchor stops the build instead of silently using an upstream
-endpoint. The stable self-hosted server URLs do not need to change.
+Each upstream release must be treated as unknown: retain the DMG hash, rerun static
+analysis, review and commit a new compatibility baseline, generate a new app,
+then pass Sync and source-loss recovery E2E against the intended server binary.
+Any new, removed, or changed packed or unpacked JavaScript file, anchor, route,
+Sync operation, or message shape stops the build. The stable self-hosted server
+URLs do not need to change.
 
 ## Safety and distribution
 
@@ -96,18 +110,10 @@ users to supply their own official release.
 
 The copied app uses bundle identifier `com.blackglass.bridge`, does not register
 Obsidian's URL scheme or iCloud container, and uses a dedicated profile so it
-can coexist with an ordinary Obsidian installation.
-
-Tagged GitHub releases publish only a deterministic, allowlisted tooling source
-archive and its SHA-256 checksum. They never contain an official Obsidian
-release, a generated ASAR or application, credentials, profiles, or vault data.
-The tag must exactly match the version in `package.json` (for example, `v0.1.0`).
-Maintainers can reproduce the assets with:
-
-```sh
-scripts/build-release-artifacts.sh v0.1.0 dist/release
-(cd dist/release && sha256sum --check blackglass-bridge-v0.1.0-tooling.tar.gz.sha256)
-```
+can coexist with an ordinary Obsidian installation. Its outer app filename and
+display name are Blackglass Bridge, while the upstream `Obsidian` bundle name,
+main executable, and Electron helper topology remain unchanged for runtime
+compatibility.
 
 ## Validation
 

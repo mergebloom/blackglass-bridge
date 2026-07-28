@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseArchitecture } from "../tools/server-artifact";
+import { parseArchitecture, parseServerBuildInfo } from "../tools/server-artifact";
 
 describe("server artifact metadata", () => {
   test("normalizes common executable architecture descriptions", () => {
@@ -9,5 +9,26 @@ describe("server artifact metadata", () => {
       parseArchitecture("Mach-O universal binary with 2 architectures: [x86_64] [arm64]"),
     ).toBe("universal");
     expect(parseArchitecture("POSIX shell script")).toBe("unknown");
+  });
+
+  test("requires build metadata bound to an exact source revision", () => {
+    const sourceRevision = "a".repeat(40);
+    expect(
+      parseServerBuildInfo(
+        JSON.stringify({
+          name: "blackglass-server",
+          version: "0.2.2",
+          sourceRevision,
+        }),
+        "0.2.2",
+      ),
+    ).toEqual({ name: "blackglass-server", version: "0.2.2", sourceRevision });
+    for (const value of [
+      { name: "blackglass-server", version: "0.2.1", sourceRevision },
+      { name: "blackglass-server", version: "0.2.2", sourceRevision: "unknown" },
+      { name: "other", version: "0.2.2", sourceRevision },
+    ]) {
+      expect(() => parseServerBuildInfo(JSON.stringify(value), "0.2.2")).toThrow();
+    }
   });
 });

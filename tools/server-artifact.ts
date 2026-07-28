@@ -3,9 +3,10 @@ import { lstat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 
 export interface ServerArtifact {
-  schemaVersion: 1;
+  schemaVersion: 2;
   name: "blackglass-server";
   version: string;
+  sourceRevision: string;
   binaryPath: string;
   binaryName: string;
   sha256: string;
@@ -23,17 +24,46 @@ export async function inspectServerArtifact(binaryArgument: string): Promise<Ser
   if (!match?.[1]) {
     throw new Error(`Unexpected server version output: ${versionOutput}`);
   }
+  const buildInfo = parseServerBuildInfo(
+    runText([binaryPath, "build-info"]),
+    match[1],
+  );
   const description = runText(["file", "-b", binaryPath]);
   const bytes = Buffer.from(await Bun.file(binaryPath).arrayBuffer());
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     name: "blackglass-server",
     version: match[1],
+    sourceRevision: buildInfo.sourceRevision,
     binaryPath,
     binaryName: basename(binaryPath),
     sha256: createHash("sha256").update(bytes).digest("hex"),
     bytes: file.size,
     architecture: parseArchitecture(description),
+  };
+}
+
+export function parseServerBuildInfo(
+  output: string,
+  expectedVersion: string,
+): { name: "blackglass-server"; version: string; sourceRevision: string } {
+  const value = JSON.parse(output) as {
+    name?: unknown;
+    version?: unknown;
+    sourceRevision?: unknown;
+  };
+  if (
+    value.name !== "blackglass-server" ||
+    value.version !== expectedVersion ||
+    typeof value.sourceRevision !== "string" ||
+    !/^[a-f0-9]{40}$/u.test(value.sourceRevision)
+  ) {
+    throw new Error("Server build-info does not bind an exact source revision");
+  }
+  return {
+    name: value.name,
+    version: value.version,
+    sourceRevision: value.sourceRevision,
   };
 }
 

@@ -1,0 +1,312 @@
+{
+  "schemaVersion": 3,
+  "id": "obsidian-macos-1.12.7",
+  "rendererVersion": "1.12.7",
+  "officialDmgSha256": "3b85c13b4ce55512e86e170a7cd2a494e2db695ac888c0601e153cb85b77881b",
+  "sourceAppTree": {
+    "formatVersion": 1,
+    "sha256": "1f45c46181c42bd130b6d0b159f02cb7ff502abe8f6f94123246bb9f55b1dfcd",
+    "entries": 622,
+    "files": 281,
+    "directories": 327,
+    "symlinks": 14,
+    "fileBytes": 504371842
+  },
+  "sourceAsarSha256": "2b2483b2e1246772e0d25367ec055cbc5047ea2f0091b667c35656678f86d712",
+  "sourceWrapperAsarSha256": "d8e392731d32feb97e80dd5fb8938d54c61bb7221f9eff5ff95965f6febeefdb",
+  "keyFiles": {
+    "app.js": {
+      "bytes": 3728534,
+      "sha256": "cc6d0c363cba3935207fb70e7d78736c9f0c2024545787871095288a1b185851"
+    },
+    "main.js": {
+      "bytes": 60101,
+      "sha256": "ff7766c6d011657ba95bbf2ead798b8df7f4a4c7cbdf2b0678bfc6f6330fffee"
+    },
+    "index.html": {
+      "bytes": 1445,
+      "sha256": "48b72d620f92677a3dbbc3e91786fc939bbe54d572162eedd3ee938a4f40024f"
+    },
+    "package.json": {
+      "bytes": 260,
+      "sha256": "927286d1cfa49b97ea36ff59f95d4270ff7e06d017cb010350c9f2adc5142aab"
+    }
+  },
+  "javaScriptFiles": {
+    "app.js": {
+      "bytes": 3728534,
+      "sha256": "cc6d0c363cba3935207fb70e7d78736c9f0c2024545787871095288a1b185851"
+    },
+    "enhance.js": {
+      "bytes": 13346,
+      "sha256": "411eea247ac08b5b5fc62b85cc2744079ee398a2d318c5cead08be981049b732"
+    },
+    "help.js": {
+      "bytes": 356766,
+      "sha256": "23817c42396855b14e8ff172bca04e9c11a7f80607b31f37be232163d040ef84"
+    },
+    "i18n.js": {
+      "bytes": 129239,
+      "sha256": "d21c841f151b6b3696b8e940c6afebe605d328f8c1ad8d60359574c7afb6ace9"
+    },
+    "lib/codemirror/cm-addons.js": {
+      "bytes": 58679,
+      "sha256": "fa370184a49e72482751cbdd253ad7821ec11ce1e92da39f0a232568504334b1"
+    },
+    "lib/codemirror/codemirror.js": {
+      "bytes": 400161,
+      "sha256": "2150c2e30dcc28427b0cacb31c8073e2f8cdbeb1b03d61214a7200809bf21a43"
+    },
+    "lib/codemirror/markdown.js": {
+      "bytes": 44078,
+      "sha256": "9c6321617db736c03d7d30eba30ad94d756652960370a709bf7556ff5c35d74f"
+    },
+    "lib/codemirror/meta.min.js": {
+      "bytes": 12792,
+      "sha256": "97f787318cca86f26348148ed84ed2510b190a868b86363adb24cdd78a33fcfb"
+    },
+    "lib/codemirror/modes.min.js": {
+      "bytes": 562656,
+      "sha256": "016713740d2428f9686a173cb4614c3a611ace8a9a25db8dab4ed30e9c77a745"
+    },
+    "lib/codemirror/overlay.js": {
+      "bytes": 3099,
+      "sha256": "4f158e3ba838c18621c62a8f42524db718f75974c6ad042bf9e9b828e35e0155"
+    },
+    "lib/codemirror/vim.js": {
+      "bytes": 248977,
+      "sha256": "2e1c8efa02fd4e4794e91567955e9c8821a311e18bb7798923d9b8ecece73636"
+    },
+    "lib/i18next.min.js": {
+      "bytes": 41340,
+      "sha256": "7980f21b960a94e89dd35cbc429be1f25eaf4a76220d96252d83b0c70301de4f"
+    },
+    "lib/mathjax/output/chtml/fonts/tex.js": {
+      "bytes": 104800,
+      "sha256": "181b8491a1d494654399b9987cf1521f7567e8fdae6161b2d382a81251cc546c"
+    },
+    "lib/mathjax/tex-chtml-full.js": {
+      "bytes": 1338727,
+      "sha256": "440dde1db4eb1fd2c0be99fb5f8bf946f339a9e5dade55bcb069a1937a7fb803"
+    },
+    "lib/mermaid.min.js": {
+      "bytes": 2572132,
+      "sha256": "0192fad8f0d1765519c4a27ac33975d86bea2d618a7ade1dc59e7384d8f65d05"
+    },
+    "lib/moment.min.js": {
+      "bytes": 369007,
+      "sha256": "e7f08bbd166d96518728efde269f4ab17cb771abc4fa343dd445b92696e60894"
+    },
+    "lib/pdfjs/pdf.min.mjs": {
+      "bytes": 566729,
+      "sha256": "f298004f6e2f4e67faab473513f322edc506295968e96b50041cb1a69ea90279"
+    },
+    "lib/pdfjs/pdf.viewer.min.mjs": {
+      "bytes": 488821,
+      "sha256": "7060308a7ffa11ab3112458ec58f740eb90643849beeaa6d9c9ff4441e9d35af"
+    },
+    "lib/pdfjs/pdf.worker.min.mjs": {
+      "bytes": 1130698,
+      "sha256": "0235bc7b0c7822334edb2f82eb2ffc7954b971e4c7e57acca4703f6c2555efe4"
+    },
+    "lib/pdfjs/wasm/openjpeg_nowasm_fallback.js": {
+      "bytes": 462316,
+      "sha256": "53c228428a8861035a34738966af263fc9d4cee6df25a0ad942af947469a0bd9"
+    },
+    "lib/pixi.min.js": {
+      "bytes": 487134,
+      "sha256": "842814b22c348dcdab381ffb79da3763ff0672271f60f09dababa52656fd31b8"
+    },
+    "lib/prism.min.js": {
+      "bytes": 576531,
+      "sha256": "9389ca2110991b037228c190018c94abcf25d1af0ad32fc51b78263660acbddb"
+    },
+    "lib/readability.js": {
+      "bytes": 32556,
+      "sha256": "b17dea4bd122b5f0c32b6d55801607ea1492292f14aba9d97448f1fde395a2ef"
+    },
+    "lib/reveal/reveal.js": {
+      "bytes": 89690,
+      "sha256": "b82b9b79b9052fb447f74c2b6f63b1d2d906b419a8a7f648d70418418bd7daf2"
+    },
+    "lib/scrypt.js": {
+      "bytes": 17877,
+      "sha256": "437b12082063e4d09d2e3704a9fcb398feaef4978e9c4969bfb1d00cfd433676"
+    },
+    "lib/turndown.js": {
+      "bytes": 10697,
+      "sha256": "f552fd2818a9d3c0ad6fa9f47524c52b4966a9d9a31e68cfaf05196c6cd773f2"
+    },
+    "main.js": {
+      "bytes": 60101,
+      "sha256": "ff7766c6d011657ba95bbf2ead798b8df7f4a4c7cbdf2b0678bfc6f6330fffee"
+    },
+    "sim.js": {
+      "bytes": 17693,
+      "sha256": "549be2f69710af360d521c92b80c83718f673594d3dc2255a65e251199eee25d"
+    },
+    "starter.js": {
+      "bytes": 416521,
+      "sha256": "330a058c82093eb2360a0baba07cb78673ece592bfe3f497a5012799750d1a97"
+    },
+    "worker.js": {
+      "bytes": 239381,
+      "sha256": "af9005e6e44848fac2de2cb978676356c74a4ac39b33182926cb3c0cfde9c94d"
+    }
+  },
+  "unpackedJavaScriptFiles": {
+    "app.asar.unpacked/node_modules/btime/index.js": {
+      "bytes": 1726,
+      "sha256": "7ade5c334d6eb8a2e5ef8b6d52c5396641903af30c3c2ceda5e4934e3b88f35c"
+    },
+    "app.asar.unpacked/node_modules/get-fonts/index.js": {
+      "bytes": 115,
+      "sha256": "b44255cd3525bf6596a184d6d4db62c54be16826ac35c9384ead5f6a815a1b47"
+    }
+  },
+  "unpackedJavaScriptReview": {
+    "status": "reviewed",
+    "reviewedPaths": [
+      "app.asar.unpacked/node_modules/btime/index.js",
+      "app.asar.unpacked/node_modules/get-fonts/index.js"
+    ]
+  },
+  "anchors": [
+    {
+      "id": "control-origin-constructor",
+      "file": "app.js",
+      "literal": "String.fromCharCode(97,112,105),\"obsidian\",\"md\"",
+      "expectedMatches": 1
+    },
+    {
+      "id": "sync-websocket-host-authorization",
+      "file": "app.js",
+      "literal": "!oee.call(h,\".obsidian.md\")&&\"127.0.0.1\"!==h",
+      "expectedMatches": 1
+    },
+    {
+      "id": "loopback-control-development-endpoint",
+      "file": "app.js",
+      "literal": "http://127.0.0.1:3000",
+      "expectedMatches": 1
+    },
+    {
+      "id": "loopback-sync-development-endpoint",
+      "file": "app.js",
+      "literal": "127.0.0.1:3003",
+      "expectedMatches": 1
+    },
+    {
+      "id": "renderer-script-reference",
+      "file": "index.html",
+      "literal": "app.js",
+      "expectedMatches": 1
+    },
+    {
+      "id": "desktop-is-dev-ipc-handler",
+      "file": "main.js",
+      "literal": "ipcMain.on(\"is-dev\"",
+      "expectedMatches": 1
+    }
+  ],
+  "controlPlaneRoutes": {
+    "/publish/create": 1,
+    "/publish/delete": 1,
+    "/publish/list": 1,
+    "/publish/share/accept": 1,
+    "/publish/share/invite": 1,
+    "/publish/share/list": 1,
+    "/publish/share/remove": 1,
+    "/subscription/business": 1,
+    "/subscription/list": 1,
+    "/subscription/sync/signup-mobile": 1,
+    "/user/authtoken": 1,
+    "/user/forgetpass": 1,
+    "/user/info": 1,
+    "/user/resendconfirmation": 1,
+    "/user/signin": 1,
+    "/user/signout": 1,
+    "/user/signup": 1,
+    "/vault/access": 1,
+    "/vault/create": 1,
+    "/vault/delete": 1,
+    "/vault/list": 1,
+    "/vault/migrate": 1,
+    "/vault/regions": 1,
+    "/vault/rename": 1,
+    "/vault/share/invite": 1,
+    "/vault/share/list": 1,
+    "/vault/share/remove": 1
+  },
+  "syncOperations": {
+    "bcurveTo": 5,
+    "deleted": 1,
+    "history": 1,
+    "init": 1,
+    "KetBra": 1,
+    "keyword": 1,
+    "lineTo": 4,
+    "move": 7,
+    "ping": 1,
+    "pull": 1,
+    "purge": 1,
+    "push": 2,
+    "restore": 1,
+    "size": 1,
+    "usernames": 1
+  },
+  "syncOperationLocations": {
+    "app.js:deleted": 1,
+    "app.js:history": 1,
+    "app.js:init": 1,
+    "app.js:ping": 1,
+    "app.js:pull": 1,
+    "app.js:purge": 1,
+    "app.js:push": 2,
+    "app.js:restore": 1,
+    "app.js:size": 1,
+    "app.js:usernames": 1,
+    "lib/codemirror/modes.min.js:keyword": 1,
+    "lib/mathjax/tex-chtml-full.js:KetBra": 1,
+    "lib/mermaid.min.js:bcurveTo": 5,
+    "lib/mermaid.min.js:lineTo": 4,
+    "lib/mermaid.min.js:move": 7
+  },
+  "syncMessageShapes": {
+    "bcurveTo(op,data)": 5,
+    "deleted(op,suppressrenames)": 1,
+    "history(op,path,last)": 1,
+    "init(op,token,id,keyhash,version,initial,device,encryption_version)": 1,
+    "lineTo(op,data)": 4,
+    "move(op,data)": 7,
+    "ping(op)": 1,
+    "pull(op,uid)": 1,
+    "purge(op)": 1,
+    "push(op,path,relatedpath,extension,hash,ctime,mtime,folder,deleted,size,pieces)": 1,
+    "push(op,path,relatedpath,extension,hash,ctime,mtime,folder,deleted)": 1,
+    "restore(op,uid)": 1,
+    "size(op)": 1,
+    "usernames(op)": 1
+  },
+  "syncMessageShapeLocations": {
+    "app.js:deleted(op,suppressrenames)": 1,
+    "app.js:history(op,path,last)": 1,
+    "app.js:init(op,token,id,keyhash,version,initial,device,encryption_version)": 1,
+    "app.js:ping(op)": 1,
+    "app.js:pull(op,uid)": 1,
+    "app.js:purge(op)": 1,
+    "app.js:push(op,path,relatedpath,extension,hash,ctime,mtime,folder,deleted,size,pieces)": 1,
+    "app.js:push(op,path,relatedpath,extension,hash,ctime,mtime,folder,deleted)": 1,
+    "app.js:restore(op,uid)": 1,
+    "app.js:size(op)": 1,
+    "app.js:usernames(op)": 1,
+    "lib/mermaid.min.js:bcurveTo(op,data)": 5,
+    "lib/mermaid.min.js:lineTo(op,data)": 4,
+    "lib/mermaid.min.js:move(op,data)": 7
+  },
+  "syncInboundOperations": {
+    "app.js:pong": 1,
+    "app.js:push": 1,
+    "app.js:ready": 1
+  }
+}

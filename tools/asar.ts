@@ -179,6 +179,43 @@ export class AsarArchive {
   }
 }
 
+export function replacePackedAsarEntry(
+  upstream: Buffer,
+  path: string,
+  replacement: Buffer,
+): Buffer {
+  const archive = AsarArchive.fromBuffer(upstream);
+  const current = archive.read(path);
+  if (replacement.length !== current.length) {
+    throw new Error(
+      `Replacement for ${path} changed byte length: ${current.length} -> ${replacement.length}`,
+    );
+  }
+  const node = archive.get(path);
+  if (!node?.integrity) {
+    throw new Error(`${path} has no ASAR integrity metadata`);
+  }
+
+  updateIntegrity(node.integrity, replacement);
+  const data = Buffer.from(upstream.subarray(archive.dataOffset));
+  const range = archive.contentRange(path);
+  replacement.copy(data, range.start - archive.dataOffset);
+  const output = Buffer.concat([buildHeader(archive.header), data]);
+
+  const generated = AsarArchive.fromBuffer(output);
+  if (!generated.read(path).equals(replacement)) {
+    throw new Error(`Generated ASAR did not preserve replacement for ${path}`);
+  }
+  return output;
+}
+
+export function asarHeaderSha256(value: Buffer): string {
+  const archive = AsarArchive.fromBuffer(value);
+  return createHash("sha256")
+    .update(value.subarray(16, 16 + archive.headerStringSize))
+    .digest("hex");
+}
+
 function isAsarHeader(value: unknown): value is AsarHeader {
   if (!value || typeof value !== "object") {
     return false;
@@ -216,4 +253,38 @@ function verifyIntegrity(
       `ASAR integrity mismatch for ${path}: expected ${integrity.hash}, got ${actual}`,
     );
   }
+}
+
+function updateIntegrity(integrity: AsarIntegrity, content: Buffer): void {
+  const algorithm = integrity.algorithm.toLowerCase().replaceAll("-", "");
+  integrity.hash = createHash(algorithm).update(content).digest("hex");
+  if (integrity.blockSize && integrity.blocks) {
+    const blocks: string[] = [];
+    for (let offset = 0; offset < content.length; offset += integrity.blockSize) {
+      blocks.push(
+        createHash(algorithm)
+          .update(content.subarray(offset, offset + integrity.blockSize))
+          .digest("hex"),
+      );
+    }
+    integrity.blocks = blocks;
+  }
+}
+
+function buildHeader(headerValue: unknown): Buffer {
+  const json = Buffer.from(JSON.stringify(headerValue), "utf8");
+  const paddedStringLength = align4(json.length);
+  const headerPayloadSize = 4 + paddedStringLength;
+  const headerPickleSize = 4 + headerPayloadSize;
+  const output = Buffer.alloc(8 + headerPickleSize);
+  output.writeUInt32LE(4, 0);
+  output.writeUInt32LE(headerPickleSize, 4);
+  output.writeUInt32LE(headerPayloadSize, 8);
+  output.writeUInt32LE(json.length, 12);
+  json.copy(output, 16);
+  return output;
+}
+
+function align4(value: number): number {
+  return (value + 3) & ~3;
 }

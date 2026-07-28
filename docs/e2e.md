@@ -1,163 +1,123 @@
-# macOS two-client E2E validation
+# macOS qualification
 
-## Qualification status
+Every release claim is tied to one ignored `.data/e2e/<run>` directory. The
+gate uses disposable profiles and vaults only; it refuses the normal Obsidian
+profile, an installed app, changed artifacts, reused evidence, or paths outside
+the project E2E area.
 
-The records below are historical protocol baselines. They predate the
-`blackglass-server` executable name, `Blackglass Server` region label, and
-`com.blackglass.bridge` macOS identity, so they do not qualify the current
-release artifacts. The current release must repeat the packaged-client recovery
-run and produce a schema-2 report containing the exact server and ASAR hashes.
+## What must pass
 
-Status: **passed** against the Bun protocol oracle on 2026-07-25. A repeat
-against the Rust production implementation is recorded below.
+- the exact official DMG, reviewed compatibility baseline, two-incision ASAR,
+  copied app, release manifest, and Rust server binary all match by SHA-256,
+  with the server binary also reporting its exact source revision;
+- two separately identified live app processes use the intended renderer,
+  profile, vault, DevTools target, TLS certificate, and resolver rules;
+- CDP traces started before login show successful POSTs to the configured HTTPS
+  control origin and a `101` handshake to the configured WSS data host, with no
+  loopback fallback;
+- automatic A-to-B and B-to-A transfers, a propagated deletion, and a transfer
+  after a graceful server restart advance SQLite monotonically;
+- six native Sync UI checkpoints match the required success text; and
+- after both client trees are removed, one new empty client restores a mixed
+  vault byte-for-byte from server-held data.
 
-## Test boundary
+Raw credentials, screenshots, profiles, and vaults remain ignored. Committed
+records in `docs/validation` are sanitized summaries, not substitutes for
+qualifying a newly built artifact.
 
-- Official `/Applications/Obsidian.app` wrapper, installer version 1.9.12
-- Obsidian renderer 1.12.7
-- macOS Apple Silicon-capable application binary
-- two simultaneous, isolated `--user-data-dir` profiles
-- two isolated test vaults
-- generated two-incision compatibility ASAR
-- loopback control (`127.0.0.1:3000`) and data (`127.0.0.1:3003`) services
-- installed application and normal Obsidian profile untouched
+## Run outline
 
-## Results
-
-The built-in UI completed login, remote-vault creation, E2EE password setup,
-connect/unlock, and Start syncing. Client B discovered the same Blackglass Server
-remote vault and performed a fresh initial download.
-
-| Direction | Bytes | SHA-256 | Result |
-| --- | ---: | --- | --- |
-| A -> B | 215 | `ddd170d7fe3661e2f87437cc65ce0bc07cd35db343f634c4fb1d5e23a470764b` | byte-identical |
-| B -> A | 181 | `fbfe9cd22f8c16ce0a7e4f0f804b83caf9ab2943c55099ab2296123c47876548` | byte-identical |
-
-Compatibility ASAR SHA-256:
-`0a890c3cbd857f33269d8d957a32c72ea65fb8cc0d5435b67506c9817e89dc5a`.
-The official upstream ASAR used to generate it had SHA-256
-`2b2483b2e1246772e0d25367ec055cbc5047ea2f0091b667c35656678f86d712`.
-
-The final database contained five revisions and 1,236 encrypted payload bytes.
-The verifier found neither complete proof note as plaintext in any stored
-payload. This check demonstrates the observed E2EE path; it is not a formal
-cryptographic audit.
-
-The native Sync screen reported “Obsidian Sync is currently running,” showed
-both note names, and displayed the connected `E2E Vault`. The native Deleted
-files screen also loaded successfully and reported zero files.
-
-Machine-readable evidence is in the ignored local run directory at
-`.data/e2e/run-20260725-2/report.json`; screenshots are listed in that report.
-Re-run the deterministic checks with:
+Build the app and server first. Then create a fresh run and its scoped TLS
+material:
 
 ```sh
-bun run e2e:verify -- .data/e2e/run-20260725-2
+bun run e2e:prepare -- .data/e2e/<run> /path/to/blackglass.asar \
+  --app '/path/to/Blackglass Bridge.app' \
+  --release-manifest /path/to/release-manifest.json
+bun run e2e:tls:prepare -- .data/e2e/<run>
 ```
 
-Protocol/unit validation finished with 13 passing tests and 90 assertions.
-
-## Pre-Blackglass Rust implementation E2E (2026-07-26)
-
-Status: **historical baseline passed** against the pre-brand Rust binary. The built-in 1.12.7
-UI completed local-server login, creation of a `Blackglass Server` E2EE remote vault,
-connect/unlock, background upload, clean-client recovery, and automatic
-reconnect after a graceful server restart. The release binary is arm64,
-3,813,088 bytes, and has SHA-256
-`98d692f272b112f10742e70429bb254ceb95bbc6c6be450b24388a8f65f76970`.
-
-Disposable client A uploaded a mixed vault plus a note authored through the
-visible editor after Sync first reported `Fully synced`. Its local profile was
-then stopped and moved out of the run into a recoverable sibling quarantine.
-Only after that source removal, a new empty profile logged in, selected the
-server-held vault, unlocked it, and recovered all content. Obsidian's own
-attachment switches explicitly require a restart; the run enabled them,
-restarted each isolated client, and verified PNG, SVG, PDF, Canvas, CSV, JSON,
-JavaScript, and Markdown recovery.
-
-The final manifest contained 17 files. The verifier reported 17 restored,
-zero missing, zero unexpected, and zero changed files, with client A absent
-from the run. SQLite contained 41 revisions and 13,954 ciphertext bytes in the
-external content table, zero legacy inline payloads, and zero matches for the
-five plaintext proof markers. Migrations 1 and 2 were present, the database
-mode was `0600`, and the upload directory mode was `0700`.
-
-After rebuilding and gracefully restarting the exact release binary, the
-connected client returned from `Connecting to server` to `Fully synced`
-without intervention. A new post-restart note then produced one upload on one
-client and one download on the other. Final metrics reported two WebSocket
-connections, one upload, one download, and zero errors. `/health` identified
-the Rust implementation and `/ready` returned success.
-
-The content-bearing SQLite backup was a single `0600` file with no WAL/SHM
-sidecars; it was verified and restored into a disposable database successfully.
-The 64 MiB release resource gate passed with a 6.64 MiB RSS increase and an
-empty staging directory after commit.
-
-A sanitized summary is retained at
-[`validation/obsidian-1.12.7-pre-blackglass-e2e.json`](validation/obsidian-1.12.7-pre-blackglass-e2e.json).
-Raw local evidence remains ignored and is not required to trust a different
-artifact hash.
-
-## Exact release-image verification
-
-The supplied GitHub DMG was downloaded separately. Its SHA-256
-`3b85c13b4ce55512e86e170a7cd2a494e2db695ac888c0601e153cb85b77881b`
-matched GitHub's published asset digest, and `hdiutil` verified the image CRC.
-Its application executable is universal with an arm64 slice. Its embedded
-`obsidian.asar` hash is exactly the upstream renderer hash above.
-
-The copied-app packager replaced that embedded ASAR, preserved version 1.12.7,
-ad-hoc signed the copy, and passed strict deep `codesign` verification. A normal
-Obsidian process was already active on this host, so the newer wrapper did not
-create a second isolated renderer; that user process was intentionally not
-terminated. Therefore the bidirectional UI E2E result above is specifically
-the installed universal wrapper loading the byte-identical official 1.12.7
-renderer, while the clean-DMG packaging path is hash/signature verified rather
-than separately UI-tested in this run.
-
-## Repeat the full run
-
-1. Generate the adapter with `patch:client` and the loopback endpoints.
-2. Package a `Blackglass Bridge.app` copy and verify its identity/signature.
-3. Create a new ignored run directory with `e2e:prepare --app`; this pins the
-   packaged app identity, hashes, and signing CDHash.
-4. Start its exact release server with `e2e:server`; this records and pins the
-   binary SHA-256, version, size, and architecture.
-5. Launch the packaged app twice with the two generated `user-data` directories
-   and distinct debugging ports.
-6. In the built-in UI, client A logs in, creates an E2EE remote vault, connects,
-   unlocks, and starts Sync. Client B logs in, chooses the vault, unlocks, and
-   starts Sync.
-7. Create one unique proof note in each local vault and require the counterpart
-   to become byte-identical.
-8. Capture native Sync/Deleted files screens and run `e2e:verify`. The verifier
-   refuses a server binary that changed after the run started.
-
-## Destructive recovery drill
-
-The ignored run directory `.data/e2e/run-recovery-20260725-1` records a
-full source-loss recovery test. Disposable client A uploaded a 14-file vault
-containing seven Markdown notes, PNG and SVG images, PDF, Canvas, CSV, JSON,
-and JavaScript files. One note was authored in the visible Obsidian editor
-after Sync had already reached `Fully synced`; the server advanced without a
-manual upload or retry action.
-
-After the server reached 28 revisions and 12,739 encrypted payload bytes,
-client A's isolated profile and vault directory were permanently removed.
-A separately identified, empty client B profile then connected to the same
-self-hosted remote vault and restored all 14 files. The recovery verifier found
-no missing, unexpected, or changed files, and every restored SHA-256 digest and
-byte size matched the source manifest.
-
-The reusable fixture and verifier commands are:
+Run the TLS proxy and the server in separate terminals. Record the first server
+as `server-initial.json`:
 
 ```sh
-bun run recovery:drill -- create <source-vault>
-bun run recovery:drill -- capture <run-root> <source-vault>
-bun run recovery:drill -- verify <run-root> <restored-vault>
+bun run e2e:tls:proxy -- .data/e2e/<run>
+BLACKGLASS_SERVER_BINARY=/path/to/blackglass-server \
+  bun run e2e:server -- .data/e2e/<run> \
+  --identity-out .data/e2e/<run>/server-initial.json
 ```
 
-Machine-readable evidence is in `recovery-manifest.json` and
-`recovery-report.json` under the run directory. The client A editor proof and
-client B restored Home/Gallery screenshots are stored alongside them.
+Launch client A and B from their prepared profiles with distinct debug ports,
+the run's `tls-metadata.json`, and identity outputs named
+`client-a-launch.json` and `client-b-launch.json`. Start both network captures
+before using the account UI. They remain attached across the server restart and
+post-restart transfers until explicitly finalized:
+
+```sh
+bun run e2e:network:capture -- .data/e2e/<run> client-a
+bun run e2e:network:capture -- .data/e2e/<run> client-b
+```
+
+Through the built-in UI, client A logs in, creates an E2EE vault in Blackglass
+Server, connects, unlocks, and starts Sync. Client B logs in, selects the same
+vault, connects, unlocks, and starts Sync. `tools/e2e-ui.mjs` performs these
+interactions and writes each PNG/JSON checkpoint pair under `evidence/`.
+
+Use `e2e:observe` for the three allowed proof transfers and one deletion. The
+first A-to-B transfer occurs before stopping the initial server. Restart the
+same binary as `server-restarted.json`; the remaining observations occur after
+it is ready. Explicitly pause/resume Sync once on each client after readiness so
+the traces record a fresh WSS handshake, then perform the remaining observations.
+Finalize both traces only after all four observations exist; the
+finalizer binds them to the restarted server and requires a successful WSS
+handshake after its ready time:
+
+```sh
+bun run e2e:network:finalize -- .data/e2e/<run> client-a
+bun run e2e:network:finalize -- .data/e2e/<run> client-b
+```
+
+After both capture processes finish successfully, run:
+
+```sh
+bun run e2e:verify -- .data/e2e/<run>
+```
+
+The verifier requires these checkpoint stems:
+
+- `evidence/client-a/settings`, `created`, and `unlocked`;
+- `evidence/client-b/vault-chooser`, `converged`, and `deleted-files`.
+
+## Source-loss recovery
+
+Add the mixed fixture to client A, wait for background Sync to advance the
+database, and capture it:
+
+```sh
+bun run recovery:drill -- create .data/e2e/<run>/client-a/vault
+bun run recovery:drill -- capture .data/e2e/<run> \
+  .data/e2e/<run>/client-a/vault
+```
+
+Stop both clients. The reset command permanently removes only the two validated
+disposable client trees and creates a new empty client B:
+
+```sh
+bun run e2e:reset-for-recovery -- .data/e2e/<run>
+```
+
+Launch that client with identity output `client-b-recovery-launch.json`, then
+start `e2e:network:capture` for `client-b-recovery` before login. Restore through
+the same built-in UI and capture `evidence/recovery/client-b-restored.png` plus
+its JSON peer. Verify recovery, explicitly finalize its trace, and qualify:
+
+```sh
+bun run recovery:drill -- verify .data/e2e/<run> \
+  .data/e2e/<run>/client-b/vault
+bun run e2e:network:finalize -- .data/e2e/<run> client-b-recovery
+bun run e2e:qualify -- .data/e2e/<run>
+```
+
+`qualification.json` is emitted only when Sync, restart, deletion, exact
+endpoint evidence across all lifecycle phases, cold recovery, permissions, and
+current artifact identities all pass.

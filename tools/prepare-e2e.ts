@@ -2,24 +2,46 @@ import { createHash, randomBytes } from "node:crypto";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { AsarArchive } from "./asar";
-import { inspectMacOSArtifact } from "./macos-artifact";
+import { parseStrictFlags } from "./cli-flags";
+import { deriveE2ENetworkPlan } from "./e2e-network";
+import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
+import {
+  assertPathWithin,
+  canonicalExistingPath,
+  canonicalOutputPath,
+} from "./path-safety";
+import { readBridgeReleaseManifest } from "./release-manifest";
 
 const [rootArgument, asarArgument, ...flags] = Bun.argv.slice(2);
-const appArgument = readFlag(flags, "--app");
-if (!rootArgument || !asarArgument || !appArgument) {
+const parsedFlags = parseStrictFlags(flags, {
+  valueFlags: ["--app", "--release-manifest"],
+});
+const appArgument = parsedFlags.values.get("--app");
+const releaseManifestArgument = parsedFlags.values.get("--release-manifest");
+if (!rootArgument || !asarArgument || !appArgument || !releaseManifestArgument) {
   console.error(
     "Usage: bun run tools/prepare-e2e.ts <run-directory> <patched.asar> " +
-      "--app <Blackglass Bridge.app>",
+      "--app <Blackglass Bridge.app> --release-manifest <release.json>",
   );
   process.exit(2);
 }
 
-const root = resolve(rootArgument);
-const asar = resolve(asarArgument);
 const projectDataRoot = resolve(import.meta.dir, "../.data/e2e");
-if (!root.startsWith(`${projectDataRoot}/`)) {
-  throw new Error(`E2E directory must be inside ${projectDataRoot}`);
-}
+await mkdir(projectDataRoot, { recursive: true });
+const canonicalDataRoot = await canonicalExistingPath(
+  projectDataRoot,
+  "E2E data root",
+  "directory",
+);
+const root = await canonicalOutputPath(rootArgument, "E2E run directory");
+assertPathWithin(root, canonicalDataRoot, "E2E run directory");
+const asar = await canonicalExistingPath(asarArgument, "Compatibility ASAR", "file");
+const app = await canonicalExistingPath(appArgument, "Blackglass app", "directory");
+const releaseManifestPath = await canonicalExistingPath(
+  releaseManifestArgument,
+  "Release manifest",
+  "file",
+);
 const archive = await AsarArchive.open(asar);
 const packageMetadata = JSON.parse(archive.read("package.json").toString("utf8")) as {
   version?: string;
@@ -29,7 +51,13 @@ if (!packageMetadata.version || !/^\d+\.\d+\.\d+$/.test(packageMetadata.version)
 }
 archive.read("app.js");
 const adapterBytes = Buffer.from(await Bun.file(asar).arrayBuffer());
-const clientArtifact = await inspectMacOSArtifact(appArgument);
+const clientArtifact = await inspectMacOSArtifact(app);
+const releaseManifestBytes = Buffer.from(
+  await Bun.file(releaseManifestPath).arrayBuffer(),
+);
+const { manifest: releaseManifest } = await readBridgeReleaseManifest(
+  releaseManifestPath,
+);
 if (clientArtifact.version !== packageMetadata.version) {
   throw new Error(
     `App/renderer version mismatch: ${clientArtifact.version} != ${packageMetadata.version}`,
@@ -41,15 +69,41 @@ if (
 ) {
   throw new Error("Packaged app does not embed the prepared compatibility ASAR");
 }
+if (
+  releaseManifest.rendererVersion !== packageMetadata.version ||
+  releaseManifest.renderer.patchedSha256 !==
+    createHash("sha256").update(adapterBytes).digest("hex")
+) {
+  throw new Error("Release manifest does not bind the prepared compatibility ASAR");
+}
+if (
+  JSON.stringify(releaseManifest.macOS) !==
+  JSON.stringify(publicMacOSArtifact(clientArtifact))
+) {
+  throw new Error("Release manifest does not bind the packaged macOS application");
+}
+if (
+  clientArtifact.explicitUserDataDirHonored !== true ||
+  releaseManifest.wrapper.explicitUserDataDirHonored !== true
+) {
+  throw new Error("Packaged wrapper cannot safely isolate disposable E2E profiles");
+}
 const adapterFileName = `obsidian-${packageMetadata.version}.asar`;
 const runManifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   createdAt: new Date().toISOString(),
+  bridgeVersion: releaseManifest.bridgeVersion,
   rendererVersion: packageMetadata.version,
   adapterFileName,
   compatibilityAsarSha256: createHash("sha256").update(adapterBytes).digest("hex"),
+  releaseManifestFileName: "bridge-release-manifest.json",
+  releaseManifestSha256: createHash("sha256")
+    .update(releaseManifestBytes)
+    .digest("hex"),
+  endpoints: releaseManifest.endpoints,
+  network: deriveE2ENetworkPlan(releaseManifest.endpoints),
+  explicitUserDataDirHonored: true,
 };
-await mkdir(projectDataRoot, { recursive: true });
 await mkdir(root, { recursive: false });
 await writeFile(
   resolve(root, "run-manifest.json"),
@@ -61,6 +115,11 @@ await writeFile(
   `${JSON.stringify(clientArtifact, null, 2)}\n`,
   { flag: "wx", mode: 0o600 },
 );
+await writeFile(
+  resolve(root, runManifest.releaseManifestFileName),
+  releaseManifestBytes,
+  { flag: "wx", mode: 0o600 },
+);
 
 const clients = ["client-a", "client-b"] as const;
 for (const client of clients) {
@@ -69,7 +128,10 @@ for (const client of clients) {
   await mkdir(userData, { recursive: true });
   await mkdir(vault, { recursive: true });
   await copyFile(asar, resolve(userData, adapterFileName));
-  const vaultId = randomBytes(8).toString("hex");
+  // Keep this identifier identical to launch-macos.ts. A random identifier here
+  // would make the launcher register the same vault a second time and open two
+  // renderer windows, which makes UI evidence nondeterministic.
+  const vaultId = createHash("sha256").update(vault).digest("hex").slice(0, 16);
   await writeFile(resolve(userData, `${vaultId}.json`), "{}", {
     flag: "wx",
     mode: 0o600,
@@ -101,11 +163,6 @@ await writeFile(
   JSON.stringify(environment, null, 2),
   { flag: "wx", mode: 0o600 },
 );
-
-function readFlag(arguments_: string[], name: string): string | undefined {
-  const index = arguments_.indexOf(name);
-  return index === -1 ? undefined : arguments_[index + 1];
-}
 
 console.log(
   JSON.stringify(

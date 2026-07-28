@@ -18,7 +18,7 @@ package_json=$(git show "${commit}:package.json") || {
   echo "error: ${ref} does not contain package.json" >&2
   exit 1
 }
-version=$(printf '%s' "$package_json" | node -e '
+version=$(printf '%s' "$package_json" | bun -e '
   let input = "";
   process.stdin.on("data", chunk => input += chunk);
   process.stdin.on("end", () => {
@@ -32,7 +32,7 @@ version=$(printf '%s' "$package_json" | node -e '
 }
 
 name="blackglass-bridge-v${version}-tooling"
-archive="${out_dir}/${name}.tar.gz"
+archive="${out_dir}/${name}.zip"
 checksum="${archive}.sha256"
 mkdir -p "$out_dir"
 rm -f "$archive" "$checksum"
@@ -48,6 +48,7 @@ release_paths=(
   LICENSE
   README.md
   SECURITY.md
+  compatibility
   package.json
   package-lock.json
   tsconfig.json
@@ -58,11 +59,11 @@ release_paths=(
   tools
 )
 
-git archive --format=tar --prefix="${name}/" "$commit" -- "${release_paths[@]}" \
-  | gzip -n -9 > "$archive"
+git archive --format=zip -9 --prefix="${name}/" "$commit" -- "${release_paths[@]}" \
+  > "$archive"
 
 # Defense in depth: reject artifact-like paths even if someone expands the allowlist.
-if tar -tzf "$archive" | grep -Eiq '(^|/)(artifacts?|fixtures/private|node_modules|coverage|vaults?|profiles?|generated|dist|build)(/|$)|\.(asar|app|dmg|pkg|exe|msi)$'; then
+if unzip -Z1 "$archive" | grep -Eiq '(^|/)(artifacts?|fixtures/private|node_modules|coverage|vaults?|profiles?|generated|dist|build)(/|$)|\.(asar|app|dmg|pkg|exe|msi)$'; then
   echo "error: release archive contains a forbidden generated/proprietary artifact path" >&2
   rm -f "$archive" "$checksum"
   exit 1
@@ -70,7 +71,11 @@ fi
 
 (
   cd "$out_dir"
-  sha256sum "$(basename "$archive")" > "$(basename "$checksum")"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$(basename "$archive")" > "$(basename "$checksum")"
+  else
+    shasum -a 256 "$(basename "$archive")" > "$(basename "$checksum")"
+  fi
 )
 
 printf '%s\n%s\n' "$archive" "$checksum"

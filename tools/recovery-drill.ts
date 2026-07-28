@@ -1,36 +1,130 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { deflateSync } from "node:zlib";
 import { Database } from "bun:sqlite";
+import {
+  type LiveClientLaunchBinding,
+  verifyLiveClientLaunchBinding,
+} from "./e2e-client";
+import { readPreparedE2ERun } from "./e2e-network";
 
 const [action, firstArgument, secondArgument] = Bun.argv.slice(2);
+const e2eRoot = resolve(import.meta.dir, "../.data/e2e");
 
 if (action === "create") {
   if (!firstArgument) usage();
-  const vault = resolve(firstArgument);
+  const vault = e2ePath(firstArgument, "fixture vault");
+  await assertNoSymlinkSegments(vault);
   const files = fixtureFiles();
   for (const [path, contents] of files) {
     const target = join(vault, path);
     await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, contents);
+    await writeFile(target, contents, { flag: "wx", mode: 0o600 });
   }
   console.log(JSON.stringify({ action, vault, files: [...files.keys()] }, null, 2));
 } else if (action === "capture") {
   if (!firstArgument || !secondArgument) usage();
-  const runRoot = resolve(firstArgument);
-  const vault = resolve(secondArgument);
+  const runRoot = (await readPreparedE2ERun(firstArgument)).root;
+  const vault = e2ePath(secondArgument, "source vault");
+  await assertNoSymlinkSegments(vault);
+  assertExpectedVault(runRoot, vault, "client-a");
   const manifest = await buildManifest(vault);
+  if (manifest.length === 0) throw new Error("Recovery source vault is empty");
+  const runManifestSha256 = await fileSha256(join(runRoot, "run-manifest.json"));
+  const serverArtifactSha256 = await fileSha256(join(runRoot, "server-artifact.json"));
+  const syncReportSha256 = await fileSha256(join(runRoot, "report.json"));
+  const database = databaseSnapshot(join(runRoot, "server.sqlite"));
+  if (database.revisions === 0 || database.vaults.length !== 1) {
+    throw new Error("Recovery capture requires one synchronized non-empty remote vault");
+  }
   const output = join(runRoot, "recovery-manifest.json");
-  await writeJson(output, { capturedAt: Date.now(), vault, files: manifest });
+  await writeJson(
+    output,
+    {
+      schemaVersion: 2,
+      capturedAt: new Date().toISOString(),
+      sourceVault: "client-a/vault",
+      runManifestSha256,
+      serverArtifactSha256,
+      syncReportSha256,
+      database,
+      files: manifest,
+    },
+    true,
+  );
   console.log(JSON.stringify({ action, output, count: manifest.length }, null, 2));
 } else if (action === "verify") {
   if (!firstArgument || !secondArgument) usage();
-  const runRoot = resolve(firstArgument);
-  const restoredVault = resolve(secondArgument);
+  const preparedRun = await readPreparedE2ERun(firstArgument);
+  const runRoot = preparedRun.root;
+  const restoredVault = e2ePath(secondArgument, "restored vault");
+  await assertNoSymlinkSegments(restoredVault);
+  assertExpectedVault(runRoot, restoredVault, "client-b");
   const manifest = JSON.parse(
     await readFile(join(runRoot, "recovery-manifest.json"), "utf8"),
-  ) as { files: ManifestEntry[] };
+  ) as RecoveryManifest;
+  if (
+    manifest.schemaVersion !== 2 ||
+    manifest.sourceVault !== "client-a/vault" ||
+    !isSha256(manifest.runManifestSha256) ||
+    !isSha256(manifest.serverArtifactSha256) ||
+    !isSha256(manifest.syncReportSha256) ||
+    !Array.isArray(manifest.files) ||
+    manifest.files.length === 0
+  ) {
+    throw new Error("Malformed or unsupported recovery manifest");
+  }
+  if (
+    (await fileSha256(join(runRoot, "run-manifest.json"))) !==
+      manifest.runManifestSha256 ||
+    (await fileSha256(join(runRoot, "server-artifact.json"))) !==
+      manifest.serverArtifactSha256 ||
+    (await fileSha256(join(runRoot, "report.json"))) !==
+      manifest.syncReportSha256
+  ) {
+    throw new Error("Recovery run identity changed after source capture");
+  }
+  const reset = JSON.parse(
+    await readFile(join(runRoot, "source-loss-reset.json"), "utf8"),
+  ) as {
+    schemaVersion?: unknown;
+    resetAt?: unknown;
+    runManifestSha256?: unknown;
+    syncReportSha256?: unknown;
+    recoveryManifestSha256?: unknown;
+    freshClient?: { adapterSha256?: unknown; initialVaultFiles?: unknown };
+  };
+  if (
+    reset.schemaVersion !== 1 ||
+    typeof reset.resetAt !== "string" ||
+    !Number.isFinite(Date.parse(reset.resetAt)) ||
+    reset.runManifestSha256 !== preparedRun.manifestSha256 ||
+    reset.syncReportSha256 !== manifest.syncReportSha256 ||
+    reset.recoveryManifestSha256 !==
+      await fileSha256(join(runRoot, "recovery-manifest.json")) ||
+    reset.freshClient?.adapterSha256 !==
+      preparedRun.manifest.compatibilityAsarSha256 ||
+    reset.freshClient?.initialVaultFiles !== 0
+  ) {
+    throw new Error("Source-loss reset is not bound to this recovery run");
+  }
+  const recoveryIdentityPath = join(runRoot, "client-b-recovery-launch.json");
+  const recoveryBinding = await verifyLiveClientLaunchBinding(recoveryIdentityPath);
+  const recoveryIdentity = recoveryBinding.identity;
+  if (
+    recoveryIdentity.runManifestSha256 !== preparedRun.manifestSha256 ||
+    recoveryIdentity.releaseManifestSha256 !==
+      preparedRun.manifest.releaseManifestSha256 ||
+    recoveryIdentity.profilePath !== join(runRoot, "client-b", "user-data") ||
+    recoveryIdentity.vaultPath !== join(runRoot, "client-b", "vault") ||
+    recoveryIdentity.adapterSha256 !==
+      preparedRun.manifest.compatibilityAsarSha256 ||
+    Date.parse(recoveryIdentity.startedAt) <= Date.parse(reset.resetAt) ||
+    ((await stat(recoveryIdentityPath)).mode & 0o777) !== 0o600
+  ) {
+    throw new Error("Fresh recovery client identity does not match the source-loss reset");
+  }
   const restored = await buildManifest(restoredVault);
   const expectedMap = new Map(manifest.files.map((entry) => [entry.path, entry]));
   const restoredMap = new Map(restored.map((entry) => [entry.path, entry]));
@@ -41,31 +135,53 @@ if (action === "create") {
     return actual && (actual.sha256 !== entry.sha256 || actual.size !== entry.size);
   });
   const clientAExists = await Bun.file(join(runRoot, "client-a")).exists();
-  const database = new Database(join(runRoot, "server.sqlite"), { readonly: true });
-  const server = database
-    .query(
-      "SELECT COUNT(*) AS revisions, COALESCE(SUM(size), 0) AS revisionBytes, " +
-        "COUNT(DISTINCT path) AS encryptedPaths, COALESCE(MAX(uid), 0) AS maxUid FROM revisions",
-    )
-    .get() as Record<string, number>;
-  const vaults = database
-    .query("SELECT name, size, version FROM vaults ORDER BY created")
-    .all() as Array<Record<string, string | number>>;
-  database.close();
+  const database = databaseSnapshot(join(runRoot, "server.sqlite"));
+  const databaseRegressed =
+    database.revisions < manifest.database.revisions ||
+    database.maxUid < manifest.database.maxUid ||
+    database.vaults.length !== manifest.database.vaults.length;
+  const recoveryUx = await verifyRecoveryUi(
+    runRoot,
+    recoveryBinding,
+  );
   const report = {
+    schemaVersion: 2,
     verifiedAt: Date.now(),
-    ok: !clientAExists && missing.length === 0 && unexpected.length === 0 && changed.length === 0,
+    ok:
+      !clientAExists &&
+      !databaseRegressed &&
+      missing.length === 0 &&
+      unexpected.length === 0 &&
+      changed.length === 0,
     clientAExists,
+    databaseRegressed,
     expectedFiles: manifest.files.length,
     restoredFiles: restored.length,
     missing,
     unexpected,
     changed,
-    server,
-    vaults,
+    databaseAtCapture: manifest.database,
+    databaseAtRecovery: database,
+    runManifestSha256: manifest.runManifestSha256,
+    serverArtifactSha256: manifest.serverArtifactSha256,
+    syncReportSha256: manifest.syncReportSha256,
+    sourceLossResetAt: reset.resetAt,
+    recoveryClient: {
+      identityPath: recoveryBinding.identityPath,
+      identitySha256: recoveryBinding.identitySha256,
+      pid: recoveryIdentity.pid,
+      debugPort: recoveryIdentity.debugPort,
+      debugListenerPid: recoveryIdentity.debugListenerPid,
+      debugTargetId: recoveryIdentity.debugTargetId,
+      debugTargetUrl: recoveryIdentity.debugTargetUrl,
+      profilePath: recoveryIdentity.profilePath,
+      vaultPath: recoveryIdentity.vaultPath,
+      startedAt: recoveryIdentity.startedAt,
+    },
+    recoveryUx,
   };
   const output = join(runRoot, "recovery-report.json");
-  await writeJson(output, report);
+  await writeJson(output, report, true);
   console.log(JSON.stringify({ action, output, ...report }, null, 2));
   if (!report.ok) process.exitCode = 1;
 } else {
@@ -73,6 +189,22 @@ if (action === "create") {
 }
 
 type ManifestEntry = { path: string; size: number; sha256: string };
+type DatabaseSnapshot = {
+  revisions: number;
+  revisionBytes: number;
+  encryptedPaths: number;
+  maxUid: number;
+  vaults: Array<{ name: string; size: number; version: number }>;
+};
+type RecoveryManifest = {
+  schemaVersion: number;
+  sourceVault: string;
+  runManifestSha256: string;
+  serverArtifactSha256: string;
+  syncReportSha256: string;
+  database: DatabaseSnapshot;
+  files: ManifestEntry[];
+};
 
 async function buildManifest(vault: string): Promise<ManifestEntry[]> {
   const paths = await walk(vault);
@@ -96,8 +228,150 @@ async function walk(root: string): Promise<string[]> {
     const path = join(root, entry.name);
     if (entry.isDirectory()) output.push(...(await walk(path)));
     else if (entry.isFile() && (await stat(path)).isFile()) output.push(path);
+    else throw new Error(`Recovery vault contains an unsupported entry: ${path}`);
   }
   return output;
+}
+
+function databaseSnapshot(path: string): DatabaseSnapshot {
+  const database = new Database(path, { readonly: true, strict: true });
+  try {
+    const server = database
+      .query(
+        "SELECT COUNT(*) AS revisions, COALESCE(SUM(size), 0) AS revisionBytes, " +
+          "COUNT(DISTINCT path) AS encryptedPaths, COALESCE(MAX(uid), 0) AS maxUid FROM revisions",
+      )
+      .get() as Omit<DatabaseSnapshot, "vaults">;
+    const vaults = database
+      .query("SELECT name, size, version FROM vaults ORDER BY created")
+      .all() as DatabaseSnapshot["vaults"];
+    return { ...server, vaults };
+  } finally {
+    database.close();
+  }
+}
+
+function e2ePath(value: string, label: string): string {
+  const path = resolve(value);
+  if (!path.startsWith(`${e2eRoot}/`)) {
+    throw new Error(`${label} must be inside ${e2eRoot}`);
+  }
+  return path;
+}
+
+function assertExpectedVault(runRoot: string, vault: string, client: string): void {
+  const expected = join(runRoot, client, "vault");
+  if (vault !== expected) {
+    throw new Error(`Expected ${client} vault at ${expected}; received ${vault}`);
+  }
+}
+
+async function assertNoSymlinkSegments(path: string): Promise<void> {
+  const relativePath = relative(e2eRoot, path);
+  let current = e2eRoot;
+  for (const segment of relativePath.split("/").filter(Boolean)) {
+    current = join(current, segment);
+    try {
+      if ((await lstat(current)).isSymbolicLink()) {
+        throw new Error(`Recovery path must not traverse a symbolic link: ${current}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+  }
+}
+
+async function fileSha256(path: string): Promise<string> {
+  return sha256(await readFile(path));
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function verifyRecoveryUi(
+  runRoot: string,
+  launch: LiveClientLaunchBinding,
+): Promise<Record<string, unknown>> {
+  const screenshotPath = join(runRoot, "evidence/recovery/client-b-restored.png");
+  const statePath = join(runRoot, "evidence/recovery/client-b-restored.json");
+  const screenshot = await readFile(screenshotPath);
+  const screenshotStat = await stat(screenshotPath);
+  const stateStat = await stat(statePath);
+  const state = JSON.parse(await readFile(statePath, "utf8")) as {
+    schemaVersion?: unknown;
+    observedAt?: unknown;
+    debugPort?: unknown;
+    rendererPageCount?: unknown;
+    visibleRendererPageCount?: unknown;
+    url?: unknown;
+    bodyText?: unknown;
+    screenshotPath?: unknown;
+    screenshotSha256?: unknown;
+    launchIdentityPath?: unknown;
+    launchIdentitySha256?: unknown;
+    runManifestSha256?: unknown;
+    releaseManifestSha256?: unknown;
+    launchedPid?: unknown;
+    debugListenerPid?: unknown;
+    debugTargetId?: unknown;
+    profilePath?: unknown;
+    vaultPath?: unknown;
+  };
+  const identity = launch.identity;
+  const width = screenshot.length >= 24 ? screenshot.readUInt32BE(16) : 0;
+  const height = screenshot.length >= 24 ? screenshot.readUInt32BE(20) : 0;
+  if (
+    screenshot.length < 1024 ||
+    (screenshotStat.mode & 0o777) !== 0o600 ||
+    (stateStat.mode & 0o777) !== 0o600 ||
+    !screenshot.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+    screenshot.subarray(12, 16).toString("ascii") !== "IHDR" ||
+    width < 640 ||
+    height < 400 ||
+    width > 16_384 ||
+    height > 16_384 ||
+    state.schemaVersion !== 1 ||
+    state.debugPort !== identity.debugPort ||
+    state.rendererPageCount !== 1 ||
+    state.visibleRendererPageCount !== 1 ||
+    state.url !== identity.debugTargetUrl ||
+    typeof state.observedAt !== "string" ||
+    !Number.isFinite(Date.parse(state.observedAt)) ||
+    Date.parse(state.observedAt) <= Date.parse(identity.startedAt) ||
+    Date.parse(state.observedAt) > Date.now() + 5_000 ||
+    Math.abs(screenshotStat.mtimeMs - Date.parse(state.observedAt)) > 30_000 ||
+    typeof state.bodyText !== "string" ||
+    !state.bodyText.includes("Recovery Drill Home") ||
+    typeof state.screenshotPath !== "string" ||
+    resolve(state.screenshotPath) !== screenshotPath ||
+    state.screenshotSha256 !== sha256(screenshot) ||
+    state.launchIdentityPath !== launch.identityPath ||
+    state.launchIdentitySha256 !== launch.identitySha256 ||
+    state.runManifestSha256 !== launch.run.manifestSha256 ||
+    state.releaseManifestSha256 !== identity.releaseManifestSha256 ||
+    state.launchedPid !== identity.pid ||
+    state.debugListenerPid !== identity.debugListenerPid ||
+    state.debugTargetId !== identity.debugTargetId ||
+    state.profilePath !== identity.profilePath ||
+    state.vaultPath !== identity.vaultPath
+  ) {
+    throw new Error("Recovery UI evidence is missing or not bound to the fresh client");
+  }
+  return {
+    path: relative(runRoot, screenshotPath),
+    statePath: relative(runRoot, statePath),
+    bytes: screenshotStat.size,
+    sha256: sha256(screenshot),
+    width,
+    height,
+    observedAt: state.observedAt,
+  };
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 }
 
 function fixtureFiles(): Map<string, string | Uint8Array> {
@@ -229,9 +503,12 @@ function makePdf(): Uint8Array {
   return Buffer.from(body, "ascii");
 }
 
-async function writeJson(path: string, value: unknown): Promise<void> {
+async function writeJson(path: string, value: unknown, exclusive = false): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`);
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, {
+    flag: exclusive ? "wx" : "w",
+    mode: 0o600,
+  });
 }
 
 function usage(): never {

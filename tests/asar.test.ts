@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
-import { AsarArchive } from "../tools/asar.ts";
+import { AsarArchive, replacePackedAsarEntry } from "../tools/asar.ts";
 
 function align4(value: number): number {
   return (value + 3) & ~3;
@@ -57,6 +57,14 @@ describe("AsarArchive", () => {
     );
 
     expect(() => archive.read("hello.txt")).toThrow("integrity mismatch");
+  });
+
+  test("replaces a packed entry and rebuilds its integrity metadata", () => {
+    const upstream = makeArchive("hello.txt", Buffer.from("hello"));
+    const replacement = Buffer.from("world");
+    const output = replacePackedAsarEntry(upstream, "hello.txt", replacement);
+
+    expect(AsarArchive.fromBuffer(output).read("hello.txt")).toEqual(replacement);
   });
 
   test("rejects a malformed size pickle", () => {

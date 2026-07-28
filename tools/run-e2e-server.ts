@@ -1,14 +1,29 @@
 import { readFile, rename, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
+import { parseStrictFlags } from "./cli-flags";
+import { readPreparedE2ERun } from "./e2e-network";
 import { inspectServerArtifact } from "./server-artifact";
 
-const rootArgument = Bun.argv[2];
-if (!rootArgument) {
-  console.error("Usage: bun run tools/run-e2e-server.ts <run-directory>");
+const [rootArgument, ...flags] = Bun.argv.slice(2);
+const parsedFlags = parseStrictFlags(flags, { valueFlags: ["--identity-out"] });
+const identityArgument = parsedFlags.values.get("--identity-out");
+if (!rootArgument || !identityArgument) {
+  console.error(
+    "Usage: bun run tools/run-e2e-server.ts <run-directory> --identity-out <identity.json>",
+  );
   process.exit(2);
 }
 
-const root = resolve(rootArgument);
+const preparedRun = await readPreparedE2ERun(rootArgument);
+const root = preparedRun.root;
+const { network, endpoints } = preparedRun.manifest;
+const identityPath = resolve(identityArgument);
+if (
+  dirname(identityPath) !== root ||
+  !/^server-[a-z0-9-]+\.json$/u.test(basename(identityPath))
+) {
+  throw new Error("Server identity must be a server-*.json file directly inside the E2E run");
+}
 const credentials = JSON.parse(
   await readFile(resolve(root, "credentials.json"), "utf8"),
 ) as { email: string; password: string };
@@ -25,17 +40,23 @@ if (!(await Bun.file(binary).exists())) {
 }
 const artifact = await inspectServerArtifact(binary);
 await recordArtifact(artifact);
+const inheritedEnvironment = Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => !name.startsWith("SELFHOST_")),
+);
 
 const child = Bun.spawn([binary, "serve"], {
   cwd: root,
   stdout: "inherit",
   stderr: "inherit",
   env: {
-    ...process.env,
+    ...inheritedEnvironment,
     SELFHOST_BIND_HOST: "127.0.0.1",
-    SELFHOST_CONTROL_PORT: "3000",
-    SELFHOST_DATA_PORT: "3003",
-    SELFHOST_DATA_HOST: "127.0.0.1:3003",
+    SELFHOST_CONTROL_PORT: String(network.control.upstreamPort),
+    SELFHOST_DATA_PORT: String(network.data.upstreamPort),
+    // The packaged client must exercise the exact production hostname. The
+    // scoped Electron resolver rule sends it to the loopback TLS proxy; using a
+    // loopback host here would leave the data-host incision unqualified.
+    SELFHOST_DATA_HOST: network.data.publicHost,
     SELFHOST_DATABASE: resolve(root, "server.sqlite"),
     SELFHOST_STAGING_DIR: resolve(root, "uploads"),
     SELFHOST_EMAIL: credentials.email,
@@ -44,46 +65,110 @@ const child = Bun.spawn([binary, "serve"], {
     SELFHOST_NAME: "E2E user",
     SELFHOST_PER_FILE_MAX: String(200 * 1024 * 1024),
     SELFHOST_ALLOWED_ORIGIN: "app://obsidian.md",
+    SELFHOST_MAX_CONCURRENT_UPLOADS: "4",
+    SELFHOST_MAX_WS_CONNECTIONS: "8",
+    SELFHOST_SESSION_TTL_SECONDS: "3600",
     SELFHOST_LOG_FORMAT: "pretty",
   },
 });
 
-await waitForHealth(child);
-console.log("Blackglass Server E2E control plane ready at http://127.0.0.1:3000");
-console.log("Blackglass Server E2E data plane ready at ws://127.0.0.1:3003");
+const startedAt = new Date().toISOString();
+const ready = await waitForHealth(child);
+const readyAt = new Date().toISOString();
+let processIdentity = {
+  schemaVersion: 1,
+  pid: child.pid,
+  startedAt,
+  readyAt,
+  stoppedAt: null as string | null,
+  exitCode: null as number | null,
+  gracefulShutdown: null as boolean | null,
+  binaryPath: binary,
+  artifact,
+  databasePath: resolve(root, "server.sqlite"),
+  stagingPath: resolve(root, "uploads"),
+  controlOrigin: endpoints.controlOrigin,
+  dataHost: endpoints.dataHost,
+  ready,
+};
+await writeIdentity(processIdentity, true);
+console.log(
+  `Blackglass Server E2E control plane ready at http://${network.control.upstreamHost}:${network.control.upstreamPort}`,
+);
+console.log(
+  `Blackglass Server E2E data plane ready at ws://${network.data.upstreamHost}:${network.data.upstreamPort}`,
+);
 
 let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   child.kill("SIGTERM");
-  await child.exited;
+  const exitCode = await child.exited;
+  processIdentity = {
+    ...processIdentity,
+    stoppedAt: new Date().toISOString(),
+    exitCode,
+    gracefulShutdown: true,
+  };
+  await writeIdentity(processIdentity, false);
   process.exit(0);
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 const exitCode = await child.exited;
-if (!shuttingDown) process.exit(exitCode);
+if (!shuttingDown) {
+  processIdentity = {
+    ...processIdentity,
+    stoppedAt: new Date().toISOString(),
+    exitCode,
+    gracefulShutdown: false,
+  };
+  await writeIdentity(processIdentity, false);
+  process.exit(exitCode);
+}
 
-async function waitForHealth(processHandle: ReturnType<typeof Bun.spawn>): Promise<void> {
+async function waitForHealth(
+  processHandle: ReturnType<typeof Bun.spawn>,
+): Promise<Record<string, unknown>> {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     if (processHandle.exitCode !== null) {
       throw new Error(`Rust E2E server exited early with ${processHandle.exitCode}`);
     }
     try {
-      if ((await fetch("http://127.0.0.1:3000/ready")).ok) return;
+      const response = await fetch(
+        `http://${network.control.upstreamHost}:${network.control.upstreamPort}/ready`,
+      );
+      if (response.ok) return await response.json() as Record<string, unknown>;
     } catch {}
     await Bun.sleep(50);
   }
   throw new Error("Rust E2E server did not become ready");
 }
 
+async function writeIdentity(value: typeof processIdentity, exclusive: boolean): Promise<void> {
+  if (exclusive && await Bun.file(identityPath).exists()) {
+    throw new Error(`Refusing to overwrite server identity: ${identityPath}`);
+  }
+  const temporary = `${identityPath}.next`;
+  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
+    flag: "wx",
+    mode: 0o600,
+  });
+  await rename(temporary, identityPath);
+}
+
 async function recordArtifact(value: Awaited<ReturnType<typeof inspectServerArtifact>>): Promise<void> {
   const output = resolve(root, "server-artifact.json");
   if (await Bun.file(output).exists()) {
     const existing = JSON.parse(await readFile(output, "utf8")) as typeof value;
-    if (existing.sha256 !== value.sha256 || existing.version !== value.version) {
+    if (
+      existing.schemaVersion !== value.schemaVersion ||
+      existing.sha256 !== value.sha256 ||
+      existing.version !== value.version ||
+      existing.sourceRevision !== value.sourceRevision
+    ) {
       throw new Error(
         `E2E run is already bound to server ${existing.sha256}; refusing ${value.sha256}`,
       );

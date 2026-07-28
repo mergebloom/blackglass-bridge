@@ -1,0 +1,72 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { describe, expect, test } from "bun:test";
+import {
+  assertClientLaunchIdentity,
+  resolvePreparedClientLayout,
+} from "../tools/e2e-client";
+import { deriveE2ENetworkPlan } from "../tools/e2e-network";
+import { readVerifiedE2ETls } from "../tools/e2e-tls";
+
+const projectRoot = resolve(import.meta.dir, "..");
+
+describe("E2E runtime binding", () => {
+  test("binds client layout and generated TLS files to one prepared run", async () => {
+    const e2eRoot = resolve(projectRoot, ".data/e2e");
+    await mkdir(e2eRoot, { recursive: true });
+    const runRoot = await mkdtemp(join(e2eRoot, "runtime-binding-"));
+    try {
+      const endpoints = {
+        controlOrigin: "https://blackglass.example.com",
+        dataHost: "blackglass-data.example.com",
+      };
+      await writeFile(
+        join(runRoot, "run-manifest.json"),
+        `${JSON.stringify({
+          schemaVersion: 2,
+          endpoints,
+          network: deriveE2ENetworkPlan(endpoints),
+          compatibilityAsarSha256: "a".repeat(64),
+          releaseManifestSha256: "b".repeat(64),
+          adapterFileName: "obsidian-1.12.7.asar",
+          releaseManifestFileName: "bridge-release-manifest.json",
+        }, null, 2)}\n`,
+        { mode: 0o600 },
+      );
+      for (const client of ["client-a", "client-b"]) {
+        await mkdir(join(runRoot, client, "user-data"), { recursive: true });
+        await mkdir(join(runRoot, client, "vault"), { recursive: true });
+      }
+      const layout = await resolvePreparedClientLayout(
+        join(runRoot, "client-a/user-data"),
+        join(runRoot, "client-a/vault"),
+      );
+      expect(layout.clientName).toBe("client-a");
+      await expect(
+        resolvePreparedClientLayout(
+          join(runRoot, "client-a/user-data"),
+          join(runRoot, "client-b/vault"),
+        ),
+      ).rejects.toThrow("same client");
+
+      const result = Bun.spawnSync([
+        "bun",
+        "run",
+        "tools/prepare-e2e-tls.ts",
+        runRoot,
+      ], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+      expect(result.exitCode, result.stderr.toString()).toBe(0);
+      const tls = await readVerifiedE2ETls(runRoot);
+      expect(tls.metadata.hosts).toEqual([
+        "blackglass-data.example.com",
+        "blackglass.example.com",
+      ]);
+      expect(tls.metadata.runManifestSha256).toBe(tls.run.manifestSha256);
+
+      const malformed = { schemaVersion: 1, pid: 1, debugPort: 9222 };
+      expect(() => assertClientLaunchIdentity(malformed)).toThrow();
+    } finally {
+      await rm(runRoot, { recursive: true, force: true });
+    }
+  }, 20_000);
+});

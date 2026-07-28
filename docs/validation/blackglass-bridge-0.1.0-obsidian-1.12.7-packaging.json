@@ -1,20 +1,47 @@
 {
-  "schemaVersion": 1,
-  "validatedAt": "2026-07-27",
+  "schemaVersion": 2,
+  "validatedAt": "2026-07-28",
   "passed": true,
   "bridgeVersion": "0.1.0",
   "rendererVersion": "1.12.7",
   "officialDmgSha256": "3b85c13b4ce55512e86e170a7cd2a494e2db695ac888c0601e153cb85b77881b",
+  "sourceAppTreeSha256": "1f45c46181c42bd130b6d0b159f02cb7ff502abe8f6f94123246bb9f55b1dfcd",
   "sourceAsarSha256": "2b2483b2e1246772e0d25367ec055cbc5047ea2f0091b667c35656678f86d712",
-  "compatibilityAsarSha256": "0a890c3cbd857f33269d8d957a32c72ea65fb8cc0d5435b67506c9817e89dc5a",
+  "compatibilityAsarSha256": "035feeb8cd67182070bae63a185a00a1e2ae8dc96f4002524639ed9be7720358",
+  "compatibilityBaselineSha256": "245f753e3b3db64e8d07937416d9819eedd4c3396d808ee82b16842647ce677c",
+  "releaseManifestSha256": "21838a8f2c758324afb040f95643ff5e300b2436d968d359744f7ef587e8c4b0",
+  "endpoints": {
+    "controlOrigin": "https://blackglass.example.com",
+    "dataHost": "blackglass-data.example.com"
+  },
+  "patcher": {
+    "rendererFormatVersion": 2,
+    "rendererIncisions": 2,
+    "wrapperFormatVersion": 1,
+    "wrapperIncisions": 3
+  },
+  "sourceWrapperAsarSha256": "d8e392731d32feb97e80dd5fb8938d54c61bb7221f9eff5ff95965f6febeefdb",
+  "compatibilityWrapperAsarSha256": "f087df281517c4f5acce89e44248b6cb94be0eaaef694ef54f27ecdfedd928af",
+  "compatibilityWrapperHeaderSha256": "f34a5bda50c2502dbe2b6c22ad6535e9463391a80c0db68a69a5b35900f5f67a",
   "macOS": {
     "displayName": "Blackglass Bridge",
-    "bundleName": "Blackglass Bridge",
+    "bundleName": "Obsidian",
     "bundleIdentifier": "com.blackglass.bridge",
-    "executableName": "Blackglass Bridge",
-    "infoPlistSha256": "8b7af47536eaa3449c1c6a897f93f8571bf2494de76bfa2825eaeeebccfe4e51",
-    "executableSha256": "b1571b36e0820bf84948daaa2c70eb128c0228d3fa75e497c2b03bdff5e4aa52",
-    "codeDirectoryHash": "a1fd8898c58b675ffc73be203c8f1073e6019984",
+    "executableName": "Obsidian",
+    "infoPlistSha256": "2d7b7aae971b4fcaf80ef750529a9951696a3accddbd802e702bed446d12b4f9",
+    "executableSha256": "a477578229830a0f12a6053ddb85f6023bcbcf28bd379f9f2512e0dcc57086ef",
+    "codeDirectoryHash": "32f76cdc09abf3cc32ebd4ddfbe744f5c8492635",
+    "applicationTreeSha256": "9761d9610ef58e13bdda05d96e93a1e12bb8cf32b3b370de7cb8792fe1d007e7",
+    "helperBundleIdentifiers": [
+      "md.obsidian.helper",
+      "md.obsidian.helper.GPU",
+      "md.obsidian.helper.Plugin",
+      "md.obsidian.helper.Renderer"
+    ],
+    "profileDirectory": "Blackglass Bridge",
+    "explicitUserDataDirHonored": true,
+    "upstreamUpdatesDisabled": true,
+    "embeddedRendererOnly": true,
     "upstreamUrlSchemeRegistered": false,
     "upstreamICloudContainerRegistered": false,
     "signature": "ad-hoc",
@@ -24,5 +51,12 @@
     "version": "0.2.0",
     "sha256": "6f8ca6caab29f48592e9903fb3e49a6dc7cf980778287df2f17c58015343cb12"
   },
-  "packagedClientE2E": "pending-unlocked-macos-session"
+  "finderLaunchSmoke": {
+    "started": true,
+    "crashReportCreated": false,
+    "loadedEmbeddedCompatibilityAsar": true,
+    "createdBlackglassProfile": true,
+    "normalObsidianProfileMetadataUnchanged": true
+  },
+  "packagedClientE2E": "pending-sync-recovery-rerun-for-this-wrapper-hash"
 }

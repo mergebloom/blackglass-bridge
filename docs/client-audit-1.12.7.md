@@ -25,11 +25,18 @@ project.
 
 ## Stable implementation boundary
 
-Only two semantic client incisions are made: the control-plane origin and the
-data-host authorization condition. All protocol compatibility lives in named,
-tested server code. Minified identifiers and byte offsets are not treated as
-stable APIs.
+Only two semantic renderer incisions are made: the control-plane origin and the
+data-host authorization condition. The copied desktop wrapper receives three
+separate safety incisions: isolated/default-or-explicit profile selection, a
+disabled updater queue, and an embedded-renderer pin. All protocol compatibility
+lives in named, tested server code. Minified identifiers and byte offsets are
+not treated as stable APIs.
 
 For a new release, the analyzer must rediscover each semantic anchor exactly
-once and inventory the operation/route literals. A changed or ambiguous anchor
+once and exactly match every packed JavaScript identity, every explicitly
+reviewed JavaScript identity in `obsidian.asar.unpacked` and
+`app.asar.unpacked`, reviewed route, literal-operation location,
+outbound-message field shape, and inbound `onMessage` operation. The 1.12.7
+renderer has no unpacked JavaScript; its wrapper has the reviewed `btime` and
+`get-fonts` native-binding shims. An unknown, removed, moved, or changed item
 causes generation to fail before any client profile is touched.

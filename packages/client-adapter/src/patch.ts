@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
-import type { AsarIntegrity } from "../../../tools/asar";
-import { AsarArchive } from "../../../tools/asar";
+import { AsarArchive, replacePackedAsarEntry } from "../../../tools/asar";
 
 const CONTROL_ORIGIN_EXPRESSION =
   '"https://"+[String.fromCharCode(97,112,105),"obsidian","md"].join(".")';
 const DATA_HOST_CONDITION =
   '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h';
+
+export const RENDERER_PATCH_FORMAT_VERSION = 2;
+export const RENDERER_INCISION_COUNT = 2;
 
 export interface AdapterOptions {
   controlOrigin: string;
@@ -13,6 +15,8 @@ export interface AdapterOptions {
 }
 
 export interface AdapterReport {
+  patchFormatVersion: typeof RENDERER_PATCH_FORMAT_VERSION;
+  incisionCount: typeof RENDERER_INCISION_COUNT;
   controlOrigin: string;
   dataHost: string;
   upstreamSha256: string;
@@ -25,18 +29,18 @@ export function patchRenderer(
   renderer: Buffer,
   options: AdapterOptions,
 ): Buffer {
-  validateOptions(options);
+  const canonical = canonicalAdapterOptions(options);
   const source = renderer.toString("utf8");
   const controlReplacement = paddedExpression(
-    JSON.stringify(removeTrailingSlash(options.controlOrigin)),
+    JSON.stringify(canonical.controlOrigin),
     CONTROL_ORIGIN_EXPRESSION.length,
     "control origin",
   );
-  const dataHostname = parseDataHost(options.dataHost).hostname;
+  const data = parseDataHost(canonical.dataHost);
   const dataReplacement = paddedExpression(
-    `h!==${JSON.stringify(dataHostname)}`,
+    `u.host!==${JSON.stringify(data.host)}`,
     DATA_HOST_CONDITION.length,
-    "data hostname",
+    "data host",
   );
 
   let patched = replaceExactlyOnce(
@@ -63,20 +67,11 @@ export function patchAsar(
   upstream: Buffer,
   options: AdapterOptions,
 ): { buffer: Buffer; report: AdapterReport } {
+  const canonical = canonicalAdapterOptions(options);
   const archive = AsarArchive.fromBuffer(upstream);
   const rendererBefore = archive.read("app.js");
-  const rendererAfter = patchRenderer(rendererBefore, options);
-  const rendererNode = archive.get("app.js");
-  if (!rendererNode?.integrity) {
-    throw new Error("app.js has no ASAR integrity metadata");
-  }
-
-  updateIntegrity(rendererNode.integrity, rendererAfter);
-  const data = Buffer.from(upstream.subarray(archive.dataOffset));
-  const range = archive.contentRange("app.js");
-  rendererAfter.copy(data, range.start - archive.dataOffset);
-  const header = buildHeader(archive.header);
-  const output = Buffer.concat([header, data]);
+  const rendererAfter = patchRenderer(rendererBefore, canonical);
+  const output = replacePackedAsarEntry(upstream, "app.js", rendererAfter);
 
   // Re-open and verify the generated artifact before returning it.
   const generated = AsarArchive.fromBuffer(output);
@@ -88,8 +83,10 @@ export function patchAsar(
   return {
     buffer: output,
     report: {
-      controlOrigin: removeTrailingSlash(options.controlOrigin),
-      dataHost: options.dataHost,
+      patchFormatVersion: RENDERER_PATCH_FORMAT_VERSION,
+      incisionCount: RENDERER_INCISION_COUNT,
+      controlOrigin: canonical.controlOrigin,
+      dataHost: canonical.dataHost,
       upstreamSha256: sha256(upstream),
       patchedSha256: sha256(output),
       rendererBeforeSha256: sha256(rendererBefore),
@@ -98,19 +95,64 @@ export function patchAsar(
   };
 }
 
-function validateOptions(options: AdapterOptions): void {
-  const control = new URL(options.controlOrigin);
+export function canonicalAdapterOptions(options: AdapterOptions): AdapterOptions {
+  if (
+    options.controlOrigin.trim() !== options.controlOrigin ||
+    options.dataHost.trim() !== options.dataHost
+  ) {
+    throw new Error("Endpoint values must not contain surrounding whitespace");
+  }
+
+  let control: URL;
+  try {
+    control = new URL(options.controlOrigin);
+  } catch {
+    throw new Error("Control origin is not a valid absolute URL");
+  }
   if (control.username || control.password || control.search || control.hash) {
     throw new Error("Control origin must not contain credentials, query, or hash");
   }
   if (control.pathname !== "/" && control.pathname !== "") {
     throw new Error("Control origin must not contain a path");
   }
-  const isLoopback = control.hostname === "127.0.0.1" || control.hostname === "localhost";
+  if (control.hostname.endsWith(".")) {
+    throw new Error("Control origin hostname must not have a trailing dot");
+  }
+  const isLoopback =
+    control.hostname === "127.0.0.1" ||
+    control.hostname === "localhost" ||
+    control.hostname === "[::1]";
   if (control.protocol !== "https:" && !(control.protocol === "http:" && isLoopback)) {
     throw new Error("Control origin must use HTTPS, except on loopback");
   }
-  parseDataHost(options.dataHost);
+  if (control.origin !== options.controlOrigin) {
+    throw new Error(`Control origin is not canonical; use ${control.origin}`);
+  }
+
+  const data = parseDataHost(options.dataHost);
+  if (data.hostname.endsWith(".")) {
+    throw new Error("Data hostname must not have a trailing dot");
+  }
+  if (data.port === "0") {
+    throw new Error("Data host port must be between 1 and 65535");
+  }
+  const deceptiveInsecurePrefix =
+    (data.hostname.startsWith("localhost") && data.hostname !== "localhost") ||
+    (data.hostname.startsWith("127.0.0.1") && data.hostname !== "127.0.0.1");
+  const unsupportedLoopback =
+    data.hostname === "[::1]" ||
+    (/^127(?:\.\d{1,3}){3}$/u.test(data.hostname) &&
+      data.hostname !== "127.0.0.1");
+  if (deceptiveInsecurePrefix || unsupportedLoopback) {
+    throw new Error(
+      "Data hostname must match the renderer's exact plaintext loopback rules",
+    );
+  }
+  if (data.host !== options.dataHost) {
+    throw new Error(`Data host is not canonical; use ${data.host}`);
+  }
+
+  return { controlOrigin: control.origin, dataHost: data.host };
 }
 
 function parseDataHost(host: string): URL {
@@ -123,14 +165,17 @@ function parseDataHost(host: string): URL {
     throw new Error("Data host must be a hostname with an optional port");
   }
   const parsed = new URL(`wss://${host}`);
-  if (!parsed.hostname) {
+  if (
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash ||
+    parsed.pathname !== "/"
+  ) {
     throw new Error("Data host must include a hostname");
   }
   return parsed;
-}
-
-function removeTrailingSlash(value: string): string {
-  return value.endsWith("/") ? value.slice(0, -1) : value;
 }
 
 function paddedExpression(
@@ -157,40 +202,6 @@ function replaceExactlyOnce(
     throw new Error(`${label} must match exactly once`);
   }
   return input.slice(0, first) + replacement + input.slice(first + needle.length);
-}
-
-function updateIntegrity(integrity: AsarIntegrity, content: Buffer): void {
-  const algorithm = integrity.algorithm.toLowerCase().replaceAll("-", "");
-  integrity.hash = createHash(algorithm).update(content).digest("hex");
-  if (integrity.blockSize && integrity.blocks) {
-    const blocks: string[] = [];
-    for (let offset = 0; offset < content.length; offset += integrity.blockSize) {
-      blocks.push(
-        createHash(algorithm)
-          .update(content.subarray(offset, offset + integrity.blockSize))
-          .digest("hex"),
-      );
-    }
-    integrity.blocks = blocks;
-  }
-}
-
-function buildHeader(headerValue: unknown): Buffer {
-  const json = Buffer.from(JSON.stringify(headerValue), "utf8");
-  const paddedStringLength = align4(json.length);
-  const headerPayloadSize = 4 + paddedStringLength;
-  const headerPickleSize = 4 + headerPayloadSize;
-  const output = Buffer.alloc(8 + headerPickleSize);
-  output.writeUInt32LE(4, 0);
-  output.writeUInt32LE(headerPickleSize, 4);
-  output.writeUInt32LE(headerPayloadSize, 8);
-  output.writeUInt32LE(json.length, 12);
-  json.copy(output, 16);
-  return output;
-}
-
-function align4(value: number): number {
-  return (value + 3) & ~3;
 }
 
 function sha256(value: Uint8Array): string {

@@ -1,19 +1,38 @@
 import { createHash } from "node:crypto";
-import { lstat } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { inspectPatchedMacOSWrapperAsar } from "../packages/client-adapter/src/wrapper";
+import { asarHeaderSha256 } from "./asar";
+import { computeTreeIdentity, type TreeIdentity } from "./tree-identity";
+
+export const ELECTRON_HELPER_VARIANTS = [
+  { nameSuffix: "", identifierSuffix: "" },
+  { nameSuffix: " (GPU)", identifierSuffix: ".GPU" },
+  { nameSuffix: " (Plugin)", identifierSuffix: ".Plugin" },
+  { nameSuffix: " (Renderer)", identifierSuffix: ".Renderer" },
+] as const;
 
 export interface MacOSArtifact {
-  schemaVersion: 1;
+  schemaVersion: 2;
   appPath: string;
   bundleIdentifier: "com.blackglass.bridge";
-  bundleName: "Blackglass Bridge";
+  bundleName: "Obsidian";
   displayName: "Blackglass Bridge";
   version: string;
-  executableName: string;
+  executableName: "Obsidian";
   infoPlistSha256: string;
   executableSha256: string;
   embeddedAsarSha256: string;
+  embeddedWrapperAsarSha256: string;
+  embeddedWrapperHeaderSha256: string;
   codeDirectoryHash: string;
+  applicationTreeSha256: string;
+  applicationTreeIdentity: TreeIdentity;
+  helperBundleIdentifiers: string[];
+  profileDirectory: "Blackglass Bridge";
+  explicitUserDataDirHonored: true;
+  upstreamUpdatesDisabled: true;
+  embeddedRendererOnly: true;
   registeredUrlSchemes: [];
   upstreamICloudContainerRegistered: false;
 }
@@ -29,7 +48,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   const displayName = plistString(infoPlist, "CFBundleDisplayName");
   if (
     bundleIdentifier !== "com.blackglass.bridge" ||
-    bundleName !== "Blackglass Bridge" ||
+    bundleName !== "Obsidian" ||
     displayName !== "Blackglass Bridge"
   ) {
     throw new Error(
@@ -48,20 +67,61 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   if (!codeDirectoryHash) throw new Error("Packaged app signature has no CDHash");
 
   const executableName = plistString(infoPlist, "CFBundleExecutable");
+  if (executableName !== "Obsidian") {
+    throw new Error(`Unexpected Bridge runtime executable: ${executableName}`);
+  }
+  const helperBundleIdentifiers: string[] = [];
+  for (const helper of ELECTRON_HELPER_VARIANTS) {
+    const helperName = `Obsidian Helper${helper.nameSuffix}`;
+    const helperPlist = join(
+      appPath,
+      "Contents/Frameworks",
+      `${helperName}.app/Contents/Info.plist`,
+    );
+    const helperIdentifier = `md.obsidian.helper${helper.identifierSuffix}`;
+    if (plistString(helperPlist, "CFBundleIdentifier") !== helperIdentifier) {
+      throw new Error(`Unexpected Bridge helper identifier: ${helperName}`);
+    }
+    if (plistString(helperPlist, "CFBundleDisplayName") !== helperName) {
+      throw new Error(`Unexpected Bridge helper display name: ${helperName}`);
+    }
+    if (plistString(helperPlist, "CFBundleExecutable") !== helperName) {
+      throw new Error(`Unexpected Bridge helper executable: ${helperName}`);
+    }
+    helperBundleIdentifiers.push(helperIdentifier);
+  }
+  const wrapperAsar = join(appPath, "Contents/Resources/app.asar");
+  const wrapperBytes = await readFile(wrapperAsar);
+  const wrapperSafety = inspectPatchedMacOSWrapperAsar(wrapperBytes);
+  const embeddedWrapperAsarSha256 = sha256(wrapperBytes);
+  const embeddedWrapperHeaderSha256 = asarHeaderSha256(wrapperBytes);
+  if (electronAsarIntegrityHash(infoPlist) !== embeddedWrapperHeaderSha256) {
+    throw new Error("Embedded Electron wrapper does not match Info.plist integrity metadata");
+  }
+  const applicationTreeIdentity = await computeTreeIdentity(appPath);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     appPath,
     bundleIdentifier: "com.blackglass.bridge",
-    bundleName: "Blackglass Bridge",
+    bundleName: "Obsidian",
     displayName: "Blackglass Bridge",
     version: plistString(infoPlist, "CFBundleShortVersionString"),
-    executableName,
+    executableName: "Obsidian",
     infoPlistSha256: await sha256File(infoPlist),
     executableSha256: await sha256File(join(appPath, "Contents/MacOS", executableName)),
     embeddedAsarSha256: await sha256File(
       join(appPath, "Contents/Resources/obsidian.asar"),
     ),
+    embeddedWrapperAsarSha256,
+    embeddedWrapperHeaderSha256,
     codeDirectoryHash,
+    applicationTreeSha256: applicationTreeIdentity.sha256,
+    applicationTreeIdentity,
+    helperBundleIdentifiers,
+    profileDirectory: wrapperSafety.profileDirectory,
+    explicitUserDataDirHonored: wrapperSafety.explicitUserDataDirHonored,
+    upstreamUpdatesDisabled: wrapperSafety.upstreamUpdatesDisabled,
+    embeddedRendererOnly: wrapperSafety.embeddedRendererOnly,
     registeredUrlSchemes: [],
     upstreamICloudContainerRegistered: false,
   };
@@ -79,6 +139,10 @@ async function sha256File(path: string): Promise<string> {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function sha256(value: Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 function plistString(infoPlist: string, key: string): string {
   return runText(["plutil", "-extract", key, "raw", "-o", "-", infoPlist]);
 }
@@ -88,6 +152,15 @@ function hasPlistKey(infoPlist: string, key: string): boolean {
     stdout: "ignore",
     stderr: "ignore",
   }).exitCode === 0;
+}
+
+function electronAsarIntegrityHash(infoPlist: string): string {
+  return runText([
+    "/usr/libexec/PlistBuddy",
+    "-c",
+    "Print :ElectronAsarIntegrity:Resources/app.asar:hash",
+    infoPlist,
+  ]);
 }
 
 function run(arguments_: string[]): void {
