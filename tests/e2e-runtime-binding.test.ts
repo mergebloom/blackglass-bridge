@@ -13,7 +13,7 @@ const projectRoot = resolve(import.meta.dir, "..");
 describe("E2E runtime binding", () => {
   test("rejects malformed launch chronology", () => {
     const identity = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       runManifestSha256: "a".repeat(64),
       releaseManifestSha256: "b".repeat(64),
       startedAt: "2026-07-28T12:00:00.000Z",
@@ -32,12 +32,17 @@ describe("E2E runtime binding", () => {
       adapterPath: "/tmp/obsidian-1.12.7.asar",
       adapterSha256: "e".repeat(64),
       profilePath: "/tmp/client-a/user-data",
+      homePath: "/tmp/client-a/home",
       vaultPath: "/tmp/client-a/vault",
       tlsMetadataPath: "/tmp/tls-metadata.json",
       tlsMetadataSha256: "f".repeat(64),
       tlsSpkiSha256Base64: `${"A".repeat(43)}=`,
     };
     expect(() => assertClientLaunchIdentity(identity)).not.toThrow();
+    expect(() => assertClientLaunchIdentity({
+      ...identity,
+      homePath: "",
+    })).toThrow("homePath is invalid");
     expect(() => assertClientLaunchIdentity({
       ...identity,
       startedAt: "not-a-date",
@@ -68,6 +73,7 @@ describe("E2E runtime binding", () => {
       );
       for (const client of ["client-a", "client-b"]) {
         await mkdir(join(runRoot, client, "user-data"), { recursive: true });
+        await mkdir(join(runRoot, client, "home"), { recursive: true, mode: 0o700 });
         await mkdir(join(runRoot, client, "vault"), { recursive: true });
       }
       const layout = await resolvePreparedClientLayout(
@@ -75,6 +81,7 @@ describe("E2E runtime binding", () => {
         join(runRoot, "client-a/vault"),
       );
       expect(layout.clientName).toBe("client-a");
+      expect(layout.homePath).toBe(join(runRoot, "client-a/home"));
       await expect(
         resolvePreparedClientLayout(
           join(runRoot, "client-a/user-data"),

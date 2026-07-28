@@ -27,14 +27,16 @@ redistributable upstream application artifact.
 
 ## Stable implementation boundary
 
-Three fixed-length renderer incisions implement two endpoint changes: the
+Five fixed-length client-ASAR incisions implement two endpoint changes: the
 control-plane origin is replaced in both `app.js` and the independent no-vault
 `starter.js`, and the data-host authorization condition is replaced in
-`app.js`. The copied desktop wrapper receives three separate safety incisions:
-isolated/default-or-explicit profile selection with mode-0700 enforcement, a
-disabled updater queue, and an embedded-renderer pin. The default profile is
-derived from the process `HOME`, while explicit `--user-data-dir` remains
-authoritative. The profile incision is
+`app.js`. The main process CLI socket is replaced with the same-length dedicated
+`.blackglass-b.sock` name, and its registration target becomes the distinct
+`/usr/local/bin/blackglass` command. The copied desktop wrapper receives three
+safety incisions: isolated/default-or-explicit profile selection with mode-0700
+enforcement, a disabled updater queue, and an embedded-renderer pin. The default
+profile is derived from the process `HOME`, while explicit `--user-data-dir`
+remains authoritative. The profile incision is
 located by short start/end markers and a reviewed span digest rather than a
 large embedded upstream excerpt. All protocol compatibility lives in named,
 tested server code. Minified identifiers and byte offsets are not treated as

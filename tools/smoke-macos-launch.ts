@@ -77,6 +77,11 @@ const executablePath = await canonicalExistingPath(
   "Prepared Blackglass executable",
   "file",
 );
+const cliExecutablePath = await canonicalExistingPath(
+  join(appPath, "Contents/MacOS/obsidian-cli"),
+  "Prepared Blackglass CLI executable",
+  "file",
+);
 
 await mkdir(layout.smokeRoot, { recursive: false, mode: 0o700 });
 await Promise.all([
@@ -142,6 +147,8 @@ let debugTargetId: string | undefined;
 let debugTargetUrl: string | undefined;
 let starterControlOrigin: string | undefined;
 let starterControlRequests: FinderLaunchSmokeEvidence["starterControlRequests"] | undefined;
+let cliSocketPath: string | undefined;
+let cliHelpOutputPrefix: FinderLaunchSmokeEvidence["cliHelpOutputPrefix"] | undefined;
 let healthyAt: string | undefined;
 let healthyForMs: number | undefined;
 const startedAt = new Date().toISOString();
@@ -210,6 +217,13 @@ try {
   if ((await readdir(layout.vaultPath)).length !== 0) {
     throw new Error("No-vault starter smoke unexpectedly wrote to its disposable vault");
   }
+  const cliProof = await exercisePackagedCli({
+    cliExecutablePath,
+    homePath: layout.homePath,
+    socketName: currentClient.cliSocketName,
+  });
+  cliSocketPath = cliProof.socketPath;
+  cliHelpOutputPrefix = cliProof.outputPrefix;
   healthyAt = new Date().toISOString();
   healthyForMs = Date.now() - startedAtMs;
 } catch (error) {
@@ -232,6 +246,8 @@ if (
   debugTargetUrl === undefined ||
   starterControlOrigin === undefined ||
   starterControlRequests === undefined ||
+  cliSocketPath === undefined ||
+  cliHelpOutputPrefix === undefined ||
   healthyAt === undefined ||
   healthyForMs === undefined
 ) {
@@ -275,6 +291,10 @@ const evidence: FinderLaunchSmokeEvidence = {
   chromiumHostResolverRules: tls.metadata.chromiumHostResolverRules,
   appPath,
   executablePath,
+  cliExecutablePath,
+  cliExecutableSha256: artifact.cliExecutableSha256,
+  cliSocketPath,
+  cliSocketName: artifact.cliSocketName,
   homePath: layout.homePath,
   profilePath: layout.profilePath,
   vaultPath: layout.vaultPath,
@@ -294,6 +314,10 @@ const evidence: FinderLaunchSmokeEvidence = {
   profileRealDirectoryObserved: true,
   profileActivityObserved: true,
   environmentHomeObserved: true,
+  cliSocketObserved: true,
+  upstreamCliSocketAbsent: true,
+  cliHelpHandshakeSucceeded: true,
+  cliHelpOutputPrefix,
   explicitUserDataDirUsed: false,
   noLocalVaultAtLaunch: true,
   starterPageObserved: true,
@@ -327,6 +351,59 @@ await writeFile(layout.evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, {
   mode: 0o600,
 });
 console.log(JSON.stringify(evidence, null, 2));
+
+async function exercisePackagedCli(input: {
+  cliExecutablePath: string;
+  homePath: string;
+  socketName: string;
+}): Promise<{
+  socketPath: string;
+  outputPrefix: "Obsidian CLI\n\nUsage: obsidian";
+}> {
+  const socketPath = join(input.homePath, input.socketName);
+  const socketStat = await lstat(socketPath).catch(() => undefined);
+  if (!socketStat?.isSocket()) {
+    throw new Error(`Packaged main process did not create CLI socket ${socketPath}`);
+  }
+  const upstreamSocketPath = join(input.homePath, ".obsidian-cli.sock");
+  if (await Bun.file(upstreamSocketPath).exists()) {
+    throw new Error("Packaged main process created the upstream Obsidian CLI socket");
+  }
+
+  const child = Bun.spawn([input.cliExecutablePath, "--help"], {
+    env: { ...process.env, HOME: input.homePath },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = Symbol("cli-timeout");
+  const result = await Promise.race([
+    child.exited,
+    new Promise<typeof timedOut>((resolve) => {
+      timeout = setTimeout(() => resolve(timedOut), 5_000);
+    }),
+  ]);
+  if (timeout) clearTimeout(timeout);
+  if (result === timedOut) {
+    child.kill();
+    await child.exited;
+    throw new Error("Packaged CLI help handshake timed out");
+  }
+  const [stdout, stderr] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  if (result !== 0) {
+    throw new Error(
+      `Packaged CLI help handshake failed with exit ${result}: ${stderr.trim()}`,
+    );
+  }
+  const outputPrefix = "Obsidian CLI\n\nUsage: obsidian" as const;
+  if (!stdout.startsWith(outputPrefix)) {
+    throw new Error("Packaged CLI help handshake returned unexpected output");
+  }
+  return { socketPath, outputPrefix };
+}
 
 function assertPortAvailable(port: number): void {
   const result = Bun.spawnSync([

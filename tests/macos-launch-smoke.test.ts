@@ -17,7 +17,7 @@ const controlOrigin = "https://blackglass.example.com";
 const chromiumHostResolverRules = "MAP blackglass.example.com 127.0.0.1:8443";
 const tlsSpkiSha256Base64 = `${"A".repeat(43)}=`;
 const artifact = {
-  schemaVersion: 4 as const,
+  schemaVersion: 5 as const,
   bundleIdentifier: "com.blackglass.bridge" as const,
   bundleName: "Obsidian" as const,
   displayName: "Blackglass Bridge" as const,
@@ -25,6 +25,10 @@ const artifact = {
   executableName: "Obsidian" as const,
   infoPlistSha256: digest("1"),
   executableSha256: digest("2"),
+  cliExecutableName: "obsidian-cli" as const,
+  cliExecutableSha256: digest("6"),
+  cliSocketName: ".blackglass-b.sock" as const,
+  cliSocketOccurrences: 2 as const,
   embeddedAsarSha256: digest("3"),
   embeddedWrapperAsarSha256: digest("4"),
   embeddedWrapperHeaderSha256: digest("5"),
@@ -59,7 +63,7 @@ const artifact = {
 function evidence(): FinderLaunchSmokeEvidence {
   const layout = finderLaunchSmokeLayout(root);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     passed: true,
     platform: "macOS Apple Silicon",
     mechanism: "LaunchServices open -n -a",
@@ -74,6 +78,10 @@ function evidence(): FinderLaunchSmokeEvidence {
     chromiumHostResolverRules,
     appPath,
     executablePath: join(appPath, "Contents/MacOS/Obsidian"),
+    cliExecutablePath: join(appPath, "Contents/MacOS/obsidian-cli"),
+    cliExecutableSha256: artifact.cliExecutableSha256,
+    cliSocketPath: join(layout.homePath, artifact.cliSocketName),
+    cliSocketName: artifact.cliSocketName,
     homePath: layout.homePath,
     profilePath: layout.profilePath,
     vaultPath: layout.vaultPath,
@@ -98,6 +106,10 @@ function evidence(): FinderLaunchSmokeEvidence {
     profileRealDirectoryObserved: true,
     profileActivityObserved: true,
     environmentHomeObserved: true,
+    cliSocketObserved: true,
+    upstreamCliSocketAbsent: true,
+    cliHelpHandshakeSucceeded: true,
+    cliHelpOutputPrefix: "Obsidian CLI\n\nUsage: obsidian",
     explicitUserDataDirUsed: false,
     noLocalVaultAtLaunch: true,
     starterPageObserved: true,
@@ -156,6 +168,10 @@ describe("packaged macOS LaunchServices smoke", () => {
       (value: any) => (value.starterControlRequests[1].status = 500),
       (value: any) => (value.starterControlOrigin = "https://api.obsidian.md"),
       (value: any) => (value.noVaultRegisteredAfterLaunch = false),
+      (value: any) => (value.cliSocketObserved = false),
+      (value: any) => (value.upstreamCliSocketAbsent = false),
+      (value: any) => (value.cliHelpHandshakeSucceeded = false),
+      (value: any) => (value.cliSocketName = ".obsidian-cli.sock"),
     ]) {
       const candidate = structuredClone(evidence()) as any;
       mutate(candidate);

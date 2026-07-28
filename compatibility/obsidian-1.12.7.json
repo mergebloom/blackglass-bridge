@@ -233,6 +233,18 @@
       "expectedMatches": 1
     },
     {
+      "id": "desktop-cli-socket",
+      "file": "main.js",
+      "literal": ".obsidian-cli.sock",
+      "expectedMatches": 1
+    },
+    {
+      "id": "desktop-cli-registration-target",
+      "file": "main.js",
+      "literal": "/usr/local/bin/obsidian",
+      "expectedMatches": 1
+    },
+    {
       "id": "desktop-is-dev-ipc-handler",
       "file": "main.js",
       "literal": "ipcMain.on(\"is-dev\"",

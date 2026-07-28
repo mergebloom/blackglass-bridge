@@ -89,8 +89,10 @@ const freshClient = await canonicalOutputPath(
   "Fresh recovery client staging directory",
 );
 const freshProfile = join(freshClient, "user-data");
+const freshHome = join(freshClient, "home");
 const freshVault = join(freshClient, "vault");
 await mkdir(freshProfile, { recursive: true, mode: 0o700 });
+await mkdir(freshHome, { recursive: true, mode: 0o700 });
 await mkdir(freshVault, { recursive: true, mode: 0o700 });
 await writeFile(join(freshProfile, run.manifest.adapterFileName), adapterBytes, {
   flag: "wx",
@@ -129,6 +131,7 @@ const resetRecord = {
   freshClient: {
     name: "client-b",
     profilePath: join(root, "client-b", "user-data"),
+    homePath: join(root, "client-b", "home"),
     vaultPath: join(root, "client-b", "vault"),
     adapterSha256: sha256(adapterBytes),
     initialVaultFiles: 0,

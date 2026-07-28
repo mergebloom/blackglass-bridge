@@ -3,6 +3,11 @@ import { lstat, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { inspectPatchedMacOSWrapperAsar } from "../packages/client-adapter/src/wrapper";
 import { asarHeaderSha256 } from "./asar";
+import {
+  BRIDGE_CLI_SOCKET_NAME,
+  CLI_BINARY_INCISION_COUNT,
+  inspectPatchedCliBinary,
+} from "./cli-binary";
 import { computeTreeIdentity, type TreeIdentity } from "./tree-identity";
 import { isSupportedStableSemver } from "./semver";
 
@@ -14,7 +19,7 @@ export const ELECTRON_HELPER_VARIANTS = [
 ] as const;
 
 export interface MacOSArtifact {
-  schemaVersion: 4;
+  schemaVersion: 5;
   appPath: string;
   bundleIdentifier: "com.blackglass.bridge";
   bundleName: "Obsidian";
@@ -23,6 +28,10 @@ export interface MacOSArtifact {
   executableName: "Obsidian";
   infoPlistSha256: string;
   executableSha256: string;
+  cliExecutableName: "obsidian-cli";
+  cliExecutableSha256: string;
+  cliSocketName: typeof BRIDGE_CLI_SOCKET_NAME;
+  cliSocketOccurrences: typeof CLI_BINARY_INCISION_COUNT;
   embeddedAsarSha256: string;
   embeddedWrapperAsarSha256: string;
   embeddedWrapperHeaderSha256: string;
@@ -106,9 +115,12 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   if (electronAsarIntegrityHash(infoPlist) !== embeddedWrapperHeaderSha256) {
     throw new Error("Embedded Electron wrapper does not match Info.plist integrity metadata");
   }
+  const cliExecutableName = "obsidian-cli";
+  const cliExecutable = join(appPath, "Contents/MacOS", cliExecutableName);
+  const cliSafety = inspectPatchedCliBinary(await readFile(cliExecutable));
   const applicationTreeIdentity = await computeTreeIdentity(appPath);
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     appPath,
     bundleIdentifier: "com.blackglass.bridge",
     bundleName: "Obsidian",
@@ -117,6 +129,10 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     executableName: "Obsidian",
     infoPlistSha256: await sha256File(infoPlist),
     executableSha256: await sha256File(join(appPath, "Contents/MacOS", executableName)),
+    cliExecutableName,
+    cliExecutableSha256: cliSafety.sha256,
+    cliSocketName: cliSafety.socketName,
+    cliSocketOccurrences: cliSafety.socketOccurrences,
     embeddedAsarSha256: await sha256File(
       join(appPath, "Contents/Resources/obsidian.asar"),
     ),

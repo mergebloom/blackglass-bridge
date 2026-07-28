@@ -24,13 +24,14 @@ The long-term target is the existing app experience with no loss of
 functionality while its services are self-hosted. The supported table below
 states what has been implemented and requalified so far.
 
-Bridge uses three fixed-length renderer incisions for two semantic endpoint
-adaptations: the control origin in both the normal and no-vault starter
-renderers, plus the Sync data-host check. Three fail-closed wrapper incisions
-isolate Blackglass state with mode-`0700` enforcement, disable the upstream
-package updater, and force the embedded qualified renderer. The exact artifacts
-are requalified with end-to-end tests so future Obsidian updates remain a small,
-repeatable maintenance task.
+Bridge uses five fixed-length client-ASAR incisions: three adapt the control and
+Sync endpoints, one gives the main process a dedicated CLI socket, and one gives
+CLI registration a distinct command name. Two fixed-length incisions apply the
+same socket name to the universal CLI binary. Three fail-closed wrapper
+incisions isolate Blackglass state with mode-`0700` enforcement, disable the
+upstream package updater, and force the embedded qualified renderer. The exact
+artifacts are requalified with end-to-end tests so future Obsidian updates
+remain a small, repeatable maintenance task.
 
 Blackglass began as a research project exploring frontier language-model
 capabilities in minified-code analysis, protocol recovery, clean-room compatible

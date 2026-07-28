@@ -16,7 +16,7 @@ import {
 } from "./path-safety";
 
 export interface ClientLaunchIdentity {
-  schemaVersion: 2;
+  schemaVersion: 3;
   runManifestSha256: string;
   releaseManifestSha256: string;
   startedAt: string;
@@ -35,6 +35,7 @@ export interface ClientLaunchIdentity {
   adapterPath: string;
   adapterSha256: string;
   profilePath: string;
+  homePath: string;
   vaultPath: string;
   tlsMetadataPath: string;
   tlsMetadataSha256: string;
@@ -63,6 +64,7 @@ export async function resolvePreparedClientLayout(
   run: Awaited<ReturnType<typeof readPreparedE2ERun>>;
   clientRoot: string;
   clientName: "client-a" | "client-b";
+  homePath: string;
 }> {
   if (basename(profile) !== "user-data" || basename(vault) !== "vault") {
     throw new Error("Prepared E2E client paths must end in user-data and vault");
@@ -77,13 +79,23 @@ export async function resolvePreparedClientLayout(
   }
   const run = await readPreparedE2ERun(dirname(clientRoot));
   const expectedProfile = join(run.root, clientName, "user-data");
+  const expectedHome = join(run.root, clientName, "home");
   const expectedVault = join(run.root, clientName, "vault");
   if (!pathsEqual(profile, expectedProfile) || !pathsEqual(vault, expectedVault)) {
     throw new Error("Prepared E2E client paths do not match their run manifest");
   }
   await assertNoSymlinkSegments(run.root, profile, "Prepared E2E profile");
   await assertNoSymlinkSegments(run.root, vault, "Prepared E2E vault");
-  return { run, clientRoot, clientName };
+  const homePath = await canonicalExistingPath(
+    expectedHome,
+    "Prepared E2E home",
+    "directory",
+  );
+  await assertNoSymlinkSegments(run.root, homePath, "Prepared E2E home");
+  if (((await stat(homePath)).mode & 0o777) !== 0o700) {
+    throw new Error("Prepared E2E home must use mode 0700");
+  }
+  return { run, clientRoot, clientName, homePath };
 }
 
 export async function readClientLaunchIdentity(
@@ -97,7 +109,7 @@ export async function readClientLaunchIdentity(
 export function assertClientLaunchIdentity(
   value: unknown,
 ): asserts value is ClientLaunchIdentity {
-  if (!isRecord(value) || value.schemaVersion !== 2) {
+  if (!isRecord(value) || value.schemaVersion !== 3) {
     throw new Error("Unsupported client launch identity schema");
   }
   for (const field of [
@@ -116,6 +128,7 @@ export function assertClientLaunchIdentity(
     "appBundlePath",
     "adapterPath",
     "profilePath",
+    "homePath",
     "vaultPath",
     "tlsMetadataPath",
   ] as const) {
@@ -169,6 +182,7 @@ export async function verifyLiveClientLaunchBinding(
     identity.runManifestSha256 !== run.manifestSha256 ||
     identity.releaseManifestSha256 !== run.manifest.releaseManifestSha256 ||
     identity.adapterSha256 !== run.manifest.compatibilityAsarSha256 ||
+    identity.homePath !== layout.homePath ||
     identity.tlsMetadataPath !== join(run.root, "tls-metadata.json") ||
     ((await stat(identityPath)).mode & 0o777) !== 0o600
   ) {

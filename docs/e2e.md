@@ -7,7 +7,7 @@ the project E2E area.
 
 ## What must pass
 
-- the exact official DMG, reviewed compatibility baseline, three-incision ASAR,
+- the exact official DMG, reviewed compatibility baseline, five-incision client ASAR,
   copied app, release manifest, and Rust server binary all match by SHA-256,
   with the server binary also reporting its exact source revision;
 - two separately identified live app processes use the intended renderer,

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import {
   patchAsar,
+  patchMainProcess,
   patchRenderer,
   patchStarterRenderer,
 } from "../packages/client-adapter/src/patch";
@@ -43,12 +44,40 @@ describe("client adapter", () => {
     expect(patched.toString("utf8")).not.toContain(controlExpression);
   });
 
+  test("uses a dedicated fixed-length CLI socket", () => {
+    const upstream = Buffer.from(
+      'const socket=".obsidian-cli.sock";let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";',
+    );
+    const patched = patchMainProcess(upstream);
+    expect(patched.length).toBe(upstream.length);
+    expect(patched.toString("utf8")).toContain('const socket=".blackglass-b.sock";');
+    expect(patched.toString("utf8")).toContain('let w="/usr/local/bin/blackglass";');
+    expect(patched.toString("utf8")).not.toContain("/usr/local/bin/obsidian");
+    expect(() => patchMainProcess(Buffer.from(
+      'no socket;let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";',
+    ))).toThrow(
+      "CLI socket name must match exactly once",
+    );
+    expect(() =>
+      patchMainProcess(Buffer.from(
+        '.obsidian-cli.sock.obsidian-cli.sock;let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";',
+      )),
+    ).toThrow("CLI socket name must match exactly once");
+  });
+
   test("rebuilds ASAR integrity metadata and verifies the result", () => {
     const renderer = Buffer.from(
       `var dw=${controlExpression};if(${hostnameCondition})throw Error();`,
     );
     const starter = Buffer.from(`var sa=${controlExpression};`);
-    const upstream = makeArchive({ "app.js": renderer, "starter.js": starter });
+    const main = Buffer.from(
+      'const socket=".obsidian-cli.sock";let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";',
+    );
+    const upstream = makeArchive({
+      "app.js": renderer,
+      "starter.js": starter,
+      "main.js": main,
+    });
     const generated = patchAsar(upstream, {
       controlOrigin: "https://sync-control.example.test",
       dataHost: "sync-data.example.test:8443",
@@ -56,6 +85,7 @@ describe("client adapter", () => {
     const archive = AsarArchive.fromBuffer(generated.buffer);
     const patchedRenderer = archive.read("app.js");
     const patchedStarter = archive.read("starter.js");
+    const patchedMain = archive.read("main.js");
 
     expect(patchedRenderer.toString("utf8")).toContain(
       '"https://sync-control.example.test"',
@@ -66,14 +96,19 @@ describe("client adapter", () => {
     expect(patchedStarter.toString("utf8")).toContain(
       'var sa="https://sync-control.example.test"',
     );
+    expect(patchedMain.toString("utf8")).toContain(".blackglass-b.sock");
+    expect(patchedMain.toString("utf8")).toContain("/usr/local/bin/blackglass");
     expect(generated.report.upstreamSha256).not.toBe(
       generated.report.patchedSha256,
     );
     expect(generated.report).toMatchObject({
-      patchFormatVersion: 3,
-      incisionCount: 3,
+      patchFormatVersion: 5,
+      incisionCount: 5,
       controlOrigin: "https://sync-control.example.test",
       dataHost: "sync-data.example.test:8443",
+      cliSocketName: ".blackglass-b.sock",
+      cliCommandName: "blackglass",
+      cliCommandPath: "/usr/local/bin/blackglass",
     });
   });
 

@@ -69,9 +69,11 @@ LaunchServices-injected `HOME` receives a genuinely isolated default profile.
 It disables its upstream package updater and refuses downloaded renderer
 overrides, including Finder launches. An explicit `--user-data-dir` remains
 available for disposable isolated test clients. The launcher requires existing
-profile and vault directories and refuses Obsidian's normal profile. Endpoint
-inputs must be canonical: no trailing slash, case
-normalization, default port spelling, path, credentials, query, or fragment.
+profile and vault directories and refuses Obsidian's normal profile. The
+embedded main process also uses a dedicated `.blackglass-b.sock` CLI socket
+so it can coexist with normal Obsidian without unlinking Obsidian's endpoint.
+Endpoint inputs must be canonical: no trailing slash, case normalization,
+default port spelling, path, credentials, query, or fragment.
 For every upstream release:
 
 1. verify and retain the official artifact and SHA-256 outside this project;

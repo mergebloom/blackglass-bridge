@@ -153,9 +153,11 @@ await writeFile(
 const clients = ["client-a", "client-b"] as const;
 for (const client of clients) {
   const userData = resolve(root, client, "user-data");
+  const home = resolve(root, client, "home");
   const vault = resolve(root, client, "vault");
-  await mkdir(userData, { recursive: true });
-  await mkdir(vault, { recursive: true });
+  await mkdir(userData, { recursive: true, mode: 0o700 });
+  await mkdir(home, { recursive: true, mode: 0o700 });
+  await mkdir(vault, { recursive: true, mode: 0o700 });
   await copyFile(asar, resolve(userData, adapterFileName));
   // Keep this identifier identical to launch-macos.ts. A random identifier here
   // would make the launcher register the same vault a second time and open two
@@ -202,10 +204,12 @@ console.log(
       credentials: resolve(root, "credentials.json"),
       clientA: {
         userData: resolve(root, "client-a/user-data"),
+        home: resolve(root, "client-a/home"),
         vault: resolve(root, "client-a/vault"),
       },
       clientB: {
         userData: resolve(root, "client-b/user-data"),
+        home: resolve(root, "client-b/home"),
         vault: resolve(root, "client-b/vault"),
       },
     },

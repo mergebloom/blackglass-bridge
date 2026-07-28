@@ -13,6 +13,12 @@ import {
   WRAPPER_PATCH_FORMAT_VERSION,
 } from "../packages/client-adapter/src/wrapper";
 import { AsarArchive, asarHeaderSha256 } from "./asar";
+import {
+  CLI_BINARY_INCISION_COUNT,
+  CLI_BINARY_PATCH_FORMAT_VERSION,
+  inspectPatchedCliBinary,
+  patchCliBinary,
+} from "./cli-binary";
 import { parseStrictFlags } from "./cli-flags";
 import {
   ELECTRON_HELPER_VARIANTS,
@@ -114,8 +120,11 @@ assertNonOverlappingPaths([
 
 const sourceAsar = join(sourceApp, "Contents/Resources/obsidian.asar");
 const sourceWrapperAsar = join(sourceApp, "Contents/Resources/app.asar");
+const sourceCliExecutable = join(sourceApp, "Contents/MacOS/obsidian-cli");
 const sourceInfoPlist = join(sourceApp, "Contents/Info.plist");
 const sourceAsarBytes = await readFile(sourceAsar);
+const sourceCliBytes = await readFile(sourceCliExecutable);
+const generatedCli = patchCliBinary(sourceCliBytes);
 const patchedAsarBytes = await readFile(patchedAsar);
 const sourceArchive = AsarArchive.fromBuffer(sourceAsarBytes);
 const patchedArchive = AsarArchive.fromBuffer(patchedAsarBytes);
@@ -269,6 +278,14 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       "Packaged Electron wrapper integrity metadata is inconsistent",
     );
   }
+  const packagedCliExecutable = join(stagedApp, "Contents/MacOS/obsidian-cli");
+  await writeFile(packagedCliExecutable, generatedCli.buffer);
+  const stagedCliSafety = inspectPatchedCliBinary(
+    await readFile(packagedCliExecutable),
+  );
+  if (stagedCliSafety.sha256 !== generatedCli.report.patchedSha256) {
+    throw new Error("Packaged CLI does not match the deterministic socket patch");
+  }
   run([
     "plutil",
     "-replace",
@@ -339,6 +356,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       appTree: sourceAppTree,
       rendererAsarSha256: sourceAsarSha256,
       wrapperAsarSha256: generatedWrapper.report.upstreamSha256,
+      cliExecutableSha256: generatedCli.report.upstreamSha256,
     },
     patcher: {
       renderer: {
@@ -349,6 +367,10 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
         formatVersion: WRAPPER_PATCH_FORMAT_VERSION,
         incisions: WRAPPER_INCISION_COUNT,
       },
+      cli: {
+        formatVersion: CLI_BINARY_PATCH_FORMAT_VERSION,
+        incisions: CLI_BINARY_INCISION_COUNT,
+      },
     },
     endpoints: {
       controlOrigin: reproducedRenderer.report.controlOrigin,
@@ -357,6 +379,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     toolingSource,
     renderer: reproducedRenderer.report,
     wrapper: generatedWrapper.report,
+    cli: generatedCli.report,
     macOS: publicMacOSArtifact(macOSArtifact),
     reproduction: {
       officialDmgMatchedBaseline: true,
@@ -367,6 +390,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       rendererByteIdentical: true,
       packagedRendererByteIdentical: true,
       packagedWrapperIntegrityVerified: true,
+      packagedCliSocketVerified: true,
     },
   };
   assertBridgeReleaseManifest(releaseManifest);
@@ -404,6 +428,8 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
         upstreamUpdatesDisabled:
           generatedWrapper.report.upstreamUpdatesDisabled,
         embeddedRendererOnly: generatedWrapper.report.embeddedRendererOnly,
+        cliSocketName: releaseManifest.macOS.cliSocketName,
+        cliSocketOccurrences: releaseManifest.macOS.cliSocketOccurrences,
         sourceBundleIdentifier,
         bundleIdentifier: releaseManifest.macOS.bundleIdentifier,
         bundleName: releaseManifest.macOS.bundleName,

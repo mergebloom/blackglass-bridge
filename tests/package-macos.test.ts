@@ -62,9 +62,14 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       writeFile(join(contents, "Info.plist"), sourceInfoPlist(sourceWrapperSha256)),
       writeFile(officialDmgPath, "synthetic official DMG"),
       copyFile("/usr/bin/true", join(executableDirectory, "Obsidian")),
+      writeFile(
+        join(executableDirectory, "obsidian-cli"),
+        "#!/bin/sh\n# .obsidian-cli.sock .obsidian-cli.sock\n",
+      ),
       ...sourceHelperBundles(frameworks),
     ]);
     await chmod(join(executableDirectory, "Obsidian"), 0o755);
+    await chmod(join(executableDirectory, "obsidian-cli"), 0o755);
     await writeFile(
       baselinePath,
       `${JSON.stringify(await testCompatibilityBaseline(
@@ -123,12 +128,13 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       signature: "ad-hoc",
     });
     expect(report.releaseManifest).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       rendererVersion: "1.12.7",
       endpoints,
       patcher: {
-        renderer: { formatVersion: 3, incisions: 3 },
+        renderer: { formatVersion: 5, incisions: 5 },
         wrapper: { formatVersion: 3, incisions: 3 },
+        cli: { formatVersion: 1, incisions: 2 },
       },
       reproduction: {
         officialDmgMatchedBaseline: true,
@@ -139,6 +145,7 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
         rendererByteIdentical: true,
         packagedRendererByteIdentical: true,
         packagedWrapperIntegrityVerified: true,
+        packagedCliSocketVerified: true,
       },
     });
     expect(JSON.parse(await Bun.file(manifestPath).text())).toEqual(
@@ -188,6 +195,9 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       bundleName: "Obsidian",
       displayName: "Blackglass Bridge",
       executableName: "Obsidian",
+      cliExecutableName: "obsidian-cli",
+      cliSocketName: ".blackglass-b.sock",
+      cliSocketOccurrences: 2,
       profileDirectory: "Blackglass Bridge",
       profileMode: 0o700,
       profilePathCanonicalAtSetup: true,
@@ -279,7 +289,7 @@ function makeRendererArchive(): Buffer {
         'gw("/user/signin");socket.send({op:"ping"});',
     ),
     "main.js": Buffer.from(
-      'module.exports=function(c,i,l){ipcMain.on("is-dev",t=>{t.returnValue=l})}',
+      'module.exports=function(c,i,l){const socket=".obsidian-cli.sock";let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";ipcMain.on("is-dev",t=>{t.returnValue=l})}}',
     ),
     "starter.js": Buffer.from(
       `var sa=${controlExpression};gw("/user/signin");`,

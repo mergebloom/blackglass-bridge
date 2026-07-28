@@ -47,7 +47,7 @@ reviewed `obsidian.asar.unpacked` and `app.asar.unpacked` JavaScript paths,
 sizes, and SHA-256 identities. If any packed or unpacked JavaScript file,
 anchor, request helper, network constructor, route, operation, or message shape
 is new, removed, or changed, generation stops. Packaging then reproduces the
-three-incision renderer from the reviewed source and canonical endpoints and
+five-incision client ASAR from the reviewed source and canonical endpoints and
 requires a byte-identical result. A single release manifest binds
 the baseline, source/result hashes, endpoints, patcher formats, wrapper, and app
 identity into the isolated E2E report. The E2E TLS certificate, resolver rules,
@@ -79,3 +79,7 @@ it; the tooling tree at the tag must remain byte-identical.
   `HOME`. This also makes a LaunchServices-injected `HOME` authoritative for the
   no-vault smoke. The wrapper rejects a non-canonical path at setup and enforces
   directory mode `0700` for both forms.
+- The embedded main process uses `.blackglass-b.sock` instead of Obsidian's
+  global CLI socket, so the two applications cannot unlink each other's CLI
+  endpoint. Its registration action installs `/usr/local/bin/blackglass`, never
+  the upstream `/usr/local/bin/obsidian` command.

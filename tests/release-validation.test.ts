@@ -35,7 +35,7 @@ const toolingSource = {
 };
 
 const macOS = {
-  schemaVersion: 4 as const,
+  schemaVersion: 5 as const,
   bundleIdentifier: "com.blackglass.bridge" as const,
   bundleName: "Obsidian" as const,
   displayName: "Blackglass Bridge" as const,
@@ -43,6 +43,10 @@ const macOS = {
   executableName: "Obsidian" as const,
   infoPlistSha256: digest("1"),
   executableSha256: digest("2"),
+  cliExecutableName: "obsidian-cli" as const,
+  cliExecutableSha256: digest("6"),
+  cliSocketName: ".blackglass-b.sock" as const,
+  cliSocketOccurrences: 2 as const,
   embeddedAsarSha256: digest("3"),
   embeddedWrapperAsarSha256: digest("4"),
   embeddedWrapperHeaderSha256: digest("5"),
@@ -68,7 +72,7 @@ const macOS = {
 
 function manifest(): BridgeReleaseManifest {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     bridgeVersion: "0.1.1",
     rendererVersion: "1.12.7",
     compatibilityBaseline: {
@@ -81,10 +85,12 @@ function manifest(): BridgeReleaseManifest {
       appTree: tree("a"),
       rendererAsarSha256: digest("b"),
       wrapperAsarSha256: digest("c"),
+      cliExecutableSha256: digest("d"),
     },
     patcher: {
-      renderer: { formatVersion: 3, incisions: 3 },
+      renderer: { formatVersion: 5, incisions: 5 },
       wrapper: { formatVersion: 3, incisions: 3 },
+      cli: { formatVersion: 1, incisions: 2 },
     },
     endpoints: {
       controlOrigin: "https://blackglass.example.com",
@@ -92,16 +98,21 @@ function manifest(): BridgeReleaseManifest {
     },
     toolingSource,
     renderer: {
-      patchFormatVersion: 3,
-      incisionCount: 3,
+      patchFormatVersion: 5,
+      incisionCount: 5,
       controlOrigin: "https://blackglass.example.com",
       dataHost: "blackglass-data.example.com",
+      cliSocketName: ".blackglass-b.sock",
+      cliCommandName: "blackglass",
+      cliCommandPath: "/usr/local/bin/blackglass",
       upstreamSha256: digest("b"),
       patchedSha256: digest("3"),
       rendererBeforeSha256: digest("d"),
       rendererAfterSha256: digest("e"),
       starterBeforeSha256: digest("1"),
       starterAfterSha256: digest("2"),
+      mainBeforeSha256: digest("4"),
+      mainAfterSha256: digest("5"),
     },
     wrapper: {
       patchFormatVersion: 3,
@@ -120,6 +131,13 @@ function manifest(): BridgeReleaseManifest {
       mainBeforeSha256: digest("e"),
       mainAfterSha256: digest("f"),
     },
+    cli: {
+      patchFormatVersion: 1,
+      incisionCount: 2,
+      socketName: ".blackglass-b.sock",
+      upstreamSha256: digest("d"),
+      patchedSha256: digest("e"),
+    },
     macOS,
     reproduction: {
       officialDmgMatchedBaseline: true,
@@ -130,6 +148,7 @@ function manifest(): BridgeReleaseManifest {
       rendererByteIdentical: true,
       packagedRendererByteIdentical: true,
       packagedWrapperIntegrityVerified: true,
+      packagedCliSocketVerified: true,
     },
   };
 }

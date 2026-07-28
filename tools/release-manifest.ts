@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   canonicalAdapterOptions,
+  BRIDGE_CLI_COMMAND_NAME,
+  BRIDGE_CLI_COMMAND_PATH,
   RENDERER_INCISION_COUNT,
   RENDERER_PATCH_FORMAT_VERSION,
   type AdapterOptions,
@@ -12,6 +14,12 @@ import {
   WRAPPER_PATCH_FORMAT_VERSION,
   type WrapperPatchReport,
 } from "../packages/client-adapter/src/wrapper";
+import {
+  BRIDGE_CLI_SOCKET_NAME,
+  CLI_BINARY_INCISION_COUNT,
+  CLI_BINARY_PATCH_FORMAT_VERSION,
+  type CliBinaryPatchReport,
+} from "./cli-binary";
 import type { MacOSArtifact } from "./macos-artifact";
 import {
   assertToolingSourceIdentity,
@@ -23,7 +31,7 @@ import {
 } from "./tree-identity";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 
-export const BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION = 4;
+export const BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION = 5;
 
 export interface BridgeReleaseManifest {
   schemaVersion: typeof BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION;
@@ -39,6 +47,7 @@ export interface BridgeReleaseManifest {
     appTree: TreeIdentity;
     rendererAsarSha256: string;
     wrapperAsarSha256: string;
+    cliExecutableSha256: string;
   };
   patcher: {
     renderer: {
@@ -49,11 +58,16 @@ export interface BridgeReleaseManifest {
       formatVersion: typeof WRAPPER_PATCH_FORMAT_VERSION;
       incisions: typeof WRAPPER_INCISION_COUNT;
     };
+    cli: {
+      formatVersion: typeof CLI_BINARY_PATCH_FORMAT_VERSION;
+      incisions: typeof CLI_BINARY_INCISION_COUNT;
+    };
   };
   endpoints: AdapterOptions;
   toolingSource: ToolingSourceIdentity;
   renderer: AdapterReport;
   wrapper: WrapperPatchReport;
+  cli: CliBinaryPatchReport;
   macOS: Omit<MacOSArtifact, "appPath">;
   reproduction: {
     officialDmgMatchedBaseline: true;
@@ -64,6 +78,7 @@ export interface BridgeReleaseManifest {
     rendererByteIdentical: true;
     packagedRendererByteIdentical: true;
     packagedWrapperIntegrityVerified: true;
+    packagedCliSocketVerified: true;
   };
 }
 
@@ -102,7 +117,8 @@ export function assertBridgeReleaseManifest(
     !isRecord(value.source) ||
     !isSha256(value.source.officialDmgSha256) ||
     !isSha256(value.source.rendererAsarSha256) ||
-    !isSha256(value.source.wrapperAsarSha256)
+    !isSha256(value.source.wrapperAsarSha256) ||
+    !isSha256(value.source.cliExecutableSha256)
   ) {
     throw new Error("Bridge release manifest has invalid source provenance");
   }
@@ -114,7 +130,10 @@ export function assertBridgeReleaseManifest(
     value.patcher.renderer.incisions !== RENDERER_INCISION_COUNT ||
     !isRecord(value.patcher.wrapper) ||
     value.patcher.wrapper.formatVersion !== WRAPPER_PATCH_FORMAT_VERSION ||
-    value.patcher.wrapper.incisions !== WRAPPER_INCISION_COUNT
+    value.patcher.wrapper.incisions !== WRAPPER_INCISION_COUNT ||
+    !isRecord(value.patcher.cli) ||
+    value.patcher.cli.formatVersion !== CLI_BINARY_PATCH_FORMAT_VERSION ||
+    value.patcher.cli.incisions !== CLI_BINARY_INCISION_COUNT
   ) {
     throw new Error("Bridge release manifest has an unsupported patcher version");
   }
@@ -132,7 +151,12 @@ export function assertBridgeReleaseManifest(
   ) {
     throw new Error("Bridge release manifest endpoints are not canonical");
   }
-  if (!isRecord(value.renderer) || !isRecord(value.wrapper) || !isRecord(value.macOS)) {
+  if (
+    !isRecord(value.renderer) ||
+    !isRecord(value.wrapper) ||
+    !isRecord(value.cli) ||
+    !isRecord(value.macOS)
+  ) {
     throw new Error("Bridge release manifest is missing artifact identities");
   }
   for (const hash of [
@@ -142,14 +166,19 @@ export function assertBridgeReleaseManifest(
     value.renderer.rendererAfterSha256,
     value.renderer.starterBeforeSha256,
     value.renderer.starterAfterSha256,
+    value.renderer.mainBeforeSha256,
+    value.renderer.mainAfterSha256,
     value.wrapper.upstreamSha256,
     value.wrapper.patchedSha256,
     value.wrapper.upstreamHeaderSha256,
     value.wrapper.patchedHeaderSha256,
     value.wrapper.mainBeforeSha256,
     value.wrapper.mainAfterSha256,
+    value.cli.upstreamSha256,
+    value.cli.patchedSha256,
     value.macOS.infoPlistSha256,
     value.macOS.executableSha256,
+    value.macOS.cliExecutableSha256,
     value.macOS.embeddedAsarSha256,
     value.macOS.embeddedWrapperAsarSha256,
     value.macOS.embeddedWrapperHeaderSha256,
@@ -163,16 +192,23 @@ export function assertBridgeReleaseManifest(
     value.renderer.incisionCount !== RENDERER_INCISION_COUNT ||
     value.renderer.controlOrigin !== endpoints.controlOrigin ||
     value.renderer.dataHost !== endpoints.dataHost ||
+    value.renderer.cliSocketName !== BRIDGE_CLI_SOCKET_NAME ||
+    value.renderer.cliCommandName !== BRIDGE_CLI_COMMAND_NAME ||
+    value.renderer.cliCommandPath !== BRIDGE_CLI_COMMAND_PATH ||
     value.wrapper.patchFormatVersion !== WRAPPER_PATCH_FORMAT_VERSION ||
     value.wrapper.incisionCount !== WRAPPER_INCISION_COUNT ||
+    value.cli.patchFormatVersion !== CLI_BINARY_PATCH_FORMAT_VERSION ||
+    value.cli.incisionCount !== CLI_BINARY_INCISION_COUNT ||
+    value.cli.socketName !== BRIDGE_CLI_SOCKET_NAME ||
     value.renderer.upstreamSha256 === value.renderer.patchedSha256 ||
     value.wrapper.upstreamSha256 === value.wrapper.patchedSha256 ||
     value.source.rendererAsarSha256 !== value.renderer.upstreamSha256 ||
     value.source.wrapperAsarSha256 !== value.wrapper.upstreamSha256 ||
+    value.source.cliExecutableSha256 !== value.cli.upstreamSha256 ||
     value.macOS.embeddedAsarSha256 !== value.renderer.patchedSha256 ||
     value.macOS.embeddedWrapperAsarSha256 !== value.wrapper.patchedSha256 ||
     value.macOS.embeddedWrapperHeaderSha256 !== value.wrapper.patchedHeaderSha256 ||
-    value.macOS.schemaVersion !== 4 ||
+    value.macOS.schemaVersion !== 5 ||
     value.macOS.applicationTreeSha256 !== value.macOS.applicationTreeIdentity.sha256
   ) {
     throw new Error("Bridge release manifest artifact bindings are inconsistent");
@@ -182,6 +218,10 @@ export function assertBridgeReleaseManifest(
     value.macOS.bundleName !== "Obsidian" ||
     value.macOS.displayName !== "Blackglass Bridge" ||
     value.macOS.executableName !== "Obsidian" ||
+    value.macOS.cliExecutableName !== "obsidian-cli" ||
+    value.macOS.cliSocketName !== BRIDGE_CLI_SOCKET_NAME ||
+    value.macOS.cliSocketOccurrences !== CLI_BINARY_INCISION_COUNT ||
+    !isSha256(value.macOS.cliExecutableSha256) ||
     value.macOS.version !== value.rendererVersion ||
     value.macOS.profileDirectory !== "Blackglass Bridge" ||
     value.macOS.profileMode !== 448 ||
@@ -212,7 +252,8 @@ export function assertBridgeReleaseManifest(
     value.reproduction.sourceWrapperMatchesBaseline !== true ||
     value.reproduction.rendererByteIdentical !== true ||
     value.reproduction.packagedRendererByteIdentical !== true ||
-    value.reproduction.packagedWrapperIntegrityVerified !== true
+    value.reproduction.packagedWrapperIntegrityVerified !== true ||
+    value.reproduction.packagedCliSocketVerified !== true
   ) {
     throw new Error("Bridge release manifest does not attest deterministic reproduction");
   }

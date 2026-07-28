@@ -1,13 +1,24 @@
 import { createHash } from "node:crypto";
 import { AsarArchive, replacePackedAsarEntry } from "../../../tools/asar";
+import {
+  BRIDGE_CLI_SOCKET_NAME,
+  UPSTREAM_CLI_SOCKET_NAME,
+} from "../../../tools/cli-binary";
 
 const CONTROL_ORIGIN_EXPRESSION =
   '"https://"+[String.fromCharCode(97,112,105),"obsidian","md"].join(".")';
 const DATA_HOST_CONDITION =
   '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h';
+export { BRIDGE_CLI_SOCKET_NAME } from "../../../tools/cli-binary";
+const UPSTREAM_CLI_REGISTRATION =
+  'let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";';
+const BRIDGE_CLI_REGISTRATION =
+  'let g=u+"/obsidian-cli";if(h.existsSync(g)){let w="/usr/local/bin/blackglass";';
+export const BRIDGE_CLI_COMMAND_NAME = "blackglass";
+export const BRIDGE_CLI_COMMAND_PATH = "/usr/local/bin/blackglass";
 
-export const RENDERER_PATCH_FORMAT_VERSION = 3;
-export const RENDERER_INCISION_COUNT = 3;
+export const RENDERER_PATCH_FORMAT_VERSION = 5;
+export const RENDERER_INCISION_COUNT = 5;
 
 export interface AdapterOptions {
   controlOrigin: string;
@@ -19,12 +30,17 @@ export interface AdapterReport {
   incisionCount: typeof RENDERER_INCISION_COUNT;
   controlOrigin: string;
   dataHost: string;
+  cliSocketName: typeof BRIDGE_CLI_SOCKET_NAME;
+  cliCommandName: typeof BRIDGE_CLI_COMMAND_NAME;
+  cliCommandPath: typeof BRIDGE_CLI_COMMAND_PATH;
   upstreamSha256: string;
   patchedSha256: string;
   rendererBeforeSha256: string;
   rendererAfterSha256: string;
   starterBeforeSha256: string;
   starterAfterSha256: string;
+  mainBeforeSha256: string;
+  mainAfterSha256: string;
 }
 
 export function patchRenderer(
@@ -89,6 +105,34 @@ export function patchStarterRenderer(
   return output;
 }
 
+export function patchMainProcess(main: Buffer): Buffer {
+  if (UPSTREAM_CLI_SOCKET_NAME.length !== BRIDGE_CLI_SOCKET_NAME.length) {
+    throw new Error("CLI socket replacement must preserve byte length");
+  }
+  const source = main.toString("utf8");
+  let patched = replaceExactlyOnce(
+    source,
+    UPSTREAM_CLI_SOCKET_NAME,
+    BRIDGE_CLI_SOCKET_NAME,
+    "CLI socket name",
+  );
+  patched = replaceExactlyOnce(
+    patched,
+    UPSTREAM_CLI_REGISTRATION,
+    paddedSource(
+      BRIDGE_CLI_REGISTRATION,
+      UPSTREAM_CLI_REGISTRATION.length,
+      "CLI registration",
+    ),
+    "CLI registration target",
+  );
+  const output = Buffer.from(patched, "utf8");
+  if (output.length !== main.length) {
+    throw new Error("Main-process patch unexpectedly changed the byte length");
+  }
+  return output;
+}
+
 export function patchAsar(
   upstream: Buffer,
   options: AdapterOptions,
@@ -97,17 +141,25 @@ export function patchAsar(
   const archive = AsarArchive.fromBuffer(upstream);
   const rendererBefore = archive.read("app.js");
   const starterBefore = archive.read("starter.js");
+  const mainBefore = archive.read("main.js");
   const rendererAfter = patchRenderer(rendererBefore, canonical);
   const starterAfter = patchStarterRenderer(starterBefore, canonical);
+  const mainAfter = patchMainProcess(mainBefore);
   const rendererOutput = replacePackedAsarEntry(upstream, "app.js", rendererAfter);
-  const output = replacePackedAsarEntry(rendererOutput, "starter.js", starterAfter);
+  const starterOutput = replacePackedAsarEntry(rendererOutput, "starter.js", starterAfter);
+  const output = replacePackedAsarEntry(starterOutput, "main.js", mainAfter);
 
   // Re-open and verify the generated artifact before returning it.
   const generated = AsarArchive.fromBuffer(output);
   const verifiedRenderer = generated.read("app.js");
   const verifiedStarter = generated.read("starter.js");
-  if (!verifiedRenderer.equals(rendererAfter) || !verifiedStarter.equals(starterAfter)) {
-    throw new Error("Generated ASAR did not preserve both patched renderers");
+  const verifiedMain = generated.read("main.js");
+  if (
+    !verifiedRenderer.equals(rendererAfter) ||
+    !verifiedStarter.equals(starterAfter) ||
+    !verifiedMain.equals(mainAfter)
+  ) {
+    throw new Error("Generated ASAR did not preserve all patched entries");
   }
 
   return {
@@ -117,12 +169,17 @@ export function patchAsar(
       incisionCount: RENDERER_INCISION_COUNT,
       controlOrigin: canonical.controlOrigin,
       dataHost: canonical.dataHost,
+      cliSocketName: BRIDGE_CLI_SOCKET_NAME,
+      cliCommandName: BRIDGE_CLI_COMMAND_NAME,
+      cliCommandPath: BRIDGE_CLI_COMMAND_PATH,
       upstreamSha256: sha256(upstream),
       patchedSha256: sha256(output),
       rendererBeforeSha256: sha256(rendererBefore),
       rendererAfterSha256: sha256(rendererAfter),
       starterBeforeSha256: sha256(starterBefore),
       starterAfterSha256: sha256(starterAfter),
+      mainBeforeSha256: sha256(mainBefore),
+      mainAfterSha256: sha256(mainAfter),
     },
   };
 }
@@ -304,6 +361,13 @@ function paddedExpression(
     );
   }
   return expression.padEnd(targetLength, " ");
+}
+
+function paddedSource(replacement: string, targetLength: number, label: string): string {
+  if (replacement.length > targetLength) {
+    throw new Error(`${label} does not fit the fixed-length incision`);
+  }
+  return `${replacement}${" ".repeat(targetLength - replacement.length)}`;
 }
 
 function replaceExactlyOnce(

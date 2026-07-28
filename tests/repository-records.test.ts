@@ -12,6 +12,10 @@ import {
   WRAPPER_PATCH_FORMAT_VERSION,
 } from "../packages/client-adapter/src/wrapper";
 import {
+  CLI_BINARY_INCISION_COUNT,
+  CLI_BINARY_PATCH_FORMAT_VERSION,
+} from "../tools/cli-binary";
+import {
   COMPATIBILITY_BASELINE_SCHEMA_VERSION,
   loadCompatibilityBaseline,
 } from "../tools/release-compatibility";
@@ -76,6 +80,10 @@ describe("committed release records", () => {
       wrapper: {
         formatVersion: WRAPPER_PATCH_FORMAT_VERSION,
         incisions: WRAPPER_INCISION_COUNT,
+      },
+      cli: {
+        formatVersion: CLI_BINARY_PATCH_FORMAT_VERSION,
+        incisions: CLI_BINARY_INCISION_COUNT,
       },
     });
     expect(canonicalAdapterOptions(validation.endpoints)).toEqual({
@@ -147,7 +155,7 @@ describe("committed release records", () => {
     const bytes = await readFile(path);
     expect(bytes.at(-1)).toBe(10);
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(
-      "d01a50c27b989d1d3a2a01b1c8145bda5b8eee481d268d6ee5a8cc4c27c573e5",
+      "bade8064d0dc670619d0b9d2376a2f4bcdb87dd3999661d8036f74615bdbdc7e",
     );
   });
 });

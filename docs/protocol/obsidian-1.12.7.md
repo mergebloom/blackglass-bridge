@@ -1,171 +1,49 @@
-# Obsidian 1.12.7 Sync protocol notes
+# Obsidian 1.12.7 client protocol notes
 
-Status: static client inventory plus loopback server conformance tests.
+This file records only Bridge-specific client findings. The authoritative
+request, response, migration, history, purge, and recovery contracts live in
+the companion [Blackglass Server protocol document](https://github.com/mergebloom/blackglass-server/blob/main/docs/protocol/obsidian-1.12.7.md).
+Keeping server semantics in one repository avoids a second copy drifting across
+releases.
 
-## Control plane
+## Client network seams
 
-The renderer constructs the production base as `https://api.obsidian.md`.
-Internal development mode changes it to `http://127.0.0.1:3000`.
-The independent no-vault `starter.js` renderer constructs the same base and
-uses its own request helper for `/user/signin` and `/vault/list`; both control
-origins therefore require separate compatibility incisions.
+The authorized 1.12.7 artifact constructs `https://api.obsidian.md` in both the
+main `app.js` renderer and the independent no-vault `starter.js` renderer. Sync
+persists a control-plane-provided data host and opens `ws://` only for exact
+loopback development hosts or `wss://` otherwise. The Bridge patcher therefore
+uses five fixed-length, fail-closed client-ASAR incisions:
 
-Observed account routes:
+- control origin in `app.js`;
+- exact Sync data-host authorization in `app.js`;
+- control origin in `starter.js`;
+- `.obsidian-cli.sock` to `.blackglass-b.sock` in `main.js`;
+- `/usr/local/bin/obsidian` registration to `/usr/local/bin/blackglass` in
+  `main.js`.
 
-- `/user/signin`
-- `/user/signout`
-- `/user/info`
-- `/user/authtoken`
-- `/user/signup`
-- `/user/forgetpass`
-- `/user/resendconfirmation`
-- `/subscription/list`
+The packaged universal `obsidian-cli` binary contains one socket literal per
+architecture. Both are patched to `.blackglass-b.sock` before the app is
+re-signed. Prepared E2E clients also receive separate mode-`0700` homes so their
+CLI sockets cannot collide.
 
-Observed Sync vault routes:
+## Route boundary
 
-- `/vault/regions`
-- `/vault/list`
-- `/vault/create`
-- `/vault/access`
-- `/vault/migrate`
-- `/vault/rename`
-- `/vault/delete`
-- `/vault/share/list`
-- `/vault/share/invite`
-- `/vault/share/remove`
+Static analysis finds 27 control routes. Blackglass Server implements all 18
+routes used by the desktop account and Sync flows. The remaining routes are the
+seven Publish routes, `/subscription/sync/signup-mobile`, and `/user/authtoken`;
+they are outside the initial desktop Sync target. Sharing mutations are
+recognized and return the single-owner deployment error described by the
+server contract.
 
-Blackglass Server implements sign-in, sign-out, user information,
-subscription information, region listing, vault list/create/access/migrate/
-rename/delete, and an empty share list. Share mutations return a clean
-single-user error.
+The no-vault starter has its own request helper for `/user/signin` and
+`/vault/list`, so every release qualification exercises that flow separately
+through LaunchServices before a vault exists.
 
-## Data plane
+## Compatibility boundary
 
-The Sync client persists a control-plane-provided `host`. It derives:
-
-- `ws://host` for `localhost` or `127.0.0.1`;
-- `wss://host` otherwise.
-
-The upstream client accepts `127.0.0.1` or a hostname ending in
-`.obsidian.md`. The compatibility adapter replaces this with an exact
-configured-host check.
-
-Initial connection message:
-
-```json
-{
-  "op": "init",
-  "token": "account-token",
-  "id": "vault-id",
-  "keyhash": "client-derived-key-hash",
-  "version": 0,
-  "initial": true,
-  "device": "device-name",
-  "encryption_version": 3
-}
-```
-
-The 1.12.7 client accepts this response:
-
-```json
-{
-  "res": "ok",
-  "userId": 1,
-  "perFileMax": 209715200
-}
-```
-
-For `initial:true`, the server sends only the latest live head for each path;
-this avoids resurrecting deleted or renamed files. For `initial:false`, it
-replays every revision newer than the requested version. Both terminate with:
-
-```json
-{ "op": "ready", "version": 42 }
-```
-
-Observed operations:
-
-- `init`
-- `ping`
-- `push`
-- `pull`
-- `history`
-- `restore`
-- `deleted`
-- `purge`
-- `size`
-- `usernames`
-
-### Push and pull
-
-A file push begins with encrypted metadata:
-
-```json
-{
-  "op": "push",
-  "path": "encrypted-path",
-  "relatedpath": null,
-  "extension": "md",
-  "hash": "encrypted-hash",
-  "ctime": 1700000000000,
-  "mtime": 1700000000100,
-  "folder": false,
-  "deleted": false,
-  "size": 1024,
-  "pieces": 1
-}
-```
-
-The server returns `{"res":"next"}` when it needs the body. The client sends
-binary frames of at most 2 MiB and expects `next` between pieces and `ok` after
-the final piece. Every accepted push becomes a revision; the originating
-client receives its `push` notification before the final `ok`.
-
-Every committed change receives a monotonically increasing `uid` and is
-announced as an unsolicited `{"op":"push", ...}` notification. Pull uses
-`{"op":"pull","uid":42}`; the response declares `size`, `pieces`, `deleted`,
-and `hash`, followed by the encrypted binary frames.
-
-The server stores and returns these bytes without decrypting them. It still
-observes metadata such as ciphertext size, timestamps, file extension,
-device name, and account identity.
-
-### Conformance status
-
-| Area | Status |
-| --- | --- |
-| `init`, snapshot/resume replay, `ready`, `ping` | Implemented and tested |
-| file/folder/deletion `push` | Implemented; file path tested with official clients |
-| `pull` | Implemented and opaque-byte round-trip/E2E tested |
-| `size`, `usernames` | Implemented and official-client tested |
-| `deleted`, `history`, `restore`, `purge` | Implemented and protocol-tested; deleted view live-tested |
-| two-device convergence | Bidirectional byte-identical E2E pass |
-| multi-user sharing | Deliberately unsupported |
-
-### History response contracts
-
-- `deleted` returns `{items}` oldest-first. Rename-source tombstones are omitted
-  when `suppressrenames` is true.
-- `history` returns `{items, more}` newest-first and paginates with UID `< last`.
-- Every item includes `uid`, server `ts`, encrypted `path`, `relatedpath`, file
-  flags/size, and device/user identifiers.
-- `restore` creates and broadcasts a new live revision; restoring a tombstone
-  uses its most recent prior live content.
-- `purge` retains one current live head per live path, removes tombstoned path
-  history, and preserves the monotonic vault version.
-
-## Confirmed local development seams
-
-- control plane: `127.0.0.1:3000`
-- Sync WebSocket: `127.0.0.1:3003`
-
-These loopback seams are used for initial protocol work so no installed
-application or production service is modified.
-
-## Evidence boundaries
-
-The field names and client behavior above come from the authorized 1.12.7
-renderer artifact and the local conformance harness. The push streaming
-response value `next` is cross-checked against the public Obsidian Headless
-protocol documentation. The project does not treat minified identifier names
-or byte offsets as stable contracts.
+The committed baseline binds every packed and unpacked JavaScript file by
+identity and records semantic anchors, routes, request helpers, network
+constructors, Sync operations, outbound message shapes, and inbound operation
+discriminants. A changed upstream artifact fails closed. Inbound response field
+details, 2 MiB piece ordering, and lifecycle behavior remain explicit review and
+E2E responsibilities rather than inferred stable minified APIs.

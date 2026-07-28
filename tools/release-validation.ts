@@ -8,6 +8,11 @@ import {
   WRAPPER_INCISION_COUNT,
   WRAPPER_PATCH_FORMAT_VERSION,
 } from "../packages/client-adapter/src/wrapper";
+import {
+  BRIDGE_CLI_SOCKET_NAME,
+  CLI_BINARY_INCISION_COUNT,
+  CLI_BINARY_PATCH_FORMAT_VERSION,
+} from "./cli-binary";
 import type { MacOSArtifact } from "./macos-artifact";
 import type { BridgeReleaseManifest } from "./release-manifest";
 import type { ServerArtifact } from "./server-artifact";
@@ -219,6 +224,7 @@ export function assertReleaseValidationRecord(
     !isTreeIdentity(value.source.appTree) ||
     !isSha256(value.source.rendererAsarSha256) ||
     !isSha256(value.source.wrapperAsarSha256) ||
+    !isSha256(value.source.cliExecutableSha256) ||
     !isRecord(value.endpoints) ||
     typeof value.endpoints.controlOrigin !== "string" ||
     typeof value.endpoints.dataHost !== "string" ||
@@ -258,7 +264,10 @@ export function assertReleaseValidationRecord(
     value.patcher.renderer.incisions !== RENDERER_INCISION_COUNT ||
     !isRecord(value.patcher.wrapper) ||
     value.patcher.wrapper.formatVersion !== WRAPPER_PATCH_FORMAT_VERSION ||
-    value.patcher.wrapper.incisions !== WRAPPER_INCISION_COUNT
+    value.patcher.wrapper.incisions !== WRAPPER_INCISION_COUNT ||
+    !isRecord(value.patcher.cli) ||
+    value.patcher.cli.formatVersion !== CLI_BINARY_PATCH_FORMAT_VERSION ||
+    value.patcher.cli.incisions !== CLI_BINARY_INCISION_COUNT
   ) {
     throw new Error("Release validation record has inconsistent compatibility metadata");
   }
@@ -271,11 +280,14 @@ export function assertReleaseValidationRecord(
   assertEvidence(value.packagedClientE2E.evidence);
   const macOS = value.artifacts.macOS;
   if (
-    macOS.schemaVersion !== 4 ||
+    macOS.schemaVersion !== 5 ||
     macOS.bundleIdentifier !== "com.blackglass.bridge" ||
     macOS.bundleName !== "Obsidian" ||
     macOS.displayName !== "Blackglass Bridge" ||
     macOS.executableName !== "Obsidian" ||
+    macOS.cliExecutableName !== "obsidian-cli" ||
+    macOS.cliSocketName !== BRIDGE_CLI_SOCKET_NAME ||
+    macOS.cliSocketOccurrences !== CLI_BINARY_INCISION_COUNT ||
     macOS.version !== value.rendererVersion ||
     macOS.profileDirectory !== "Blackglass Bridge" ||
     macOS.profileMode !== 448 ||
@@ -289,6 +301,7 @@ export function assertReleaseValidationRecord(
     macOS.upstreamICloudContainerRegistered !== false ||
     !isSha256(macOS.infoPlistSha256) ||
     !isSha256(macOS.executableSha256) ||
+    !isSha256(macOS.cliExecutableSha256) ||
     !isSha256(macOS.embeddedAsarSha256) ||
     !isSha256(macOS.embeddedWrapperAsarSha256) ||
     !isSha256(macOS.embeddedWrapperHeaderSha256) ||
@@ -312,7 +325,8 @@ export function assertReleaseValidationRecord(
   }
   if (
     value.source.rendererAsarSha256 === value.artifacts.compatibilityAsarSha256 ||
-    value.source.wrapperAsarSha256 === value.artifacts.wrapperAsarSha256
+    value.source.wrapperAsarSha256 === value.artifacts.wrapperAsarSha256 ||
+    value.source.cliExecutableSha256 === macOS.cliExecutableSha256
   ) {
     throw new Error("Release validation record does not prove both client incisions");
   }

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { MacOSArtifact } from "./macos-artifact";
 import { assertPathWithin, pathsEqual } from "./path-safety";
 
-export const FINDER_LAUNCH_SMOKE_SCHEMA_VERSION = 2;
+export const FINDER_LAUNCH_SMOKE_SCHEMA_VERSION = 3;
 export const FINDER_LAUNCH_MINIMUM_HEALTH_MS = 8_000;
 export const FINDER_LAUNCH_DEBUG_PORT = 9_320;
 
@@ -25,6 +25,10 @@ export interface FinderLaunchSmokeEvidence {
   chromiumHostResolverRules: string;
   appPath: string;
   executablePath: string;
+  cliExecutablePath: string;
+  cliExecutableSha256: string;
+  cliSocketPath: string;
+  cliSocketName: string;
   homePath: string;
   profilePath: string;
   vaultPath: string;
@@ -44,6 +48,10 @@ export interface FinderLaunchSmokeEvidence {
   profileRealDirectoryObserved: true;
   profileActivityObserved: true;
   environmentHomeObserved: true;
+  cliSocketObserved: true;
+  upstreamCliSocketAbsent: true;
+  cliHelpHandshakeSucceeded: true;
+  cliHelpOutputPrefix: "Obsidian CLI\n\nUsage: obsidian";
   explicitUserDataDirUsed: false;
   noLocalVaultAtLaunch: true;
   starterPageObserved: true;
@@ -138,6 +146,8 @@ export function assertFinderLaunchSmokeEvidence(
   if (!isRecord(value)) throw new Error("Finder launch smoke evidence is malformed");
   const layout = finderLaunchSmokeLayout(options.root);
   const executablePath = join(options.appPath, "Contents/MacOS/Obsidian");
+  const cliExecutablePath = join(options.appPath, "Contents/MacOS/obsidian-cli");
+  const cliSocketPath = join(layout.homePath, options.artifact.cliSocketName);
   const expectedCommand = finderLaunchCommand({
     appPath: options.appPath,
     homePath: layout.homePath,
@@ -166,6 +176,12 @@ export function assertFinderLaunchSmokeEvidence(
     !pathsEqual(value.appPath, options.appPath) ||
     typeof value.executablePath !== "string" ||
     !pathsEqual(value.executablePath, executablePath) ||
+    typeof value.cliExecutablePath !== "string" ||
+    !pathsEqual(value.cliExecutablePath, cliExecutablePath) ||
+    value.cliExecutableSha256 !== options.artifact.cliExecutableSha256 ||
+    typeof value.cliSocketPath !== "string" ||
+    !pathsEqual(value.cliSocketPath, cliSocketPath) ||
+    value.cliSocketName !== options.artifact.cliSocketName ||
     typeof value.homePath !== "string" ||
     !pathsEqual(value.homePath, layout.homePath) ||
     typeof value.profilePath !== "string" ||
@@ -210,6 +226,10 @@ export function assertFinderLaunchSmokeEvidence(
     value.profileRealDirectoryObserved !== true ||
     value.profileActivityObserved !== true ||
     value.environmentHomeObserved !== true ||
+    value.cliSocketObserved !== true ||
+    value.upstreamCliSocketAbsent !== true ||
+    value.cliHelpHandshakeSucceeded !== true ||
+    value.cliHelpOutputPrefix !== "Obsidian CLI\n\nUsage: obsidian" ||
     value.explicitUserDataDirUsed !== false ||
     value.noLocalVaultAtLaunch !== true ||
     value.starterPageObserved !== true ||

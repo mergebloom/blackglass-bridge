@@ -85,6 +85,7 @@ if (!isSupportedStableSemver(packageMetadata.version)) {
 }
 const rendererSha256 = sha256(archive.read("app.js"));
 const starterSha256 = sha256(archive.read("starter.js"));
+const mainSha256 = sha256(archive.read("main.js"));
 const adapterSha256 = await fileSha256(asar);
 const infoPlist = join(appBundle, "Contents/Info.plist");
 const bundleIdentifier = plistString(infoPlist, "CFBundleIdentifier");
@@ -117,6 +118,7 @@ if (appArtifact && appArtifact.embeddedAsarSha256 !== adapterSha256) {
 }
 
 let targetAsar = join(profile, `obsidian-${packageMetadata.version}.asar`);
+let launchHome = profile;
 let launchBinding:
   | {
       identityPath: string;
@@ -130,6 +132,7 @@ let launchBinding:
 if (e2eRequested) {
   if (!appArtifact) throw new Error("Prepared E2E app identity is unavailable");
   const layout = await resolvePreparedClientLayout(profile, vault);
+  launchHome = layout.homePath;
   const run = layout.run;
   if (run.manifest.compatibilityAsarSha256 !== adapterSha256) {
     throw new Error("Compatibility ASAR is not bound to the selected prepared run");
@@ -173,7 +176,8 @@ if (e2eRequested) {
     stableJson(releaseManifest.macOS) !== stableJson(publicMacOSArtifact(appArtifact)) ||
     releaseManifest.renderer.patchedSha256 !== adapterSha256 ||
     releaseManifest.renderer.rendererAfterSha256 !== rendererSha256 ||
-    releaseManifest.renderer.starterAfterSha256 !== starterSha256
+    releaseManifest.renderer.starterAfterSha256 !== starterSha256 ||
+    releaseManifest.renderer.mainAfterSha256 !== mainSha256
   ) {
     throw new Error(
       "Prepared release manifest does not bind the launched app and both renderers",
@@ -253,6 +257,7 @@ if (prepareOnly) {
 const startedAt = new Date().toISOString();
 const child = Bun.spawn(launchArguments, {
   cwd: vault,
+  env: { ...process.env, HOME: launchHome },
   stdin: "inherit",
   stdout: "inherit",
   stderr: "inherit",
@@ -269,7 +274,7 @@ if (launchBinding && debugPort) {
     throw error;
   }
   const identity: ClientLaunchIdentity = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     runManifestSha256: launchBinding.runManifestSha256,
     releaseManifestSha256: launchBinding.releaseManifestSha256,
     startedAt,
@@ -288,6 +293,7 @@ if (launchBinding && debugPort) {
     adapterPath: targetAsar,
     adapterSha256,
     profilePath: profile,
+    homePath: launchHome,
     vaultPath: vault,
     tlsMetadataPath: launchBinding.tlsMetadataPath,
     tlsMetadataSha256: launchBinding.tlsMetadataSha256,

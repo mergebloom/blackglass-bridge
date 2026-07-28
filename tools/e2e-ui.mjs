@@ -531,7 +531,7 @@ async function findBoundLaunchIdentity(debugPort) {
     } catch {
       continue;
     }
-    if (raw?.schemaVersion !== 2 || raw?.debugPort !== debugPort || !raw?.pid) continue;
+    if (raw?.schemaVersion !== 3 || raw?.debugPort !== debugPort || !raw?.pid) continue;
     if (!processIsAlive(raw.pid)) continue;
     const binding = await verifyLiveClientLaunchBinding(discoveredPath);
     candidates.push({
