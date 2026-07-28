@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { MacOSArtifact } from "./macos-artifact";
 import { assertPathWithin, pathsEqual } from "./path-safety";
 
-export const FINDER_LAUNCH_SMOKE_SCHEMA_VERSION = 3;
+export const FINDER_LAUNCH_SMOKE_SCHEMA_VERSION = 4;
 export const FINDER_LAUNCH_MINIMUM_HEALTH_MS = 8_000;
 export const FINDER_LAUNCH_DEBUG_PORT = 9_320;
 
@@ -50,8 +50,9 @@ export interface FinderLaunchSmokeEvidence {
   environmentHomeObserved: true;
   cliSocketObserved: true;
   upstreamCliSocketAbsent: true;
-  cliHelpHandshakeSucceeded: true;
-  cliHelpOutputPrefix: "Obsidian CLI\n\nUsage: obsidian";
+  cliForwardedCommandSucceeded: true;
+  cliForwardedResponse: "Command line interface is not enabled. Please turn it on in Settings > General > Advanced.";
+  cliMainProcessReceiptObserved: true;
   explicitUserDataDirUsed: false;
   noLocalVaultAtLaunch: true;
   starterPageObserved: true;
@@ -228,8 +229,10 @@ export function assertFinderLaunchSmokeEvidence(
     value.environmentHomeObserved !== true ||
     value.cliSocketObserved !== true ||
     value.upstreamCliSocketAbsent !== true ||
-    value.cliHelpHandshakeSucceeded !== true ||
-    value.cliHelpOutputPrefix !== "Obsidian CLI\n\nUsage: obsidian" ||
+    value.cliForwardedCommandSucceeded !== true ||
+    value.cliForwardedResponse !==
+      "Command line interface is not enabled. Please turn it on in Settings > General > Advanced." ||
+    value.cliMainProcessReceiptObserved !== true ||
     value.explicitUserDataDirUsed !== false ||
     value.noLocalVaultAtLaunch !== true ||
     value.starterPageObserved !== true ||

@@ -148,7 +148,7 @@ let debugTargetUrl: string | undefined;
 let starterControlOrigin: string | undefined;
 let starterControlRequests: FinderLaunchSmokeEvidence["starterControlRequests"] | undefined;
 let cliSocketPath: string | undefined;
-let cliHelpOutputPrefix: FinderLaunchSmokeEvidence["cliHelpOutputPrefix"] | undefined;
+let cliForwardedResponse: FinderLaunchSmokeEvidence["cliForwardedResponse"] | undefined;
 let healthyAt: string | undefined;
 let healthyForMs: number | undefined;
 const startedAt = new Date().toISOString();
@@ -221,9 +221,10 @@ try {
     cliExecutablePath,
     homePath: layout.homePath,
     socketName: currentClient.cliSocketName,
+    mainStdoutPath: layout.stdoutPath,
   });
   cliSocketPath = cliProof.socketPath;
-  cliHelpOutputPrefix = cliProof.outputPrefix;
+  cliForwardedResponse = cliProof.response;
   healthyAt = new Date().toISOString();
   healthyForMs = Date.now() - startedAtMs;
 } catch (error) {
@@ -235,7 +236,13 @@ try {
   }
   throw error;
 } finally {
-  if (mainPid) await terminateNewAppProcessTree(mainPid, appPath, baselineAppPids);
+  if (mainPid) {
+    await terminateNewAppProcessTree(
+      appPath,
+      baselineAppPids,
+      FINDER_LAUNCH_DEBUG_PORT,
+    );
+  }
 }
 
 if (
@@ -247,7 +254,7 @@ if (
   starterControlOrigin === undefined ||
   starterControlRequests === undefined ||
   cliSocketPath === undefined ||
-  cliHelpOutputPrefix === undefined ||
+  cliForwardedResponse === undefined ||
   healthyAt === undefined ||
   healthyForMs === undefined
 ) {
@@ -316,8 +323,9 @@ const evidence: FinderLaunchSmokeEvidence = {
   environmentHomeObserved: true,
   cliSocketObserved: true,
   upstreamCliSocketAbsent: true,
-  cliHelpHandshakeSucceeded: true,
-  cliHelpOutputPrefix,
+  cliForwardedCommandSucceeded: true,
+  cliForwardedResponse,
+  cliMainProcessReceiptObserved: true,
   explicitUserDataDirUsed: false,
   noLocalVaultAtLaunch: true,
   starterPageObserved: true,
@@ -356,9 +364,10 @@ async function exercisePackagedCli(input: {
   cliExecutablePath: string;
   homePath: string;
   socketName: string;
+  mainStdoutPath: string;
 }): Promise<{
   socketPath: string;
-  outputPrefix: "Obsidian CLI\n\nUsage: obsidian";
+  response: "Command line interface is not enabled. Please turn it on in Settings > General > Advanced.";
 }> {
   const socketPath = join(input.homePath, input.socketName);
   const socketStat = await lstat(socketPath).catch(() => undefined);
@@ -370,7 +379,8 @@ async function exercisePackagedCli(input: {
     throw new Error("Packaged main process created the upstream Obsidian CLI socket");
   }
 
-  const child = Bun.spawn([input.cliExecutablePath, "--help"], {
+  const forwardedCommand = "blackglass-smoke-probe";
+  const child = Bun.spawn([input.cliExecutablePath, forwardedCommand], {
     env: { ...process.env, HOME: input.homePath },
     stdout: "pipe",
     stderr: "pipe",
@@ -387,7 +397,7 @@ async function exercisePackagedCli(input: {
   if (result === timedOut) {
     child.kill();
     await child.exited;
-    throw new Error("Packaged CLI help handshake timed out");
+    throw new Error("Packaged CLI forwarded-command handshake timed out");
   }
   const [stdout, stderr] = await Promise.all([
     new Response(child.stdout).text(),
@@ -395,14 +405,26 @@ async function exercisePackagedCli(input: {
   ]);
   if (result !== 0) {
     throw new Error(
-      `Packaged CLI help handshake failed with exit ${result}: ${stderr.trim()}`,
+      `Packaged CLI forwarded command failed with exit ${result}: ${stderr.trim()}`,
     );
   }
-  const outputPrefix = "Obsidian CLI\n\nUsage: obsidian" as const;
-  if (!stdout.startsWith(outputPrefix)) {
-    throw new Error("Packaged CLI help handshake returned unexpected output");
+  const response =
+    "Command line interface is not enabled. Please turn it on in Settings > General > Advanced." as const;
+  if (stdout.trim() !== response) {
+    throw new Error("Packaged CLI forwarded command returned unexpected output");
   }
-  return { socketPath, outputPrefix };
+  const receiptDeadline = Date.now() + 2_000;
+  while (Date.now() < receiptDeadline) {
+    const mainOutput = await readFile(input.mainStdoutPath, "utf8");
+    if (
+      mainOutput.includes("Received command line") &&
+      mainOutput.includes(forwardedCommand)
+    ) {
+      return { socketPath, response };
+    }
+    await Bun.sleep(50);
+  }
+  throw new Error("Packaged main process did not log the forwarded CLI command");
 }
 
 function assertPortAvailable(port: number): void {
@@ -813,34 +835,109 @@ function processUsesPath(mainPid: number, path: string): boolean {
 }
 
 async function terminateNewAppProcessTree(
-  mainPid: number,
   appPath: string,
   baselinePids: Set<number>,
+  debugPort: number,
 ): Promise<void> {
-  try {
-    process.kill(mainPid, "SIGTERM");
-  } catch {
-    return;
-  }
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    const remaining = listProcesses().filter(
-      (process) => !baselinePids.has(process.pid) && process.command.includes(appPath),
+  const scopedProcesses = (): ProcessRow[] =>
+    listProcesses().filter(
+      (process) =>
+        !baselinePids.has(process.pid) &&
+        process.command.startsWith(`${appPath}/Contents/`),
     );
-    if (remaining.length === 0) return;
-    await Bun.sleep(100);
+
+  if (scopedProcesses().length === 0) return;
+  try {
+    await requestDevToolsBrowserClose(debugPort);
+  } catch {
+    // A startup failure may occur before DevTools is available. The exact
+    // generated-app process set still receives the scoped signal fallback.
   }
-  const remaining = listProcesses().filter(
-    (process) => !baselinePids.has(process.pid) && process.command.includes(appPath),
-  );
-  for (const process of remaining.sort((left, right) => right.pid - left.pid)) {
+  if (await waitForProcessExit(scopedProcesses, 5_000)) return;
+
+  const termProcesses = scopedProcesses().sort((left, right) => right.pid - left.pid);
+  for (const process of termProcesses) {
+    try {
+      globalThis.process.kill(process.pid, "SIGTERM");
+    } catch {
+      // The process may have exited between the process-table read and signal.
+    }
+  }
+  if (await waitForProcessExit(scopedProcesses, 10_000)) return;
+
+  const forcedProcesses = scopedProcesses().sort((left, right) => right.pid - left.pid);
+  for (const process of forcedProcesses) {
     try {
       globalThis.process.kill(process.pid, "SIGKILL");
     } catch {
       // The process may have exited between the process-table read and cleanup.
     }
   }
-  throw new Error("Packaged app did not terminate cleanly after its launch smoke");
+  throw new Error(
+    "Packaged app required forced termination after its launch smoke: " +
+      forcedProcesses
+        .map((process) => `${process.pid} ${process.command}`)
+        .join("; "),
+  );
+}
+
+async function requestDevToolsBrowserClose(port: number): Promise<void> {
+  const version = await fetch(`http://127.0.0.1:${port}/json/version`, {
+    signal: AbortSignal.timeout(1_000),
+  }).then(async (response) => {
+    if (!response.ok) throw new Error(`DevTools returned ${response.status}`);
+    return await response.json() as { webSocketDebuggerUrl?: unknown };
+  });
+  if (typeof version.webSocketDebuggerUrl !== "string") {
+    throw new Error("DevTools browser target has no WebSocket endpoint");
+  }
+  const socket = new WebSocket(version.webSocketDebuggerUrl);
+  await new Promise<void>((resolveClose, rejectClose) => {
+    let commandSent = false;
+    const timer = setTimeout(() => {
+      socket.close();
+      rejectClose(new Error("Timed out requesting DevTools browser shutdown"));
+    }, 5_000);
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      if (error) rejectClose(error);
+      else resolveClose();
+    };
+    socket.addEventListener("open", () => {
+      commandSent = true;
+      socket.send(JSON.stringify({ id: 1, method: "Browser.close" }));
+    }, { once: true });
+    socket.addEventListener("message", (event) => {
+      const message = JSON.parse(String(event.data)) as {
+        id?: unknown;
+        error?: unknown;
+      };
+      if (message.id !== 1) return;
+      if (message.error) finish(new Error("DevTools rejected browser shutdown"));
+      else finish();
+    });
+    socket.addEventListener("close", () => {
+      if (commandSent) finish();
+      else finish(new Error("DevTools browser target closed before shutdown request"));
+    }, { once: true });
+    socket.addEventListener("error", () => {
+      if (commandSent) finish();
+      else finish(new Error("Unable to connect to the DevTools browser target"));
+    }, { once: true });
+  });
+  if (socket.readyState === WebSocket.OPEN) socket.close();
+}
+
+async function waitForProcessExit(
+  processes: () => ProcessRow[],
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (processes().length === 0) return true;
+    await Bun.sleep(100);
+  }
+  return processes().length === 0;
 }
 
 async function diagnosticReportSnapshot(): Promise<Map<string, string>> {

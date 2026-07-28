@@ -63,7 +63,8 @@ The smoke reserves debugging port `9320`, launches the exact prepared app via
 LaunchServices with an empty disposable default profile, authenticates through
 the starter renderer using the run's owner-only credentials, verifies a
 successful vault list through the run's TLS route, checks for crash reports and
-profile leakage, and terminates the app.
+profile leakage, forwards a packaged-CLI probe through the dedicated socket,
+and terminates the app through its graceful browser shutdown path.
 
 Launch client A and B from their prepared profiles with distinct debug ports,
 the run's `tls-metadata.json`, and identity outputs named

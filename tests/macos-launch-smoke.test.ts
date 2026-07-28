@@ -63,7 +63,7 @@ const artifact = {
 function evidence(): FinderLaunchSmokeEvidence {
   const layout = finderLaunchSmokeLayout(root);
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     passed: true,
     platform: "macOS Apple Silicon",
     mechanism: "LaunchServices open -n -a",
@@ -108,8 +108,10 @@ function evidence(): FinderLaunchSmokeEvidence {
     environmentHomeObserved: true,
     cliSocketObserved: true,
     upstreamCliSocketAbsent: true,
-    cliHelpHandshakeSucceeded: true,
-    cliHelpOutputPrefix: "Obsidian CLI\n\nUsage: obsidian",
+    cliForwardedCommandSucceeded: true,
+    cliForwardedResponse:
+      "Command line interface is not enabled. Please turn it on in Settings > General > Advanced.",
+    cliMainProcessReceiptObserved: true,
     explicitUserDataDirUsed: false,
     noLocalVaultAtLaunch: true,
     starterPageObserved: true,
@@ -170,7 +172,9 @@ describe("packaged macOS LaunchServices smoke", () => {
       (value: any) => (value.noVaultRegisteredAfterLaunch = false),
       (value: any) => (value.cliSocketObserved = false),
       (value: any) => (value.upstreamCliSocketAbsent = false),
-      (value: any) => (value.cliHelpHandshakeSucceeded = false),
+      (value: any) => (value.cliForwardedCommandSucceeded = false),
+      (value: any) => (value.cliMainProcessReceiptObserved = false),
+      (value: any) => (value.cliForwardedResponse = "unexpected"),
       (value: any) => (value.cliSocketName = ".obsidian-cli.sock"),
     ]) {
       const candidate = structuredClone(evidence()) as any;
