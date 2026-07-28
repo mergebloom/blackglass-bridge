@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
@@ -19,6 +20,7 @@ import {
   finderLaunchSmokeLayout,
 } from "./macos-launch-smoke";
 import { readVerifiedE2ETls } from "./e2e-tls";
+import { pathExists } from "./path-safety";
 import { inspectServerArtifact, publicServerArtifact } from "./server-artifact";
 import { readBridgeReleaseManifest } from "./release-manifest";
 import {
@@ -161,6 +163,7 @@ assertFinderLaunchSmokeEvidence(finderSmoke, {
   tlsMetadataSha256: verifiedTls.metadataSha256,
   chromiumHostResolverRules: verifiedTls.metadata.chromiumHostResolverRules,
   tlsSpkiSha256Base64: verifiedTls.metadata.spkiSha256Base64,
+  nativeHomePath: homedir(),
 });
 if (((await stat(finderSmokePath)).mode & 0o777) !== 0o600) {
   throw new Error("Unsafe Finder launch smoke evidence permissions");
@@ -277,6 +280,29 @@ assertNetworkEvidence(recoveryNetwork, {
   finalize: recoveryFinalize,
 });
 const sourceLossResetBytes = await readFile(resolve(root, "source-loss-reset.json"));
+const sourceLossReset = JSON.parse(sourceLossResetBytes.toString("utf8")) as any;
+if (
+  sourceLossReset.schemaVersion !== 2 ||
+  await pathExists(resolve(root, ".source-loss-reset.lock")) ||
+  await pathExists(resolve(root, ".source-loss-trash"))
+) {
+  throw new Error("Cold-recovery source-loss reset uses an unsupported schema");
+}
+for (const client of ["client-a", "client-b"] as const) {
+  const retired = sourceLossReset.retiredRuntimeHomes?.[client];
+  const identityBytes = await readFile(resolve(root, `${client}-launch.json`));
+  if (
+    retired?.identitySha256 !== sha256(identityBytes) ||
+    typeof retired?.blackglassHomePath !== "string" ||
+    !/^\/private\/tmp\/blackglass-client-[A-Za-z0-9]{6}\/h$/u.test(
+      retired.blackglassHomePath,
+    ) ||
+    retired.runtimeHomeRemoved !== true ||
+    await pathExists(retired.blackglassHomePath)
+  ) {
+    throw new Error(`Cold-recovery evidence did not retire ${client} BLACKGLASS_HOME`);
+  }
+}
 const recoveryUiStateBytes = await readFile(
   resolve(root, "evidence/recovery/client-b-restored.json"),
 );

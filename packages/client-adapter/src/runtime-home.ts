@@ -1,0 +1,1 @@
+export const BLACKGLASS_HOME_ENVIRONMENT = "BLACKGLASS_HOME" as const;

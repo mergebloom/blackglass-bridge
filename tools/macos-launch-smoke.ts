@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import type { MacOSArtifact } from "./macos-artifact";
 import { assertPathWithin, pathsEqual } from "./path-safety";
 
-export const FINDER_LAUNCH_SMOKE_SCHEMA_VERSION = 5;
+export const FINDER_LAUNCH_SMOKE_SCHEMA_VERSION = 6;
 export const FINDER_LAUNCH_MINIMUM_HEALTH_MS = 8_000;
 export const FINDER_LAUNCH_DEBUG_PORT = 9_320;
 
@@ -53,7 +54,10 @@ export interface FinderLaunchSmokeEvidence {
   profileRealDirectoryObserved: true;
   profileActivityObserved: true;
   profileSingletonArtifactsRemoved: true;
-  environmentHomeObserved: true;
+  blackglassHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
+  blackglassHomeEnvironmentObserved: true;
+  nativeHomePath: string;
+  nativeHomeEnvironmentPreserved: true;
   cliSocketObserved: true;
   cliSocketRemoved: true;
   upstreamCliSocketAbsent: true;
@@ -80,6 +84,10 @@ export interface FinderLaunchSmokeEvidence {
   diagnosticReportsChecked: true;
   crashReportsCreated: 0;
   realProfilesUnchanged: true;
+  terminationMechanism: "NSRunningApplication.terminate";
+  nativeTerminationAccepted: true;
+  signalFallbackUsed: false;
+  forcedTerminationUsed: false;
   terminatedCleanly: true;
 }
 
@@ -107,7 +115,7 @@ export function finderLaunchSmokeLayout(root: string): {
 
 export function finderLaunchCommand(input: {
   appPath: string;
-  homePath: string;
+  blackglassHomePath: string;
   stdoutPath: string;
   stderrPath: string;
   chromiumHostResolverRules: string;
@@ -119,7 +127,7 @@ export function finderLaunchCommand(input: {
     "-n",
     "-g",
     "--env",
-    `HOME=${input.homePath}`,
+    `${BLACKGLASS_HOME_ENVIRONMENT}=${input.blackglassHomePath}`,
     "--stdout",
     input.stdoutPath,
     "--stderr",
@@ -149,6 +157,7 @@ export function assertFinderLaunchSmokeEvidence(
     tlsMetadataSha256: string;
     chromiumHostResolverRules: string;
     tlsSpkiSha256Base64: string;
+    nativeHomePath: string;
   },
 ): asserts value is FinderLaunchSmokeEvidence {
   if (!isRecord(value)) throw new Error("Finder launch smoke evidence is malformed");
@@ -165,13 +174,16 @@ export function assertFinderLaunchSmokeEvidence(
     value.launchHomeRootMode !== 448 ||
     value.launchHomeSameDeviceAsArchive !== true ||
     value.launchHomeRelocatedToRun !== true ||
-    value.launchHomeRootRemoved !== true
+    value.launchHomeRootRemoved !== true ||
+    typeof value.nativeHomePath !== "string" ||
+    !value.nativeHomePath.startsWith("/") ||
+    pathsEqual(value.nativeHomePath, value.launchHomePath)
   ) {
     throw new Error("Finder launch smoke has an invalid short canonical HOME");
   }
   const expectedCommand = finderLaunchCommand({
     appPath: options.appPath,
-    homePath: value.launchHomePath,
+    blackglassHomePath: value.launchHomePath,
     stdoutPath: layout.stdoutPath,
     stderrPath: layout.stderrPath,
     chromiumHostResolverRules: options.chromiumHostResolverRules,
@@ -192,7 +204,12 @@ export function assertFinderLaunchSmokeEvidence(
     value.tlsMetadataSha256 !== options.tlsMetadataSha256 ||
     value.tlsSpkiSha256Base64 !== options.tlsSpkiSha256Base64 ||
     value.chromiumHostResolverRules !== options.chromiumHostResolverRules ||
+    !Array.isArray(value.launchCommand) ||
     !same(value.launchCommand, expectedCommand) ||
+    value.launchCommand.some(
+      (argument: unknown) =>
+        typeof argument === "string" && argument.startsWith("HOME="),
+    ) ||
     typeof value.appPath !== "string" ||
     !pathsEqual(value.appPath, options.appPath) ||
     typeof value.executablePath !== "string" ||
@@ -246,7 +263,10 @@ export function assertFinderLaunchSmokeEvidence(
     value.profileRealDirectoryObserved !== true ||
     value.profileActivityObserved !== true ||
     value.profileSingletonArtifactsRemoved !== true ||
-    value.environmentHomeObserved !== true ||
+    value.blackglassHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+    value.blackglassHomeEnvironmentObserved !== true ||
+    value.nativeHomePath !== options.nativeHomePath ||
+    value.nativeHomeEnvironmentPreserved !== true ||
     value.cliSocketObserved !== true ||
     value.cliSocketRemoved !== true ||
     value.upstreamCliSocketAbsent !== true ||
@@ -269,6 +289,10 @@ export function assertFinderLaunchSmokeEvidence(
     value.diagnosticReportsChecked !== true ||
     value.crashReportsCreated !== 0 ||
     value.realProfilesUnchanged !== true ||
+    value.terminationMechanism !== "NSRunningApplication.terminate" ||
+    value.nativeTerminationAccepted !== true ||
+    value.signalFallbackUsed !== false ||
+    value.forcedTerminationUsed !== false ||
     value.terminatedCleanly !== true
   ) {
     throw new Error("Finder launch smoke does not prove a healthy crash-free default launch");

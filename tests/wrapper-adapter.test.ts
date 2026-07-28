@@ -17,13 +17,15 @@ test("macOS wrapper uses an isolated profile and disables upstream updates", () 
 
   expect(generated.buffer.length).toBe(upstream.length);
   expect(generated.report).toMatchObject({
-    patchFormatVersion: 3,
+    patchFormatVersion: 4,
     incisionCount: 3,
     profileDirectory: "Blackglass Bridge",
     profileMode: 0o700,
     profilePathCanonicalAtSetup: true,
     explicitUserDataDirHonored: true,
-    defaultProfileUsesEnvironmentHome: true,
+    profileHomeEnvironment: "BLACKGLASS_HOME",
+    dedicatedHomeValidated: true,
+    nativeHomeFallbackPreserved: true,
     upstreamUpdatesDisabled: true,
     embeddedRendererOnly: true,
   });
@@ -35,17 +37,22 @@ test("macOS wrapper uses an isolated profile and disables upstream updates", () 
     profileMode: 0o700,
     profilePathCanonicalAtSetup: true,
     explicitUserDataDirHonored: true,
-    defaultProfileUsesEnvironmentHome: true,
+    profileHomeEnvironment: "BLACKGLASS_HOME",
+    dedicatedHomeValidated: true,
+    nativeHomeFallbackPreserved: true,
     upstreamUpdatesDisabled: true,
     embeddedRendererOnly: true,
   });
 });
 
-test("macOS wrapper derives its default from HOME and honors an explicit profile", () => {
+test("macOS wrapper prefers BLACKGLASS_HOME while preserving native HOME fallback", () => {
   const patched = patchMacOSWrapperMain(Buffer.from(wrapperMain())).toString("utf8");
 
   expect(patched).toContain(
-    "let H=process.env.HOME,dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')",
+    "let B=process.env.BLACKGLASS_HOME,S=B&&fs.statSync(B);",
+  );
+  expect(patched).toContain(
+    "let H=B||process.env.HOME,dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')",
   );
   expect(patched).toContain(
     "H?.[0]==='/'&&H+'/Library/Application Support/Blackglass Bridge'",
@@ -56,17 +63,25 @@ test("macOS wrapper derives its default from HOME and honors an explicit profile
   expect(patched).toContain("fs.realpathSync(dataPath)!==dataPath");
 });
 
-test("macOS wrapper isolates injected HOME and enforces mode 0700", () => {
+test("macOS wrapper isolates BLACKGLASS_HOME, falls back to HOME, and honors explicit profile", () => {
   const root = fs.realpathSync(
     fs.mkdtempSync(nodePath.join(tmpdir(), "blackglass-wrapper-profile-")),
   );
   try {
     const patched = patchMacOSWrapperMain(Buffer.from(wrapperMain())).toString("utf8");
-    const ordinaryHome = nodePath.join(root, "ordinary-home");
-    const injectedHome = nodePath.join(root, "injected-home");
-    const defaultPaths = executeWrapper(patched, "", injectedHome);
+    const nativeHome = nodePath.join(root, "native-home");
+    const dedicatedHome = nodePath.join(root, "dedicated-home");
+    fs.mkdirSync(nativeHome, { mode: 0o700 });
+    fs.mkdirSync(dedicatedHome, { mode: 0o700 });
+    fs.chmodSync(nativeHome, 0o700);
+    fs.chmodSync(dedicatedHome, 0o700);
+
+    const defaultPaths = executeWrapper(patched, {
+      nativeHome,
+      blackglassHome: dedicatedHome,
+    });
     const defaultProfile = nodePath.join(
-      injectedHome,
+      dedicatedHome,
       "Library/Application Support/Blackglass Bridge",
     );
     expect(defaultPaths).toEqual({
@@ -76,41 +91,76 @@ test("macOS wrapper isolates injected HOME and enforces mode 0700", () => {
     expect(fs.lstatSync(defaultProfile).mode & 0o777).toBe(0o700);
     expect(fs.existsSync(
       nodePath.join(
-        ordinaryHome,
+        nativeHome,
         "Library/Application Support/Blackglass Bridge",
       ),
     )).toBe(false);
 
-    const ordinaryPaths = executeWrapper(patched, "", ordinaryHome);
-    expect(ordinaryPaths.userData).toBe(
+    const nativePaths = executeWrapper(patched, { nativeHome });
+    expect(nativePaths.userData).toBe(
       nodePath.join(
-        ordinaryHome,
+        nativeHome,
         "Library/Application Support/Blackglass Bridge",
       ),
     );
-    for (const unsafeHome of [undefined, "", "relative/home"]) {
-      expect(() => executeWrapper(patched, "", unsafeHome)).toThrow();
+    for (const unsafeNativeHome of [undefined, "", "relative/home"]) {
+      expect(() =>
+        executeWrapper(patched, { nativeHome: unsafeNativeHome }),
+      ).toThrow();
     }
 
     const explicitProfile = nodePath.join(root, "explicit");
     fs.mkdirSync(explicitProfile, { mode: 0o777 });
     fs.chmodSync(explicitProfile, 0o777);
-    for (const irrelevantHome of [undefined, "", "relative/home"]) {
-      const explicitPaths = executeWrapper(
-        patched,
+    for (const irrelevantNativeHome of [undefined, "", "relative/home"]) {
+      const explicitPaths = executeWrapper(patched, {
         explicitProfile,
-        irrelevantHome,
-      );
+        nativeHome: irrelevantNativeHome,
+      });
       expect(explicitPaths.userData).toBe(explicitProfile);
       expect(explicitPaths.sessionData).toBe(explicitProfile);
     }
     expect(fs.lstatSync(explicitProfile).mode & 0o777).toBe(0o700);
 
     const target = nodePath.join(root, "target");
-    const link = nodePath.join(root, "profile-link");
-    fs.mkdirSync(target);
+    const link = nodePath.join(root, "dedicated-link");
+    fs.mkdirSync(target, { mode: 0o700 });
+    fs.chmodSync(target, 0o700);
     fs.symlinkSync(target, link);
-    expect(() => executeWrapper(patched, link, injectedHome)).toThrow(
+    expect(() =>
+      executeWrapper(patched, {
+        nativeHome,
+        blackglassHome: link,
+      }),
+    ).toThrow("Unsafe home");
+
+    const weakModeHome = nodePath.join(root, "weak-mode-home");
+    fs.mkdirSync(weakModeHome, { mode: 0o755 });
+    fs.chmodSync(weakModeHome, 0o755);
+    expect(() =>
+      executeWrapper(patched, {
+        nativeHome,
+        blackglassHome: weakModeHome,
+      }),
+    ).toThrow("Unsafe home");
+
+    const relativeDedicatedHome = nodePath.relative(process.cwd(), dedicatedHome);
+    expect(() =>
+      executeWrapper(patched, {
+        nativeHome,
+        blackglassHome: relativeDedicatedHome,
+      }),
+    ).toThrow("Unsafe home");
+
+    const explicitLink = nodePath.join(root, "explicit-link");
+    fs.symlinkSync(target, explicitLink);
+    expect(() =>
+      executeWrapper(patched, {
+        explicitProfile: explicitLink,
+        nativeHome,
+        blackglassHome: dedicatedHome,
+      }),
+    ).toThrow(
       "Unsafe path",
     );
   } finally {
@@ -121,6 +171,21 @@ test("macOS wrapper isolates injected HOME and enforces mode 0700", () => {
 test("macOS wrapper patch fails closed when an anchor is ambiguous", () => {
   const upstream = Buffer.from(`${wrapperMain()}${wrapperMain()}`);
   expect(() => patchMacOSWrapperMain(upstream)).toThrow("must match exactly once");
+});
+
+test("wrapper inspection rejects disabled home checks and changed native fallback", () => {
+  const patched = patchMacOSWrapperMain(Buffer.from(wrapperMain())).toString("utf8");
+  expect(() => inspectPatchedMacOSWrapperAsar(
+    makeArchive("main.js", Buffer.from(patched)),
+  )).not.toThrow();
+  for (const changed of [
+    patched.replace("if(B&&(", "if(0&&("),
+    patched.replace("B||process.env.HOME", "B||process.env.PATH"),
+  ]) {
+    expect(() => inspectPatchedMacOSWrapperAsar(
+      makeArchive("main.js", Buffer.from(changed)),
+    )).toThrow("safety prelude");
+  }
 });
 
 test("macOS wrapper rejects missing boundaries and altered reviewed spans", () => {
@@ -193,7 +258,25 @@ function logger(logfile) {
 \tstdout.on('error', function(e) {
 \t\t// \`write\` failed. Do nothing...
 \t});
-\treturn () => {};
+
+\tlet fn = function () {
+\t\tlet data = stamp() + ' ' + util.format.apply(null, arguments) + os.EOL;
+
+\t\ttry {
+\t\t\tfs.writeSync(fileout, data);
+\t\t\t// Don't output to stdout if the app requests silence mode (to avoid polluting CLI outputs)
+\t\t\tif (!silence) stdout.write(data);
+\t\t}
+\t\tcatch (e) {
+\t\t\t// Failed to write to log
+\t\t}
+\t};
+
+\tfn.end = function () {
+\t\tfs.closeSync(fileout);
+\t};
+
+\treturn fn;
 }
 
 let updatePromise = app.whenReady();
@@ -223,12 +306,15 @@ if (isV2MoreRecent(app.getVersion(), version)) {
 
 function executeWrapper(
   source: string,
-  explicitProfile: string,
-  environmentHome: string | undefined,
+  options: {
+    explicitProfile?: string;
+    nativeHome?: string | undefined;
+    blackglassHome?: string | undefined;
+  },
 ): Record<string, string> {
   const paths: Record<string, string> = {};
   const app = {
-    commandLine: { getSwitchValue: () => explicitProfile },
+    commandLine: { getSwitchValue: () => options.explicitProfile ?? "" },
     getPath: (name: string) => {
       throw new Error(`Unexpected app path: ${name}`);
     },
@@ -251,7 +337,13 @@ function executeWrapper(
     fs,
     nodePath,
     {
-      env: environmentHome === undefined ? {} : { HOME: environmentHome },
+      env: {
+        ...(options.nativeHome === undefined ? {} : { HOME: options.nativeHome }),
+        ...(options.blackglassHome === undefined
+          ? {}
+          : { BLACKGLASS_HOME: options.blackglassHome }),
+      },
+      getuid: () => process.getuid!(),
       stdout: { on: () => undefined },
     },
     () => undefined,

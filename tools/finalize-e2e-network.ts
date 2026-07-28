@@ -57,7 +57,7 @@ if (role === "client-b-recovery") {
   const state = JSON.parse(stateBytes.toString("utf8")) as any;
   const screenshotSha256 = sha256(screenshotBytes);
   if (
-    reset.schemaVersion !== 1 ||
+    reset.schemaVersion !== 2 ||
     report.schemaVersion !== 2 ||
     report.ok !== true ||
     state.schemaVersion !== 1 ||

@@ -35,7 +35,7 @@ const toolingSource = {
 };
 
 const macOS = {
-  schemaVersion: 5 as const,
+  schemaVersion: 6 as const,
   bundleIdentifier: "com.blackglass.bridge" as const,
   bundleName: "Obsidian" as const,
   displayName: "Blackglass Bridge" as const,
@@ -44,10 +44,12 @@ const macOS = {
   infoPlistSha256: digest("1"),
   executableSha256: digest("2"),
   cliExecutableName: "obsidian-cli" as const,
-  cliExecutableSha256: digest("6"),
+  cliExecutableSha256: digest("e"),
   cliSocketName: ".blackglass-b.sock" as const,
   cliSocketOccurrences: 2 as const,
   embeddedAsarSha256: digest("3"),
+  rendererRuntimeHomeEnvironment: "BLACKGLASS_HOME" as const,
+  rendererCliRuntimeRootValidated: true as const,
   embeddedWrapperAsarSha256: digest("4"),
   embeddedWrapperHeaderSha256: digest("5"),
   codeDirectoryHash: "6".repeat(40),
@@ -63,7 +65,9 @@ const macOS = {
   profileMode: 448 as const,
   profilePathCanonicalAtSetup: true as const,
   explicitUserDataDirHonored: true as const,
-  defaultProfileUsesEnvironmentHome: true as const,
+  profileHomeEnvironment: "BLACKGLASS_HOME" as const,
+  dedicatedHomeValidated: true as const,
+  nativeHomeFallbackPreserved: true as const,
   upstreamUpdatesDisabled: true as const,
   embeddedRendererOnly: true as const,
   registeredUrlSchemes: [] as [],
@@ -72,7 +76,7 @@ const macOS = {
 
 function manifest(): BridgeReleaseManifest {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     bridgeVersion: "0.1.1",
     rendererVersion: "1.12.7",
     compatibilityBaseline: {
@@ -88,8 +92,8 @@ function manifest(): BridgeReleaseManifest {
       cliExecutableSha256: digest("d"),
     },
     patcher: {
-      renderer: { formatVersion: 5, incisions: 5 },
-      wrapper: { formatVersion: 3, incisions: 3 },
+      renderer: { formatVersion: 6, incisions: 6 },
+      wrapper: { formatVersion: 4, incisions: 3 },
       cli: { formatVersion: 1, incisions: 2 },
     },
     endpoints: {
@@ -98,13 +102,14 @@ function manifest(): BridgeReleaseManifest {
     },
     toolingSource,
     renderer: {
-      patchFormatVersion: 5,
-      incisionCount: 5,
+      patchFormatVersion: 6,
+      incisionCount: 6,
       controlOrigin: "https://blackglass.example.com",
       dataHost: "blackglass-data.example.com",
       cliSocketName: ".blackglass-b.sock",
       cliCommandName: "blackglass",
       cliCommandPath: "/usr/local/bin/blackglass",
+      runtimeHomeEnvironment: "BLACKGLASS_HOME",
       upstreamSha256: digest("b"),
       patchedSha256: digest("3"),
       rendererBeforeSha256: digest("d"),
@@ -115,13 +120,15 @@ function manifest(): BridgeReleaseManifest {
       mainAfterSha256: digest("5"),
     },
     wrapper: {
-      patchFormatVersion: 3,
+      patchFormatVersion: 4,
       incisionCount: 3,
       profileDirectory: "Blackglass Bridge",
       profileMode: 448,
       profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
-      defaultProfileUsesEnvironmentHome: true,
+      profileHomeEnvironment: "BLACKGLASS_HOME",
+      dedicatedHomeValidated: true,
+      nativeHomeFallbackPreserved: true,
       upstreamUpdatesDisabled: true,
       embeddedRendererOnly: true,
       upstreamSha256: digest("c"),
@@ -259,6 +266,21 @@ describe("generated release validation records", () => {
         qualificationSha256: digest("f"),
       }),
     ).toThrow();
+
+    for (const mutate of [
+      (value: any) => (value.renderer.runtimeHomeEnvironment = "HOME"),
+      (value: any) => (value.wrapper.profileHomeEnvironment = "HOME"),
+      (value: any) => (value.wrapper.dedicatedHomeValidated = false),
+      (value: any) => (value.wrapper.nativeHomeFallbackPreserved = false),
+      (value: any) => (value.macOS.rendererCliRuntimeRootValidated = false),
+      (value: any) => (value.macOS.nativeHomeFallbackPreserved = false),
+      (value: any) => (value.macOS.cliExecutableSha256 = digest("0")),
+      (value: any) => (value.cli.patchedSha256 = value.cli.upstreamSha256),
+    ]) {
+      const candidate = structuredClone(manifest()) as any;
+      mutate(candidate);
+      expect(() => assertBridgeReleaseManifest(candidate)).toThrow();
+    }
   });
 
   test("rejects pending workflow, incomplete recovery, and mutated evidence", () => {

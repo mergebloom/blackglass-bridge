@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import {
+  inspectPatchedMainProcess,
   patchAsar,
   patchMainProcess,
   patchRenderer,
@@ -12,6 +13,10 @@ const controlExpression =
   '"https://"+[String.fromCharCode(97,112,105),"obsidian","md"].join(".")';
 const hostnameCondition =
   '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h';
+const cliRuntimeRoot =
+  "!U&&process.env.XDG_RUNTIME_DIR||ce.homedir()";
+const cliRegistration =
+  'let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";';
 
 describe("client adapter", () => {
   test("makes two fixed-length semantic incisions in the main renderer", () => {
@@ -44,25 +49,52 @@ describe("client adapter", () => {
     expect(patched.toString("utf8")).not.toContain(controlExpression);
   });
 
-  test("uses a dedicated fixed-length CLI socket", () => {
-    const upstream = Buffer.from(
-      'const socket=".obsidian-cli.sock";let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";',
-    );
+  test("uses BLACKGLASS_HOME for the dedicated fixed-length CLI socket", () => {
+    const upstream = Buffer.from(upstreamMain());
     const patched = patchMainProcess(upstream);
+    const source = patched.toString("utf8");
     expect(patched.length).toBe(upstream.length);
-    expect(patched.toString("utf8")).toContain('const socket=".blackglass-b.sock";');
-    expect(patched.toString("utf8")).toContain('let w="/usr/local/bin/blackglass";');
-    expect(patched.toString("utf8")).not.toContain("/usr/local/bin/obsidian");
-    expect(() => patchMainProcess(Buffer.from(
-      'no socket;let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";',
-    ))).toThrow(
-      "CLI socket name must match exactly once",
-    );
+    expect(source).toContain('D.join(process.env.BLACKGLASS_HOME||ce.homedir()    ,".blackglass-b.sock")');
+    expect(source).toContain("process.env.BLACKGLASS_HOME||ce.homedir()");
+    expect(source).toContain('let w="/usr/local/bin/blackglass";');
+    expect(source).not.toContain("process.env.XDG_RUNTIME_DIR");
+    expect(source).not.toContain("/usr/local/bin/obsidian");
     expect(() =>
       patchMainProcess(Buffer.from(
-        '.obsidian-cli.sock.obsidian-cli.sock;let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";',
+        `const root=${cliRuntimeRoot};const socket="missing";${cliRegistration}}`,
       )),
     ).toThrow("CLI socket name must match exactly once");
+    expect(() =>
+      patchMainProcess(Buffer.from(
+        `const root=${cliRuntimeRoot};const socket=".obsidian-cli.sock"+".obsidian-cli.sock";${cliRegistration}}`,
+      )),
+    ).toThrow("CLI socket name must match exactly once");
+  });
+
+  test("fails closed when the CLI runtime-root incision is missing or ambiguous", () => {
+    expect(() =>
+      patchMainProcess(Buffer.from(
+        `const root=ce.homedir();const socket=".obsidian-cli.sock";${cliRegistration}}`,
+      )),
+    ).toThrow("CLI runtime home must match exactly once");
+    expect(() =>
+      patchMainProcess(Buffer.from(
+        `const first=${cliRuntimeRoot},second=${cliRuntimeRoot};const socket=".obsidian-cli.sock";${cliRegistration}}`,
+      )),
+    ).toThrow("CLI runtime home must match exactly once");
+  });
+
+  test("main-process inspection rejects a broken socket construction", () => {
+    const patched = patchMainProcess(Buffer.from(upstreamMain())).toString("utf8");
+    expect(() => inspectPatchedMainProcess(Buffer.from(patched))).not.toThrow();
+    const disconnected = patched.replace(
+      "D.join(process.env.BLACKGLASS_HOME",
+      "D.noop(process.env.BLACKGLASS_HOME",
+    );
+    expect(disconnected).toHaveLength(patched.length);
+    expect(() => inspectPatchedMainProcess(Buffer.from(disconnected))).toThrow(
+      "socket construction",
+    );
   });
 
   test("rebuilds ASAR integrity metadata and verifies the result", () => {
@@ -70,9 +102,7 @@ describe("client adapter", () => {
       `var dw=${controlExpression};if(${hostnameCondition})throw Error();`,
     );
     const starter = Buffer.from(`var sa=${controlExpression};`);
-    const main = Buffer.from(
-      'const socket=".obsidian-cli.sock";let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";',
-    );
+    const main = Buffer.from(upstreamMain());
     const upstream = makeArchive({
       "app.js": renderer,
       "starter.js": starter,
@@ -97,18 +127,22 @@ describe("client adapter", () => {
       'var sa="https://sync-control.example.test"',
     );
     expect(patchedMain.toString("utf8")).toContain(".blackglass-b.sock");
+    expect(patchedMain.toString("utf8")).toContain(
+      "process.env.BLACKGLASS_HOME||ce.homedir()",
+    );
     expect(patchedMain.toString("utf8")).toContain("/usr/local/bin/blackglass");
     expect(generated.report.upstreamSha256).not.toBe(
       generated.report.patchedSha256,
     );
     expect(generated.report).toMatchObject({
-      patchFormatVersion: 5,
-      incisionCount: 5,
+      patchFormatVersion: 6,
+      incisionCount: 6,
       controlOrigin: "https://sync-control.example.test",
       dataHost: "sync-data.example.test:8443",
       cliSocketName: ".blackglass-b.sock",
       cliCommandName: "blackglass",
       cliCommandPath: "/usr/local/bin/blackglass",
+      runtimeHomeEnvironment: "BLACKGLASS_HOME",
     });
   });
 
@@ -254,6 +288,10 @@ describe("client adapter", () => {
     }
   });
 });
+
+function upstreamMain(): string {
+  return `module.exports=function(){const socket=D.join(${cliRuntimeRoot},".obsidian-cli.sock");${cliRegistration}}}`;
+}
 
 function makeArchive(files: Record<string, Buffer>): Buffer {
   let offset = 0;

@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { AsarArchive } from "./asar";
+import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import { parseStrictFlags } from "./cli-flags";
 import { deriveE2ENetworkPlan } from "./e2e-network";
 import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
@@ -112,8 +113,12 @@ if (
   releaseManifest.wrapper.profilePathCanonicalAtSetup !== true ||
   clientArtifact.explicitUserDataDirHonored !== true ||
   releaseManifest.wrapper.explicitUserDataDirHonored !== true ||
-  clientArtifact.defaultProfileUsesEnvironmentHome !== true ||
-  releaseManifest.wrapper.defaultProfileUsesEnvironmentHome !== true
+  clientArtifact.profileHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+  releaseManifest.wrapper.profileHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+  clientArtifact.dedicatedHomeValidated !== true ||
+  releaseManifest.wrapper.dedicatedHomeValidated !== true ||
+  clientArtifact.nativeHomeFallbackPreserved !== true ||
+  releaseManifest.wrapper.nativeHomeFallbackPreserved !== true
 ) {
   throw new Error("Packaged wrapper cannot safely isolate disposable E2E profiles");
 }
@@ -153,10 +158,8 @@ await writeFile(
 const clients = ["client-a", "client-b"] as const;
 for (const client of clients) {
   const userData = resolve(root, client, "user-data");
-  const home = resolve(root, client, "home");
   const vault = resolve(root, client, "vault");
   await mkdir(userData, { recursive: true, mode: 0o700 });
-  await mkdir(home, { recursive: true, mode: 0o700 });
   await mkdir(vault, { recursive: true, mode: 0o700 });
   await copyFile(asar, resolve(userData, adapterFileName));
   // Keep this identifier identical to launch-macos.ts. A random identifier here
@@ -204,12 +207,10 @@ console.log(
       credentials: resolve(root, "credentials.json"),
       clientA: {
         userData: resolve(root, "client-a/user-data"),
-        home: resolve(root, "client-a/home"),
         vault: resolve(root, "client-a/vault"),
       },
       clientB: {
         userData: resolve(root, "client-b/user-data"),
-        home: resolve(root, "client-b/home"),
         vault: resolve(root, "client-b/vault"),
       },
     },

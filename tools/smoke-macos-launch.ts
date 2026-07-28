@@ -12,7 +12,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join, relative } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
+import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import {
   inspectMacOSArtifact,
   publicMacOSArtifact,
@@ -33,6 +34,7 @@ import { readVerifiedE2ETls } from "./e2e-tls";
 import {
   assertNoSymlinkSegments,
   canonicalExistingPath,
+  pathExists,
 } from "./path-safety";
 
 const [rootArgument, ...flags] = Bun.argv.slice(2);
@@ -47,7 +49,7 @@ if (process.platform !== "darwin" || process.arch !== "arm64") {
 const run = await readPreparedE2ERun(rootArgument);
 const tls = await readVerifiedE2ETls(run.root);
 const layout = finderLaunchSmokeLayout(run.root);
-if (await Bun.file(layout.evidencePath).exists() || await Bun.file(layout.smokeRoot).exists()) {
+if (await pathExists(layout.evidencePath) || await pathExists(layout.smokeRoot)) {
   throw new Error("Refusing to reuse Finder launch smoke evidence or profile data");
 }
 for (const identity of ["client-a-launch.json", "client-b-launch.json"]) {
@@ -92,7 +94,8 @@ await Promise.all([
   writeFile(layout.stdoutPath, "", { flag: "wx", mode: 0o600 }),
   writeFile(layout.stderrPath, "", { flag: "wx", mode: 0o600 }),
 ]);
-if (await Bun.file(layout.profilePath).exists()) {
+const terminationHelperPath = await compileMacOSTerminationHelper(layout.smokeRoot);
+if (await pathExists(layout.profilePath)) {
   throw new Error("Finder smoke profile must not exist before the no-vault launch");
 }
 if (await pathExists(layout.homePath)) {
@@ -130,10 +133,15 @@ const realProfileFingerprintsBefore = await Promise.all(
 );
 const diagnosticBefore = await diagnosticReportSnapshot();
 const baselineProcesses = listProcesses();
+const baselineExactAppProcesses = exactAppProcesses(appPath, baselineProcesses);
+if (baselineExactAppProcesses.length !== 0) {
+  throw new Error(
+    "Refusing LaunchServices smoke while the exact generated app is already running: " +
+      processSummary(baselineExactAppProcesses),
+  );
+}
 const baselineAppPids = new Set(
-  baselineProcesses
-    .filter((process) => process.command.includes(appPath))
-    .map((process) => process.pid),
+  baselineExactAppProcesses.map((process) => process.pid),
 );
 
 let mainPid: number | undefined;
@@ -143,6 +151,7 @@ let debugTargetId: string | undefined;
 let debugTargetUrl: string | undefined;
 let starterControlOrigin: string | undefined;
 let starterControlRequests: FinderLaunchSmokeEvidence["starterControlRequests"] | undefined;
+let runtimeHomeObserved = false;
 let launchHomeRoot: string | undefined;
 let launchHomePath: string | undefined;
 let launchProfilePath: string | undefined;
@@ -159,6 +168,14 @@ let healthyAt: string | undefined;
 let healthyForMs: number | undefined;
 let primarySmokeError: unknown;
 let smokeFailed = false;
+let terminationEvidence:
+  | {
+      mechanism: "NSRunningApplication.terminate";
+      accepted: true;
+      signalFallbackUsed: false;
+      forcedTerminationUsed: false;
+    }
+  | undefined;
 const startedAt = new Date().toISOString();
 const startedAtMs = Date.now();
 try {
@@ -167,7 +184,8 @@ try {
   if (
     !launchHomeRootStat.isDirectory() ||
     launchHomeRootStat.isSymbolicLink() ||
-    (launchHomeRootStat.mode & 0o777) !== 0o700
+    (launchHomeRootStat.mode & 0o777) !== 0o700 ||
+    launchHomeRootStat.uid !== process.getuid!()
   ) {
     throw new Error("Short LaunchServices HOME root is not a private real directory");
   }
@@ -177,7 +195,8 @@ try {
   if (
     !launchHomeStat.isDirectory() ||
     launchHomeStat.isSymbolicLink() ||
-    (launchHomeStat.mode & 0o777) !== 0o700
+    (launchHomeStat.mode & 0o777) !== 0o700 ||
+    launchHomeStat.uid !== process.getuid!()
   ) {
     throw new Error("Short LaunchServices HOME is not a private real directory");
   }
@@ -196,7 +215,7 @@ try {
   }
   launchCommand = finderLaunchCommand({
     appPath,
-    homePath: launchHomePath,
+    blackglassHomePath: launchHomePath,
     stdoutPath: layout.stdoutPath,
     stderrPath: layout.stderrPath,
     debugPort: FINDER_LAUNCH_DEBUG_PORT,
@@ -210,7 +229,12 @@ try {
       `LaunchServices refused the exact packaged app: ${opened.stderr.toString().trim()}`,
     );
   }
-  mainPid = await waitForMainProcess(executablePath, baselineAppPids, 15_000);
+  mainPid = await waitForMainProcess(
+    executablePath,
+    baselineAppPids,
+    FINDER_LAUNCH_DEBUG_PORT,
+    15_000,
+  );
   const target = await waitForStarterTarget(
     FINDER_LAUNCH_DEBUG_PORT,
     mainPid,
@@ -229,9 +253,12 @@ try {
     controlOrigin: run.manifest.endpoints.controlOrigin,
     email: credentials.email,
     password: credentials.password,
+    blackglassHomePath: launchHomePath,
+    nativeHomePath: homedir(),
   });
   starterControlOrigin = starterProof.controlOrigin;
   starterControlRequests = starterProof.requests;
+  runtimeHomeObserved = starterProof.runtimeHomeObserved;
   const healthDeadline = startedAtMs + FINDER_LAUNCH_MINIMUM_HEALTH_MS;
   while (Date.now() < healthDeadline) {
     assertProcessAlive(mainPid, "LaunchServices main process");
@@ -302,10 +329,11 @@ try {
   const cleanupErrors: Error[] = [];
   try {
     if (launchAttempted) {
-      await terminateNewAppProcessTree(
+      terminationEvidence = await terminateNewAppProcessTree(
         appPath,
         baselineAppPids,
-        FINDER_LAUNCH_DEBUG_PORT,
+        mainPid,
+        terminationHelperPath,
       );
     }
     if (cliSocketAddress) {
@@ -370,6 +398,7 @@ if (
   debugTargetUrl === undefined ||
   starterControlOrigin === undefined ||
   starterControlRequests === undefined ||
+  runtimeHomeObserved !== true ||
   launchHomePath === undefined ||
   launchProfilePath === undefined ||
   launchCommand === undefined ||
@@ -381,7 +410,8 @@ if (
   launchHomeRootRemoved !== true ||
   cliForwardedResponse === undefined ||
   healthyAt === undefined ||
-  healthyForMs === undefined
+  healthyForMs === undefined ||
+  terminationEvidence === undefined
 ) {
   throw new Error("Finder launch smoke did not collect complete no-vault evidence");
 }
@@ -451,7 +481,10 @@ const evidence: FinderLaunchSmokeEvidence = {
   profileRealDirectoryObserved: true,
   profileActivityObserved: true,
   profileSingletonArtifactsRemoved: true,
-  environmentHomeObserved: true,
+  blackglassHomeEnvironment: BLACKGLASS_HOME_ENVIRONMENT,
+  blackglassHomeEnvironmentObserved: true,
+  nativeHomePath: homedir(),
+  nativeHomeEnvironmentPreserved: true,
   cliSocketObserved: true,
   cliSocketRemoved: true,
   upstreamCliSocketAbsent: true,
@@ -473,6 +506,10 @@ const evidence: FinderLaunchSmokeEvidence = {
   diagnosticReportsChecked: true,
   crashReportsCreated: 0,
   realProfilesUnchanged: true,
+  terminationMechanism: terminationEvidence.mechanism,
+  nativeTerminationAccepted: terminationEvidence.accepted,
+  signalFallbackUsed: terminationEvidence.signalFallbackUsed,
+  forcedTerminationUsed: terminationEvidence.forcedTerminationUsed,
   terminatedCleanly: true,
 };
 assertFinderLaunchSmokeEvidence(evidence, {
@@ -485,6 +522,7 @@ assertFinderLaunchSmokeEvidence(evidence, {
   tlsMetadataSha256: tls.metadataSha256,
   chromiumHostResolverRules: tls.metadata.chromiumHostResolverRules,
   tlsSpkiSha256Base64: tls.metadata.spkiSha256Base64,
+  nativeHomePath: homedir(),
 });
 await writeFile(layout.evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, {
   flag: "wx",
@@ -507,13 +545,18 @@ async function exercisePackagedCli(input: {
     throw new Error(`Packaged main process did not create CLI socket ${socketAddress}`);
   }
   const upstreamSocketPath = join(input.homePath, ".obsidian-cli.sock");
-  if (await Bun.file(upstreamSocketPath).exists()) {
+  if (await pathExists(upstreamSocketPath)) {
     throw new Error("Packaged main process created the upstream Obsidian CLI socket");
   }
 
   const forwardedCommand = "blackglass-smoke-probe";
+  const cliEnvironment: Record<string, string | undefined> = {
+    ...process.env,
+    HOME: input.homePath,
+  };
+  delete cliEnvironment[BLACKGLASS_HOME_ENVIRONMENT];
   const child = Bun.spawn([input.cliExecutablePath, forwardedCommand], {
-    env: { ...process.env, HOME: input.homePath },
+    env: cliEnvironment,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -576,7 +619,8 @@ async function archiveLaunchHome(
   if (
     !rootStat.isDirectory() ||
     rootStat.isSymbolicLink() ||
-    (rootStat.mode & 0o777) !== 0o700
+    (rootStat.mode & 0o777) !== 0o700 ||
+    rootStat.uid !== process.getuid!()
   ) {
     throw new Error("Refusing to archive a changed LaunchServices HOME root");
   }
@@ -584,6 +628,7 @@ async function archiveLaunchHome(
   if (
     !archiveRootStat.isDirectory() ||
     archiveRootStat.isSymbolicLink() ||
+    archiveRootStat.uid !== process.getuid!() ||
     rootStat.dev !== archiveRootStat.dev
   ) {
     throw new Error("Refusing to move LaunchServices HOME across filesystems");
@@ -596,7 +641,8 @@ async function archiveLaunchHome(
   if (
     !homeStat.isDirectory() ||
     homeStat.isSymbolicLink() ||
-    (homeStat.mode & 0o777) !== 0o700
+    (homeStat.mode & 0o777) !== 0o700 ||
+    homeStat.uid !== process.getuid!()
   ) {
     throw new Error("Refusing to archive a changed LaunchServices HOME");
   }
@@ -608,7 +654,8 @@ async function archiveLaunchHome(
   if (
     !archivedHomeStat.isDirectory() ||
     archivedHomeStat.isSymbolicLink() ||
-    (archivedHomeStat.mode & 0o777) !== 0o700
+    (archivedHomeStat.mode & 0o777) !== 0o700 ||
+    archivedHomeStat.uid !== process.getuid!()
   ) {
     throw new Error("Archived LaunchServices HOME is not a private real directory");
   }
@@ -624,22 +671,6 @@ async function archiveLaunchHome(
 async function assertPathsAbsent(paths: string[], message: string): Promise<void> {
   for (const path of new Set(paths)) {
     if (await pathExists(path)) throw new Error(`${message}: ${path}`);
-  }
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await lstat(path);
-    return true;
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      ["ENOENT", "ENOTDIR"].includes(String(error.code))
-    ) {
-      return false;
-    }
-    throw error;
   }
 }
 
@@ -771,9 +802,12 @@ async function exerciseStarterControlFlow(input: {
   controlOrigin: string;
   email: string;
   password: string;
+  blackglassHomePath: string;
+  nativeHomePath: string;
 }): Promise<{
   controlOrigin: string;
   requests: FinderLaunchSmokeEvidence["starterControlRequests"];
+  runtimeHomeObserved: true;
 }> {
   const socket = new WebSocket(input.webSocketDebuggerUrl);
   await new Promise<void>((resolveOpen, rejectOpen) => {
@@ -854,6 +888,20 @@ async function exerciseStarterControlFlow(input: {
       }
       return evaluated?.result?.value;
     };
+    const runtimeHome = await evaluate(
+      "({nativeHomePath:process.env.HOME,blackglassHomePath:process.env.BLACKGLASS_HOME})",
+    );
+    if (
+      !runtimeHome ||
+      typeof runtimeHome !== "object" ||
+      (runtimeHome as any).nativeHomePath !== input.nativeHomePath ||
+      (runtimeHome as any).blackglassHomePath !== input.blackglassHomePath ||
+      (runtimeHome as any).nativeHomePath === (runtimeHome as any).blackglassHomePath
+    ) {
+      throw new Error(
+        "Native starter did not preserve HOME while using the isolated BLACKGLASS_HOME",
+      );
+    }
     const openedLogin = await evaluate(`(()=>{
       if (!location.href.includes("starter.html")) return false;
       const rows=[...document.querySelectorAll(".open-vault-options.mod-open-vault .setting-item")];
@@ -939,6 +987,7 @@ async function exerciseStarterControlFlow(input: {
     return {
       controlOrigin: evidenceRequests[0]!.origin,
       requests: evidenceRequests,
+      runtimeHomeObserved: true,
     };
   } finally {
     for (const request of pending.values()) {
@@ -994,6 +1043,7 @@ function listProcesses(): ProcessRow[] {
 async function waitForMainProcess(
   executablePath: string,
   baselinePids: Set<number>,
+  debugPort: number,
   timeoutMs: number,
 ): Promise<number> {
   const deadline = Date.now() + timeoutMs;
@@ -1001,7 +1051,8 @@ async function waitForMainProcess(
     const candidates = listProcesses().filter(
       (process) =>
         !baselinePids.has(process.pid) &&
-        (process.command === executablePath || process.command.startsWith(`${executablePath} `)),
+        process.command.startsWith(`${executablePath} `) &&
+        process.command.includes(`--remote-debugging-port=${debugPort}`),
     );
     if (candidates.length === 1) return candidates[0]!.pid;
     if (candidates.length > 1) {
@@ -1054,21 +1105,105 @@ function processUsesPath(mainPid: number, path: string): boolean {
   return result.stdout.toString().split("\n").some((line) => line.startsWith(prefix));
 }
 
+async function compileMacOSTerminationHelper(smokeRoot: string): Promise<string> {
+  const source = resolve(import.meta.dir, "macos-terminate.m");
+  const output = join(smokeRoot, "terminate-macos-application");
+  const compiled = Bun.spawnSync([
+    "/usr/bin/xcrun",
+    "clang",
+    "-fobjc-arc",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-framework",
+    "AppKit",
+    source,
+    "-o",
+    output,
+  ], { stdout: "pipe", stderr: "pipe" });
+  if (compiled.exitCode !== 0) {
+    throw new Error(
+      `Unable to compile PID-scoped macOS termination helper: ${compiled.stderr.toString("utf8").trim()}`,
+    );
+  }
+  const outputStat = await lstat(output);
+  if (!outputStat.isFile() || outputStat.isSymbolicLink()) {
+    throw new Error("Compiled macOS termination helper is not a real file");
+  }
+  return output;
+}
+
 async function terminateNewAppProcessTree(
   appPath: string,
   baselinePids: Set<number>,
-  debugPort: number,
-): Promise<void> {
-  const scopedProcesses = (): ProcessRow[] => exactNewAppProcesses(appPath, baselinePids);
-
-  if (scopedProcesses().length === 0) return;
-  try {
-    await requestDevToolsBrowserClose(debugPort);
-  } catch {
-    // A startup failure may occur before DevTools is available. The exact
-    // generated-app process set still receives the scoped signal fallback.
+  mainPid: number | undefined,
+  terminationHelperPath: string,
+): Promise<{
+  mechanism: "NSRunningApplication.terminate";
+  accepted: true;
+  signalFallbackUsed: false;
+  forcedTerminationUsed: false;
+}> {
+  if (mainPid === undefined) {
+    const unbound = exactNewAppProcesses(appPath, baselinePids);
+    if (unbound.length !== 0) {
+      throw new Error(
+        "Refusing to signal unbound post-snapshot app processes: " +
+          processSummary(unbound),
+      );
+    }
+    return {
+      mechanism: "NSRunningApplication.terminate",
+      accepted: true,
+      signalFallbackUsed: false,
+      forcedTerminationUsed: false,
+    };
   }
-  if (await waitForProcessExit(scopedProcesses, 5_000)) return;
+  const ownedPids = new Set<number>([mainPid]);
+  const scopedProcesses = (): ProcessRow[] => {
+    const processes = listProcesses();
+    const exact = exactAppProcesses(appPath, processes);
+    for (const process of exact) {
+      if (
+        process.pid === mainPid ||
+        ownedPids.has(process.pid) ||
+        isDescendant(process.pid, mainPid, processes)
+      ) {
+        ownedPids.add(process.pid);
+      }
+    }
+    return exact.filter((process) => ownedPids.has(process.pid));
+  };
+
+  if (scopedProcesses().length === 0) {
+    throw new Error("Packaged app exited before native termination was requested");
+  }
+  let nativeFailure: Error | undefined;
+  const request = Bun.spawnSync(
+    [terminationHelperPath, String(mainPid), appPath],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  if (
+    request.exitCode === 0 &&
+    request.stdout.toString("utf8").trim() === "termination-requested"
+  ) {
+    if (await waitForProcessExit(scopedProcesses, 10_000)) {
+      return {
+        mechanism: "NSRunningApplication.terminate",
+        accepted: true,
+        signalFallbackUsed: false,
+        forcedTerminationUsed: false,
+      };
+    }
+    nativeFailure = new Error(
+      "Packaged app accepted native termination but did not exit within 10 seconds",
+    );
+  } else {
+    nativeFailure = new Error(
+      `PID-scoped native termination was rejected with exit ${request.exitCode}: ` +
+        request.stderr.toString("utf8").trim(),
+    );
+  }
 
   const termProcesses = scopedProcesses().sort((left, right) => right.pid - left.pid);
   for (const process of termProcesses) {
@@ -1078,7 +1213,12 @@ async function terminateNewAppProcessTree(
       // The process may have exited between the process-table read and signal.
     }
   }
-  if (await waitForProcessExit(scopedProcesses, 10_000)) return;
+  if (await waitForProcessExit(scopedProcesses, 10_000)) {
+    throw new Error(
+      `${nativeFailure.message}; exact-path SIGTERM cleanup was required: ` +
+        processSummary(termProcesses),
+    );
+  }
 
   const forcedProcesses = scopedProcesses().sort((left, right) => right.pid - left.pid);
   for (const process of forcedProcesses) {
@@ -1091,7 +1231,7 @@ async function terminateNewAppProcessTree(
   const forcedExited = await waitForProcessExit(scopedProcesses, 5_000);
   const survivors = scopedProcesses();
   throw new Error(
-    "Packaged app required forced termination after its launch smoke: " +
+    `${nativeFailure.message}; packaged app required forced termination after its launch smoke: ` +
       processSummary(forcedProcesses) +
       (forcedExited
         ? ""
@@ -1103,64 +1243,23 @@ function exactNewAppProcesses(
   appPath: string,
   baselinePids: Set<number>,
 ): ProcessRow[] {
-  return listProcesses().filter(
+  return exactAppProcesses(appPath).filter(
     (process) =>
-      !baselinePids.has(process.pid) &&
-      process.command.startsWith(`${appPath}/Contents/`),
+      !baselinePids.has(process.pid),
   );
+}
+
+function exactAppProcesses(
+  appPath: string,
+  processes: ProcessRow[] = listProcesses(),
+): ProcessRow[] {
+  return processes.filter((process) => process.command.startsWith(`${appPath}/Contents/`));
 }
 
 function processSummary(processes: ProcessRow[]): string {
   return processes
     .map((process) => `${process.pid} ${process.command}`)
     .join("; ");
-}
-
-async function requestDevToolsBrowserClose(port: number): Promise<void> {
-  const version = await fetch(`http://127.0.0.1:${port}/json/version`, {
-    signal: AbortSignal.timeout(1_000),
-  }).then(async (response) => {
-    if (!response.ok) throw new Error(`DevTools returned ${response.status}`);
-    return await response.json() as { webSocketDebuggerUrl?: unknown };
-  });
-  if (typeof version.webSocketDebuggerUrl !== "string") {
-    throw new Error("DevTools browser target has no WebSocket endpoint");
-  }
-  const socket = new WebSocket(version.webSocketDebuggerUrl);
-  await new Promise<void>((resolveClose, rejectClose) => {
-    let commandSent = false;
-    const timer = setTimeout(() => {
-      socket.close();
-      rejectClose(new Error("Timed out requesting DevTools browser shutdown"));
-    }, 5_000);
-    const finish = (error?: Error) => {
-      clearTimeout(timer);
-      if (error) rejectClose(error);
-      else resolveClose();
-    };
-    socket.addEventListener("open", () => {
-      commandSent = true;
-      socket.send(JSON.stringify({ id: 1, method: "Browser.close" }));
-    }, { once: true });
-    socket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data)) as {
-        id?: unknown;
-        error?: unknown;
-      };
-      if (message.id !== 1) return;
-      if (message.error) finish(new Error("DevTools rejected browser shutdown"));
-      else finish();
-    });
-    socket.addEventListener("close", () => {
-      if (commandSent) finish();
-      else finish(new Error("DevTools browser target closed before shutdown request"));
-    }, { once: true });
-    socket.addEventListener("error", () => {
-      if (commandSent) finish();
-      else finish(new Error("Unable to connect to the DevTools browser target"));
-    }, { once: true });
-  });
-  if (socket.readyState === WebSocket.OPEN) socket.close();
 }
 
 async function waitForProcessExit(

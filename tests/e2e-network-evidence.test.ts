@@ -29,7 +29,7 @@ const run: PreparedE2ERunManifest = {
   releaseManifestFileName: "bridge-release-manifest.json",
 };
 const identity = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   runManifestSha256: "c".repeat(64),
   releaseManifestSha256: run.releaseManifestSha256,
   startedAt: "2026-07-28T10:00:00.000Z",
@@ -48,7 +48,13 @@ const identity = {
   adapterPath: "/run/client-a/user-data/obsidian-1.12.7.asar",
   adapterSha256: run.compatibilityAsarSha256,
   profilePath: "/run/client-a/user-data",
-  homePath: "/run/client-a/home",
+  blackglassHomePath: "/private/tmp/blackglass-client-ABC123/h",
+  blackglassHomeEnvironment: "BLACKGLASS_HOME",
+  blackglassHomeMode: 0o700,
+  blackglassHomeCanonical: true,
+  cliSocketPath: "/private/tmp/blackglass-client-ABC123/h/.blackglass-b.sock",
+  nativeHomePath: "/Users/example",
+  nativeHomeEnvironmentPreserved: true,
   vaultPath: "/run/client-a/vault",
   tlsMetadataPath: "/run/tls-metadata.json",
   tlsMetadataSha256: "f".repeat(64),

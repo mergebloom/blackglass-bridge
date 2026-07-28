@@ -115,7 +115,9 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       profileMode: 0o700,
       profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
-      defaultProfileUsesEnvironmentHome: true,
+      profileHomeEnvironment: "BLACKGLASS_HOME",
+      dedicatedHomeValidated: true,
+      nativeHomeFallbackPreserved: true,
       upstreamUpdatesDisabled: true,
       embeddedRendererOnly: true,
       helperBundleIdentifiers: [
@@ -128,12 +130,12 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       signature: "ad-hoc",
     });
     expect(report.releaseManifest).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       rendererVersion: "1.12.7",
       endpoints,
       patcher: {
-        renderer: { formatVersion: 5, incisions: 5 },
-        wrapper: { formatVersion: 3, incisions: 3 },
+        renderer: { formatVersion: 6, incisions: 6 },
+        wrapper: { formatVersion: 4, incisions: 3 },
         cli: { formatVersion: 1, incisions: 2 },
       },
       reproduction: {
@@ -198,11 +200,15 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       cliExecutableName: "obsidian-cli",
       cliSocketName: ".blackglass-b.sock",
       cliSocketOccurrences: 2,
+      rendererRuntimeHomeEnvironment: "BLACKGLASS_HOME",
+      rendererCliRuntimeRootValidated: true,
       profileDirectory: "Blackglass Bridge",
       profileMode: 0o700,
       profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
-      defaultProfileUsesEnvironmentHome: true,
+      profileHomeEnvironment: "BLACKGLASS_HOME",
+      dedicatedHomeValidated: true,
+      nativeHomeFallbackPreserved: true,
       upstreamUpdatesDisabled: true,
       embeddedRendererOnly: true,
       helperBundleIdentifiers: [
@@ -289,7 +295,7 @@ function makeRendererArchive(): Buffer {
         'gw("/user/signin");socket.send({op:"ping"});',
     ),
     "main.js": Buffer.from(
-      'module.exports=function(c,i,l){const socket=".obsidian-cli.sock";let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";ipcMain.on("is-dev",t=>{t.returnValue=l})}}',
+      'module.exports=function(c,i,l){const socket=D.join(!U&&process.env.XDG_RUNTIME_DIR||ce.homedir(),".obsidian-cli.sock");let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";ipcMain.on("is-dev",t=>{t.returnValue=l})}}',
     ),
     "starter.js": Buffer.from(
       `var sa=${controlExpression};gw("/user/signin");`,
@@ -490,7 +496,25 @@ function logger(logfile) {
 \tstdout.on('error', function(e) {
 \t\t// \`write\` failed. Do nothing...
 \t});
-\treturn () => {};
+
+\tlet fn = function () {
+\t\tlet data = stamp() + ' ' + util.format.apply(null, arguments) + os.EOL;
+
+\t\ttry {
+\t\t\tfs.writeSync(fileout, data);
+\t\t\t// Don't output to stdout if the app requests silence mode (to avoid polluting CLI outputs)
+\t\t\tif (!silence) stdout.write(data);
+\t\t}
+\t\tcatch (e) {
+\t\t\t// Failed to write to log
+\t\t}
+\t};
+
+\tfn.end = function () {
+\t\tfs.closeSync(fileout);
+\t};
+
+\treturn fn;
 }
 
 let updatePromise = app.whenReady();

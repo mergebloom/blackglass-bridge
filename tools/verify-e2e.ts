@@ -85,7 +85,9 @@ if (
   releaseManifest.wrapper.profileMode !== 0o700 ||
   releaseManifest.wrapper.profilePathCanonicalAtSetup !== true ||
   releaseManifest.wrapper.explicitUserDataDirHonored !== true ||
-  releaseManifest.wrapper.defaultProfileUsesEnvironmentHome !== true
+  releaseManifest.wrapper.profileHomeEnvironment !== "BLACKGLASS_HOME" ||
+  releaseManifest.wrapper.dedicatedHomeValidated !== true ||
+  releaseManifest.wrapper.nativeHomeFallbackPreserved !== true
 ) {
   throw new Error("E2E run manifest is inconsistent with the Bridge release manifest");
 }
@@ -162,7 +164,6 @@ for (const client of ["client-a", "client-b"] as const) {
   const identity = liveBinding.identity;
   const publicClient = publicMacOSArtifact(recordedClient);
   const expectedProfile = resolve(root, client, "user-data");
-  const expectedHome = resolve(root, client, "home");
   const expectedVault = resolve(root, client, "vault");
   const expectedAdapter = resolve(expectedProfile, runManifest.adapterFileName);
   if (
@@ -177,7 +178,6 @@ for (const client of ["client-a", "client-b"] as const) {
     identity.adapterPath !== expectedAdapter ||
     identity.adapterSha256 !== runManifest.compatibilityAsarSha256 ||
     identity.profilePath !== expectedProfile ||
-    identity.homePath !== expectedHome ||
     identity.vaultPath !== expectedVault ||
     identity.tlsMetadataPath !== resolve(root, "tls-metadata.json") ||
     identity.tlsMetadataSha256 !== await fileSha256(identity.tlsMetadataPath) ||

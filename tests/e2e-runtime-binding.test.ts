@@ -13,7 +13,7 @@ const projectRoot = resolve(import.meta.dir, "..");
 describe("E2E runtime binding", () => {
   test("rejects malformed launch chronology", () => {
     const identity = {
-      schemaVersion: 3,
+      schemaVersion: 4,
       runManifestSha256: "a".repeat(64),
       releaseManifestSha256: "b".repeat(64),
       startedAt: "2026-07-28T12:00:00.000Z",
@@ -32,7 +32,13 @@ describe("E2E runtime binding", () => {
       adapterPath: "/tmp/obsidian-1.12.7.asar",
       adapterSha256: "e".repeat(64),
       profilePath: "/tmp/client-a/user-data",
-      homePath: "/tmp/client-a/home",
+      blackglassHomePath: "/private/tmp/blackglass-client-ABC123/h",
+      blackglassHomeEnvironment: "BLACKGLASS_HOME",
+      blackglassHomeMode: 0o700,
+      blackglassHomeCanonical: true,
+      cliSocketPath: "/private/tmp/blackglass-client-ABC123/h/.blackglass-b.sock",
+      nativeHomePath: "/Users/example",
+      nativeHomeEnvironmentPreserved: true,
       vaultPath: "/tmp/client-a/vault",
       tlsMetadataPath: "/tmp/tls-metadata.json",
       tlsMetadataSha256: "f".repeat(64),
@@ -41,8 +47,22 @@ describe("E2E runtime binding", () => {
     expect(() => assertClientLaunchIdentity(identity)).not.toThrow();
     expect(() => assertClientLaunchIdentity({
       ...identity,
-      homePath: "",
-    })).toThrow("homePath is invalid");
+      blackglassHomePath: "",
+    })).toThrow("blackglassHomePath is invalid");
+    for (const mutate of [
+      (value: any) => (value.blackglassHomeEnvironment = "HOME"),
+      (value: any) => (value.blackglassHomeMode = 0o755),
+      (value: any) => (value.blackglassHomeCanonical = false),
+      (value: any) => (value.cliSocketPath = "/tmp/.obsidian-cli.sock"),
+      (value: any) => (value.nativeHomePath = value.blackglassHomePath),
+      (value: any) => (value.nativeHomeEnvironmentPreserved = false),
+    ]) {
+      const candidate = structuredClone(identity);
+      mutate(candidate);
+      expect(() => assertClientLaunchIdentity(candidate)).toThrow(
+        "process or artifact binding",
+      );
+    }
     expect(() => assertClientLaunchIdentity({
       ...identity,
       startedAt: "not-a-date",
@@ -73,7 +93,6 @@ describe("E2E runtime binding", () => {
       );
       for (const client of ["client-a", "client-b"]) {
         await mkdir(join(runRoot, client, "user-data"), { recursive: true });
-        await mkdir(join(runRoot, client, "home"), { recursive: true, mode: 0o700 });
         await mkdir(join(runRoot, client, "vault"), { recursive: true });
       }
       const layout = await resolvePreparedClientLayout(
@@ -81,7 +100,7 @@ describe("E2E runtime binding", () => {
         join(runRoot, "client-a/vault"),
       );
       expect(layout.clientName).toBe("client-a");
-      expect(layout.homePath).toBe(join(runRoot, "client-a/home"));
+      expect(layout.clientRoot).toBe(join(runRoot, "client-a"));
       await expect(
         resolvePreparedClientLayout(
           join(runRoot, "client-a/user-data"),

@@ -12,19 +12,24 @@ The authorized 1.12.7 artifact constructs `https://api.obsidian.md` in both the
 main `app.js` renderer and the independent no-vault `starter.js` renderer. Sync
 persists a control-plane-provided data host and opens `ws://` only for exact
 loopback development hosts or `wss://` otherwise. The Bridge patcher therefore
-uses five fixed-length, fail-closed client-ASAR incisions:
+uses six fixed-length, fail-closed client-ASAR incisions:
 
 - control origin in `app.js`;
 - exact Sync data-host authorization in `app.js`;
 - control origin in `starter.js`;
 - `.obsidian-cli.sock` to `.blackglass-b.sock` in `main.js`;
+- the `main.js` CLI runtime root to prefer `BLACKGLASS_HOME`; and
 - `/usr/local/bin/obsidian` registration to `/usr/local/bin/blackglass` in
   `main.js`.
 
 The packaged universal `obsidian-cli` binary contains one socket literal per
 architecture. Both are patched to `.blackglass-b.sock` before the app is
-re-signed. Prepared E2E clients also receive separate mode-`0700` homes so their
-CLI sockets cannot collide.
+re-signed. Prepared E2E clients receive separate mode-`0700`
+`BLACKGLASS_HOME` directories so their CLI sockets cannot collide. The GUI
+keeps its native `HOME` for macOS login Keychain access; only a packaged CLI
+subprocess receives the dedicated path as `HOME`. The runtime-root incision is
+part of the macOS qualification boundary and does not claim support for other
+desktop platforms.
 
 ## Route boundary
 

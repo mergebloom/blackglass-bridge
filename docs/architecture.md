@@ -10,8 +10,9 @@ Blackglass Bridge owns the desktop compatibility boundary:
    routes, and inbound and outbound Sync operations/message shapes;
 3. require exact source hashes and exact inventory/semantic-anchor matches;
 4. replace them without changing the surrounding renderer logic;
-5. patch the copied Electron wrapper to force an isolated canonical profile at
-   mode `0700`, disable its upstream package updater, and pin the embedded
+5. patch the copied Electron wrapper to select an isolated canonical profile
+   from `BLACKGLASS_HOME` at mode `0700`, while preserving the GUI's native
+   `HOME`, disabling its upstream package updater, and pinning the embedded
    qualified renderer;
 6. rebuild both ASAR integrity records;
 7. bind the official DMG digest and full source tree, then stage, verify, sign,
@@ -47,7 +48,7 @@ reviewed `obsidian.asar.unpacked` and `app.asar.unpacked` JavaScript paths,
 sizes, and SHA-256 identities. If any packed or unpacked JavaScript file,
 anchor, request helper, network constructor, route, operation, or message shape
 is new, removed, or changed, generation stops. Packaging then reproduces the
-five-incision client ASAR from the reviewed source and canonical endpoints and
+six-incision client ASAR from the reviewed source and canonical endpoints and
 requires a byte-identical result. A single release manifest binds
 the baseline, source/result hashes, endpoints, patcher formats, wrapper, and app
 identity into the isolated E2E report. The E2E TLS certificate, resolver rules,
@@ -74,16 +75,21 @@ it; the tooling tree at the tag must remain byte-identical.
 - Generated apps, credentials, and E2E vaults stay under ignored data paths.
 - Plaintext loopback endpoints are permitted only for local testing.
 - Non-loopback deployments require authenticated TLS endpoints.
-- An explicit `--user-data-dir` is honored for disposable E2E clients; ordinary
-  launches default to the separate Blackglass Bridge profile under the process
-  `HOME`. This also makes a LaunchServices-injected `HOME` authoritative for the
-  no-vault smoke. The wrapper rejects a non-canonical path at setup and enforces
+- An explicit `--user-data-dir` is honored for disposable E2E clients; otherwise
+  the wrapper selects the separate Blackglass Bridge profile under
+  `BLACKGLASS_HOME`, with native `HOME` as the ordinary-launch fallback. The GUI
+  `HOME` is never overridden, so Electron continues to use the user's login
+  Keychain. The wrapper rejects a non-canonical path at setup and enforces
   directory mode `0700` for both forms.
 - The embedded main process uses `.blackglass-b.sock` instead of Obsidian's
   global CLI socket, so the two applications cannot unlink each other's CLI
-  endpoint. Its registration action installs `/usr/local/bin/blackglass`, never
-  the upstream `/usr/local/bin/obsidian` command.
-- The LaunchServices smoke uses a private, short-lived real HOME under
+  endpoint. On macOS, a sixth renderer incision makes `BLACKGLASS_HOME` the
+  socket runtime root. Its registration action installs
+  `/usr/local/bin/blackglass`, never the upstream `/usr/local/bin/obsidian`
+  command.
+- The packaged CLI still discovers its socket through `HOME`, so only that
+  subprocess receives `HOME=BLACKGLASS_HOME`; the GUI process does not.
+- The LaunchServices smoke uses a private, short-lived `BLACKGLASS_HOME` under
   `/private/tmp` so the macOS Unix-socket address stays within the platform
-  limit. After shutdown, that HOME is moved into the disposable run so its
+  limit. After shutdown, that directory is moved into the disposable run so its
   profile and diagnostics remain available as qualification evidence.

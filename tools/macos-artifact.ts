@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { inspectPatchedMacOSWrapperAsar } from "../packages/client-adapter/src/wrapper";
-import { asarHeaderSha256 } from "./asar";
+import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
+import { inspectPatchedMainProcess } from "../packages/client-adapter/src/patch";
+import { AsarArchive, asarHeaderSha256 } from "./asar";
 import {
   BRIDGE_CLI_SOCKET_NAME,
   CLI_BINARY_INCISION_COUNT,
@@ -19,7 +21,7 @@ export const ELECTRON_HELPER_VARIANTS = [
 ] as const;
 
 export interface MacOSArtifact {
-  schemaVersion: 5;
+  schemaVersion: 6;
   appPath: string;
   bundleIdentifier: "com.blackglass.bridge";
   bundleName: "Obsidian";
@@ -33,6 +35,8 @@ export interface MacOSArtifact {
   cliSocketName: typeof BRIDGE_CLI_SOCKET_NAME;
   cliSocketOccurrences: typeof CLI_BINARY_INCISION_COUNT;
   embeddedAsarSha256: string;
+  rendererRuntimeHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
+  rendererCliRuntimeRootValidated: true;
   embeddedWrapperAsarSha256: string;
   embeddedWrapperHeaderSha256: string;
   codeDirectoryHash: string;
@@ -43,7 +47,9 @@ export interface MacOSArtifact {
   profileMode: 448;
   profilePathCanonicalAtSetup: true;
   explicitUserDataDirHonored: true;
-  defaultProfileUsesEnvironmentHome: true;
+  profileHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
+  dedicatedHomeValidated: true;
+  nativeHomeFallbackPreserved: true;
   upstreamUpdatesDisabled: true;
   embeddedRendererOnly: true;
   registeredUrlSchemes: [];
@@ -118,9 +124,15 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   const cliExecutableName = "obsidian-cli";
   const cliExecutable = join(appPath, "Contents/MacOS", cliExecutableName);
   const cliSafety = inspectPatchedCliBinary(await readFile(cliExecutable));
+  const rendererAsar = await readFile(
+    join(appPath, "Contents/Resources/obsidian.asar"),
+  );
+  const rendererMainSafety = inspectPatchedMainProcess(
+    AsarArchive.fromBuffer(rendererAsar).read("main.js"),
+  );
   const applicationTreeIdentity = await computeTreeIdentity(appPath);
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     appPath,
     bundleIdentifier: "com.blackglass.bridge",
     bundleName: "Obsidian",
@@ -133,9 +145,9 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     cliExecutableSha256: cliSafety.sha256,
     cliSocketName: cliSafety.socketName,
     cliSocketOccurrences: cliSafety.socketOccurrences,
-    embeddedAsarSha256: await sha256File(
-      join(appPath, "Contents/Resources/obsidian.asar"),
-    ),
+    embeddedAsarSha256: sha256(rendererAsar),
+    rendererRuntimeHomeEnvironment: rendererMainSafety.runtimeHomeEnvironment,
+    rendererCliRuntimeRootValidated: rendererMainSafety.runtimeRootValidated,
     embeddedWrapperAsarSha256,
     embeddedWrapperHeaderSha256,
     codeDirectoryHash,
@@ -146,8 +158,9 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     profileMode: wrapperSafety.profileMode,
     profilePathCanonicalAtSetup: wrapperSafety.profilePathCanonicalAtSetup,
     explicitUserDataDirHonored: wrapperSafety.explicitUserDataDirHonored,
-    defaultProfileUsesEnvironmentHome:
-      wrapperSafety.defaultProfileUsesEnvironmentHome,
+    profileHomeEnvironment: wrapperSafety.profileHomeEnvironment,
+    dedicatedHomeValidated: wrapperSafety.dedicatedHomeValidated,
+    nativeHomeFallbackPreserved: wrapperSafety.nativeHomeFallbackPreserved,
     upstreamUpdatesDisabled: wrapperSafety.upstreamUpdatesDisabled,
     embeddedRendererOnly: wrapperSafety.embeddedRendererOnly,
     registeredUrlSchemes: [],

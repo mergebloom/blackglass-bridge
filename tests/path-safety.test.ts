@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -6,6 +6,7 @@ import {
   assertNonOverlappingPaths,
   canonicalExistingPath,
   canonicalOutputPath,
+  pathExists,
 } from "../tools/path-safety";
 import { computeTreeIdentity } from "../tools/tree-identity";
 
@@ -45,5 +46,19 @@ describe("filesystem safety", () => {
         { label: "nested output", path: join(canonicalSource, "output.app") },
       ]),
     ).toThrow("must not overlap");
+  });
+
+  test("detects directories and special filesystem nodes, not only regular files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "blackglass-path-exists-"));
+    const specialPath = join(root, "runtime.pipe");
+    try {
+      expect(await pathExists(root)).toBe(true);
+      expect(await pathExists(join(root, "missing"))).toBe(false);
+      const created = Bun.spawnSync(["mkfifo", specialPath]);
+      expect(created.exitCode).toBe(0);
+      expect(await pathExists(specialPath)).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

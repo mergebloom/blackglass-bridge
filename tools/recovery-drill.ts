@@ -8,6 +8,7 @@ import {
   verifyLiveClientLaunchBinding,
 } from "./e2e-client";
 import { readPreparedE2ERun } from "./e2e-network";
+import { pathExists } from "./path-safety";
 
 const [action, firstArgument, secondArgument] = Bun.argv.slice(2);
 const e2eRoot = resolve(import.meta.dir, "../.data/e2e");
@@ -93,10 +94,18 @@ if (action === "create") {
     runManifestSha256?: unknown;
     syncReportSha256?: unknown;
     recoveryManifestSha256?: unknown;
+    retiredRuntimeHomes?: Record<
+      string,
+      {
+        identitySha256?: unknown;
+        blackglassHomePath?: unknown;
+        runtimeHomeRemoved?: unknown;
+      }
+    >;
     freshClient?: { adapterSha256?: unknown; initialVaultFiles?: unknown };
   };
   if (
-    reset.schemaVersion !== 1 ||
+    reset.schemaVersion !== 2 ||
     typeof reset.resetAt !== "string" ||
     !Number.isFinite(Date.parse(reset.resetAt)) ||
     reset.runManifestSha256 !== preparedRun.manifestSha256 ||
@@ -108,6 +117,22 @@ if (action === "create") {
     reset.freshClient?.initialVaultFiles !== 0
   ) {
     throw new Error("Source-loss reset is not bound to this recovery run");
+  }
+  for (const client of ["client-a", "client-b"] as const) {
+    const retired = reset.retiredRuntimeHomes?.[client];
+    const identityPath = join(runRoot, `${client}-launch.json`);
+    if (
+      typeof retired?.identitySha256 !== "string" ||
+      retired.identitySha256 !== await fileSha256(identityPath) ||
+      typeof retired.blackglassHomePath !== "string" ||
+      !/^\/private\/tmp\/blackglass-client-[A-Za-z0-9]{6}\/h$/u.test(
+        retired.blackglassHomePath,
+      ) ||
+      retired.runtimeHomeRemoved !== true ||
+      await pathExists(retired.blackglassHomePath)
+    ) {
+      throw new Error(`Source-loss reset did not retire ${client} BLACKGLASS_HOME`);
+    }
   }
   const recoveryIdentityPath = join(runRoot, "client-b-recovery-launch.json");
   const recoveryBinding = await verifyLiveClientLaunchBinding(recoveryIdentityPath);
@@ -134,7 +159,7 @@ if (action === "create") {
     const actual = restoredMap.get(entry.path);
     return actual && (actual.sha256 !== entry.sha256 || actual.size !== entry.size);
   });
-  const clientAExists = await Bun.file(join(runRoot, "client-a")).exists();
+  const clientAExists = await pathExists(join(runRoot, "client-a"));
   const database = databaseSnapshot(join(runRoot, "server.sqlite"));
   const databaseRegressed =
     database.revisions < manifest.database.revisions ||

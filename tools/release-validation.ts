@@ -8,6 +8,7 @@ import {
   WRAPPER_INCISION_COUNT,
   WRAPPER_PATCH_FORMAT_VERSION,
 } from "../packages/client-adapter/src/wrapper";
+import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import {
   BRIDGE_CLI_SOCKET_NAME,
   CLI_BINARY_INCISION_COUNT,
@@ -22,7 +23,7 @@ import {
 } from "./tooling-source";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 
-export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 5;
+export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 6;
 
 type PublicMacOSArtifact = Omit<MacOSArtifact, "appPath">;
 type PublicServerArtifact = Omit<ServerArtifact, "binaryPath">;
@@ -280,7 +281,7 @@ export function assertReleaseValidationRecord(
   assertEvidence(value.packagedClientE2E.evidence);
   const macOS = value.artifacts.macOS;
   if (
-    macOS.schemaVersion !== 5 ||
+    macOS.schemaVersion !== 6 ||
     macOS.bundleIdentifier !== "com.blackglass.bridge" ||
     macOS.bundleName !== "Obsidian" ||
     macOS.displayName !== "Blackglass Bridge" ||
@@ -288,12 +289,16 @@ export function assertReleaseValidationRecord(
     macOS.cliExecutableName !== "obsidian-cli" ||
     macOS.cliSocketName !== BRIDGE_CLI_SOCKET_NAME ||
     macOS.cliSocketOccurrences !== CLI_BINARY_INCISION_COUNT ||
+    macOS.rendererRuntimeHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+    macOS.rendererCliRuntimeRootValidated !== true ||
     macOS.version !== value.rendererVersion ||
     macOS.profileDirectory !== "Blackglass Bridge" ||
     macOS.profileMode !== 448 ||
     macOS.profilePathCanonicalAtSetup !== true ||
     macOS.explicitUserDataDirHonored !== true ||
-    macOS.defaultProfileUsesEnvironmentHome !== true ||
+    macOS.profileHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+    macOS.dedicatedHomeValidated !== true ||
+    macOS.nativeHomeFallbackPreserved !== true ||
     macOS.upstreamUpdatesDisabled !== true ||
     macOS.embeddedRendererOnly !== true ||
     !Array.isArray(macOS.registeredUrlSchemes) ||

@@ -17,8 +17,9 @@ const controlOrigin = "https://blackglass.example.com";
 const chromiumHostResolverRules = "MAP blackglass.example.com 127.0.0.1:8443";
 const tlsSpkiSha256Base64 = `${"A".repeat(43)}=`;
 const launchHomePath = "/private/tmp/blackglass-launch-ABC123/h";
+const nativeHomePath = "/Users/example";
 const artifact = {
-  schemaVersion: 5 as const,
+  schemaVersion: 6 as const,
   bundleIdentifier: "com.blackglass.bridge" as const,
   bundleName: "Obsidian" as const,
   displayName: "Blackglass Bridge" as const,
@@ -31,6 +32,8 @@ const artifact = {
   cliSocketName: ".blackglass-b.sock" as const,
   cliSocketOccurrences: 2 as const,
   embeddedAsarSha256: digest("3"),
+  rendererRuntimeHomeEnvironment: "BLACKGLASS_HOME" as const,
+  rendererCliRuntimeRootValidated: true as const,
   embeddedWrapperAsarSha256: digest("4"),
   embeddedWrapperHeaderSha256: digest("5"),
   codeDirectoryHash: "6".repeat(40),
@@ -54,7 +57,9 @@ const artifact = {
   profileMode: 448 as const,
   profilePathCanonicalAtSetup: true as const,
   explicitUserDataDirHonored: true as const,
-  defaultProfileUsesEnvironmentHome: true as const,
+  profileHomeEnvironment: "BLACKGLASS_HOME" as const,
+  dedicatedHomeValidated: true as const,
+  nativeHomeFallbackPreserved: true as const,
   upstreamUpdatesDisabled: true as const,
   embeddedRendererOnly: true as const,
   registeredUrlSchemes: [] as [],
@@ -64,7 +69,7 @@ const artifact = {
 function evidence(): FinderLaunchSmokeEvidence {
   const layout = finderLaunchSmokeLayout(root);
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     passed: true,
     platform: "macOS Apple Silicon",
     mechanism: "LaunchServices open -n -a",
@@ -93,7 +98,7 @@ function evidence(): FinderLaunchSmokeEvidence {
     vaultPath: layout.vaultPath,
     launchCommand: finderLaunchCommand({
       appPath,
-      homePath: launchHomePath,
+      blackglassHomePath: launchHomePath,
       stdoutPath: layout.stdoutPath,
       stderrPath: layout.stderrPath,
       chromiumHostResolverRules,
@@ -114,7 +119,10 @@ function evidence(): FinderLaunchSmokeEvidence {
     profileRealDirectoryObserved: true,
     profileActivityObserved: true,
     profileSingletonArtifactsRemoved: true,
-    environmentHomeObserved: true,
+    blackglassHomeEnvironment: "BLACKGLASS_HOME",
+    blackglassHomeEnvironmentObserved: true,
+    nativeHomePath,
+    nativeHomeEnvironmentPreserved: true,
     cliSocketObserved: true,
     cliSocketRemoved: true,
     upstreamCliSocketAbsent: true,
@@ -140,6 +148,10 @@ function evidence(): FinderLaunchSmokeEvidence {
     diagnosticReportsChecked: true,
     crashReportsCreated: 0,
     realProfilesUnchanged: true,
+    terminationMechanism: "NSRunningApplication.terminate",
+    nativeTerminationAccepted: true,
+    signalFallbackUsed: false,
+    forcedTerminationUsed: false,
     terminatedCleanly: true,
   };
 }
@@ -154,14 +166,16 @@ const options = {
   tlsMetadataSha256: digest("c"),
   chromiumHostResolverRules,
   tlsSpkiSha256Base64,
+  nativeHomePath,
 };
 
 describe("packaged macOS LaunchServices smoke", () => {
-  test("uses LaunchServices with an isolated HOME and no profile argument", () => {
+  test("uses LaunchServices with BLACKGLASS_HOME while preserving native HOME", () => {
     const command = evidence().launchCommand;
     expect(command).toContain("-a");
     expect(command).toContain(appPath);
-    expect(command).toContain(`HOME=${launchHomePath}`);
+    expect(command).toContain(`BLACKGLASS_HOME=${launchHomePath}`);
+    expect(command.some((argument) => argument.startsWith("HOME="))).toBe(false);
     expect(
       Buffer.byteLength(join(launchHomePath, artifact.cliSocketName), "utf8"),
     ).toBeLessThanOrEqual(103);
@@ -196,6 +210,13 @@ describe("packaged macOS LaunchServices smoke", () => {
       (value: any) => (value.launchHomeRootRemoved = false),
       (value: any) => (value.launchHomeRootMode = 0o755),
       (value: any) => (value.launchHomePath = "/Users/example/home"),
+      (value: any) => (value.blackglassHomeEnvironment = "HOME"),
+      (value: any) => (value.blackglassHomeEnvironmentObserved = false),
+      (value: any) => (value.nativeHomeEnvironmentPreserved = false),
+      (value: any) => (value.nativeHomePath = value.launchHomePath),
+      (value: any) => (value.nativeTerminationAccepted = false),
+      (value: any) => (value.signalFallbackUsed = true),
+      (value: any) => (value.forcedTerminationUsed = true),
     ]) {
       const candidate = structuredClone(evidence()) as any;
       mutate(candidate);

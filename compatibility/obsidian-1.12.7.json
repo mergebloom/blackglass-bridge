@@ -239,6 +239,12 @@
       "expectedMatches": 1
     },
     {
+      "id": "desktop-cli-runtime-root",
+      "file": "main.js",
+      "literal": "!U&&process.env.XDG_RUNTIME_DIR||ce.homedir()",
+      "expectedMatches": 1
+    },
+    {
       "id": "desktop-cli-registration-target",
       "file": "main.js",
       "literal": "/usr/local/bin/obsidian",

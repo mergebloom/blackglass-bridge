@@ -3,6 +3,15 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 export type ExistingPathKind = "file" | "directory";
 
+export async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ENOENT";
+  }
+}
+
 export async function canonicalExistingPath(
   argument: string,
   label: string,

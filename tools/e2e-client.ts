@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
+import { BRIDGE_CLI_SOCKET_NAME } from "./cli-binary";
 import {
   inspectMacOSArtifact,
   publicMacOSArtifact,
@@ -12,11 +14,12 @@ import {
   assertNoSymlinkSegments,
   assertPathWithin,
   canonicalExistingPath,
+  pathExists,
   pathsEqual,
 } from "./path-safety";
 
 export interface ClientLaunchIdentity {
-  schemaVersion: 3;
+  schemaVersion: 4;
   runManifestSha256: string;
   releaseManifestSha256: string;
   startedAt: string;
@@ -35,7 +38,13 @@ export interface ClientLaunchIdentity {
   adapterPath: string;
   adapterSha256: string;
   profilePath: string;
-  homePath: string;
+  blackglassHomePath: string;
+  blackglassHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
+  blackglassHomeMode: 448;
+  blackglassHomeCanonical: true;
+  cliSocketPath: string;
+  nativeHomePath: string;
+  nativeHomeEnvironmentPreserved: true;
   vaultPath: string;
   tlsMetadataPath: string;
   tlsMetadataSha256: string;
@@ -64,7 +73,6 @@ export async function resolvePreparedClientLayout(
   run: Awaited<ReturnType<typeof readPreparedE2ERun>>;
   clientRoot: string;
   clientName: "client-a" | "client-b";
-  homePath: string;
 }> {
   if (basename(profile) !== "user-data" || basename(vault) !== "vault") {
     throw new Error("Prepared E2E client paths must end in user-data and vault");
@@ -79,23 +87,13 @@ export async function resolvePreparedClientLayout(
   }
   const run = await readPreparedE2ERun(dirname(clientRoot));
   const expectedProfile = join(run.root, clientName, "user-data");
-  const expectedHome = join(run.root, clientName, "home");
   const expectedVault = join(run.root, clientName, "vault");
   if (!pathsEqual(profile, expectedProfile) || !pathsEqual(vault, expectedVault)) {
     throw new Error("Prepared E2E client paths do not match their run manifest");
   }
   await assertNoSymlinkSegments(run.root, profile, "Prepared E2E profile");
   await assertNoSymlinkSegments(run.root, vault, "Prepared E2E vault");
-  const homePath = await canonicalExistingPath(
-    expectedHome,
-    "Prepared E2E home",
-    "directory",
-  );
-  await assertNoSymlinkSegments(run.root, homePath, "Prepared E2E home");
-  if (((await stat(homePath)).mode & 0o777) !== 0o700) {
-    throw new Error("Prepared E2E home must use mode 0700");
-  }
-  return { run, clientRoot, clientName, homePath };
+  return { run, clientRoot, clientName };
 }
 
 export async function readClientLaunchIdentity(
@@ -109,7 +107,7 @@ export async function readClientLaunchIdentity(
 export function assertClientLaunchIdentity(
   value: unknown,
 ): asserts value is ClientLaunchIdentity {
-  if (!isRecord(value) || value.schemaVersion !== 3) {
+  if (!isRecord(value) || value.schemaVersion !== 4) {
     throw new Error("Unsupported client launch identity schema");
   }
   for (const field of [
@@ -128,7 +126,9 @@ export function assertClientLaunchIdentity(
     "appBundlePath",
     "adapterPath",
     "profilePath",
-    "homePath",
+    "blackglassHomePath",
+    "cliSocketPath",
+    "nativeHomePath",
     "vaultPath",
     "tlsMetadataPath",
   ] as const) {
@@ -157,6 +157,20 @@ export function assertClientLaunchIdentity(
     !value.debugTargetUrl.includes("index.html") ||
     typeof value.tlsSpkiSha256Base64 !== "string" ||
     !/^[A-Za-z0-9+/]{43}=$/u.test(value.tlsSpkiSha256Base64) ||
+    value.blackglassHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+    value.blackglassHomeMode !== 0o700 ||
+    value.blackglassHomeCanonical !== true ||
+    value.cliSocketPath !==
+      join(value.blackglassHomePath as string, BRIDGE_CLI_SOCKET_NAME) ||
+    value.nativeHomeEnvironmentPreserved !== true ||
+    !/^\/private\/tmp\/blackglass-client-[A-Za-z0-9]{6}\/h$/u.test(
+      value.blackglassHomePath as string,
+    ) ||
+    Buffer.byteLength(
+      join(value.blackglassHomePath as string, ".blackglass-b.sock"),
+      "utf8",
+    ) > 103 ||
+    value.nativeHomePath === value.blackglassHomePath ||
     !isRecord(value.appArtifact)
   ) {
     throw new Error("Client launch identity process or artifact binding is invalid");
@@ -182,11 +196,33 @@ export async function verifyLiveClientLaunchBinding(
     identity.runManifestSha256 !== run.manifestSha256 ||
     identity.releaseManifestSha256 !== run.manifest.releaseManifestSha256 ||
     identity.adapterSha256 !== run.manifest.compatibilityAsarSha256 ||
-    identity.homePath !== layout.homePath ||
+    identity.blackglassHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+    identity.nativeHomeEnvironmentPreserved !== true ||
     identity.tlsMetadataPath !== join(run.root, "tls-metadata.json") ||
     ((await stat(identityPath)).mode & 0o777) !== 0o600
   ) {
     throw new Error("Client launch identity is not bound to its prepared run");
+  }
+  const runtimeRoot = dirname(identity.blackglassHomePath);
+  const [runtimeRootStat, runtimeHomeStat, cliSocketStat] = await Promise.all([
+    lstat(runtimeRoot),
+    lstat(identity.blackglassHomePath),
+    lstat(identity.cliSocketPath),
+  ]);
+  if (
+    !runtimeRootStat.isDirectory() ||
+    runtimeRootStat.isSymbolicLink() ||
+    (runtimeRootStat.mode & 0o777) !== 0o700 ||
+    runtimeRootStat.uid !== process.getuid!() ||
+    !runtimeHomeStat.isDirectory() ||
+    runtimeHomeStat.isSymbolicLink() ||
+    (runtimeHomeStat.mode & 0o777) !== identity.blackglassHomeMode ||
+    runtimeHomeStat.uid !== process.getuid!() ||
+    await realpath(identity.blackglassHomePath) !== identity.blackglassHomePath ||
+    !cliSocketStat.isSocket() ||
+    await pathExists(join(identity.blackglassHomePath, ".obsidian-cli.sock"))
+  ) {
+    throw new Error("Live client BLACKGLASS_HOME or CLI socket is unsafe");
   }
   const tls = await readVerifiedE2ETls(run.root, identity.tlsMetadataPath);
   if (
@@ -258,6 +294,17 @@ export async function verifyLiveClientLaunchBinding(
     throw new Error("Live renderer target does not match the client launch identity");
   }
   const target = renderers[0]!;
+  if (typeof target.webSocketDebuggerUrl !== "string") {
+    throw new Error("Live renderer target has no DevTools WebSocket endpoint");
+  }
+  const runtimeHome = await readRendererRuntimeHome(target.webSocketDebuggerUrl);
+  if (
+    runtimeHome.nativeHomePath !== identity.nativeHomePath ||
+    runtimeHome.blackglassHomePath !== identity.blackglassHomePath ||
+    runtimeHome.nativeHomePath === runtimeHome.blackglassHomePath
+  ) {
+    throw new Error("Live renderer runtime home split does not match its identity");
+  }
   return {
     identityPath,
     identitySha256: sha256(identityBytes),
@@ -274,6 +321,62 @@ export async function verifyLiveClientLaunchBinding(
         : {}),
     },
   };
+}
+
+async function readRendererRuntimeHome(webSocketDebuggerUrl: string): Promise<{
+  nativeHomePath: string;
+  blackglassHomePath: string;
+}> {
+  const socket = new WebSocket(webSocketDebuggerUrl);
+  return await new Promise((resolveRuntime, rejectRuntime) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      finish(undefined, new Error("Timed out reading live renderer environment"));
+    }, 5_000);
+    const finish = (
+      value?: { nativeHomePath: string; blackglassHomePath: string },
+      error?: Error,
+    ) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.close();
+      if (error) rejectRuntime(error);
+      else resolveRuntime(value!);
+    };
+    socket.addEventListener("open", () => {
+      socket.send(JSON.stringify({
+        id: 1,
+        method: "Runtime.evaluate",
+        params: {
+          expression:
+            "({nativeHomePath:process.env.HOME,blackglassHomePath:process.env.BLACKGLASS_HOME})",
+          returnByValue: true,
+        },
+      }));
+    }, { once: true });
+    socket.addEventListener("message", (event) => {
+      const message = JSON.parse(String(event.data)) as any;
+      if (message.id !== 1) return;
+      const value = message.result?.result?.value;
+      if (
+        message.error ||
+        message.result?.exceptionDetails ||
+        typeof value?.nativeHomePath !== "string" ||
+        typeof value?.blackglassHomePath !== "string"
+      ) {
+        finish(undefined, new Error("Live renderer environment is unavailable"));
+        return;
+      }
+      finish({
+        nativeHomePath: value.nativeHomePath,
+        blackglassHomePath: value.blackglassHomePath,
+      });
+    });
+    socket.addEventListener("error", () => {
+      finish(undefined, new Error("Failed to inspect live renderer environment"));
+    }, { once: true });
+  });
 }
 
 function listenerOwner(port: number): number {

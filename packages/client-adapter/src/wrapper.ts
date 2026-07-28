@@ -4,21 +4,28 @@ import {
   asarHeaderSha256,
   replacePackedAsarEntry,
 } from "../../../tools/asar";
+import { BLACKGLASS_HOME_ENVIRONMENT } from "./runtime-home";
 
-export const WRAPPER_PATCH_FORMAT_VERSION = 3;
+export const WRAPPER_PATCH_FORMAT_VERSION = 4;
 export const WRAPPER_INCISION_COUNT = 3;
 export const WRAPPER_PROFILE_MODE = 0o700;
 
 const PROFILE_PATH_START = `let currentBaseVersion = app.getVersion();
 let currentPackageVersion = currentBaseVersion;
 let dataPath = app.getPath('userData');`;
-const PROFILE_PATH_END = `stdout.on('error', function(e) {
-		// \`write\` failed. Do nothing...
-	});`;
-const PROFILE_PATH_SPAN_SHA256 =
-  "1710f7c386568d09f00721ea42f35cfd952f4ab41870db028dd5a464d32c0068";
+const PROFILE_PATH_END = `	fn.end = function () {
+		fs.closeSync(fileout);
+	};
 
-const PROFILE_PATH_REPLACEMENT = `let H=process.env.HOME,dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')||H?.[0]==='/'&&H+'/Library/Application Support/Blackglass Bridge');
+	return fn;
+}`;
+const PROFILE_PATH_SPAN_SHA256 =
+  "e3136fcfce4c5cc87edafb0d211ccc729010be525e77b63684a0a05a9023c369";
+
+const PROFILE_PATH_SAFETY_PRELUDE = `let B=process.env.${BLACKGLASS_HOME_ENVIRONMENT},S=B&&fs.statSync(B);
+if(B&&(B[0]!=='/'||fs.realpathSync(B)!==B||!S.isDirectory()||(S.mode&511)!==448||S.uid!==process.getuid()))throw Error('Unsafe home');
+let H=B||process.env.HOME,dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')||H?.[0]==='/'&&H+'/Library/Application Support/Blackglass Bridge');`;
+const PROFILE_PATH_REPLACEMENT = `${PROFILE_PATH_SAFETY_PRELUDE}
 fs.mkdirSync(dataPath,{recursive:true,mode:448});
 if(fs.realpathSync(dataPath)!==dataPath)throw Error('Unsafe path');
 fs.chmodSync(dataPath,448);
@@ -26,7 +33,7 @@ app.setPath('userData',dataPath);
 app.setPath('sessionData',dataPath);
 let currentBaseVersion=app.getVersion(),currentPackageVersion=currentBaseVersion;
 let stamp=()=>new Date().toISOString().replace('T',' ').slice(0,19);
-function logger(l){let fileout=fs.openSync(l,'a'),stdout=process.stdout;stdout.on('error',()=>{})`;
+function logger(l){let f=fs.openSync(l,'a'),s=process.stdout;s.on('error',()=>{});let n=function(){let d=stamp()+' '+util.format.apply(null,arguments)+os.EOL;try{fs.writeSync(f,d);if(!silence)s.write(d)}catch{}};n.end=()=>fs.closeSync(f);return n}`;
 
 const UPDATER_QUEUE_ANCHOR = `let queueUpdate = (manual) => {
 	let fn = () => update(manual);
@@ -43,8 +50,6 @@ const PROFILE_MARKER = "app.setPath('userData',dataPath);";
 const SESSION_MARKER = "app.setPath('sessionData',dataPath);";
 const EXPLICIT_PROFILE_MARKER =
   "app.commandLine.getSwitchValue('user-data-dir')";
-const ENVIRONMENT_HOME_MARKER =
-  "let H=process.env.HOME,dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')||H?.[0]==='/'&&H+'/Library/Application Support/Blackglass Bridge');";
 const PROFILE_MODE_MARKER = "fs.chmodSync(dataPath,448);";
 const PROFILE_CANONICAL_MARKER = "fs.realpathSync(dataPath)!==dataPath";
 const UPDATER_DISABLED_MARKER = UPDATER_QUEUE_REPLACEMENT;
@@ -61,7 +66,9 @@ export interface WrapperPatchReport {
   profileMode: typeof WRAPPER_PROFILE_MODE;
   profilePathCanonicalAtSetup: true;
   explicitUserDataDirHonored: true;
-  defaultProfileUsesEnvironmentHome: true;
+  profileHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
+  dedicatedHomeValidated: true;
+  nativeHomeFallbackPreserved: true;
   upstreamUpdatesDisabled: true;
   embeddedRendererOnly: true;
   upstreamSha256: string;
@@ -89,7 +96,9 @@ export function patchMacOSWrapperAsar(
       profileMode: WRAPPER_PROFILE_MODE,
       profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
-      defaultProfileUsesEnvironmentHome: true,
+      profileHomeEnvironment: BLACKGLASS_HOME_ENVIRONMENT,
+      dedicatedHomeValidated: true,
+      nativeHomeFallbackPreserved: true,
       upstreamUpdatesDisabled: true,
       embeddedRendererOnly: true,
       upstreamSha256: sha256(upstream),
@@ -180,7 +189,9 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
   profileMode: typeof WRAPPER_PROFILE_MODE;
   profilePathCanonicalAtSetup: true;
   explicitUserDataDirHonored: true;
-  defaultProfileUsesEnvironmentHome: true;
+  profileHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
+  dedicatedHomeValidated: true;
+  nativeHomeFallbackPreserved: true;
   upstreamUpdatesDisabled: true;
   embeddedRendererOnly: true;
 } {
@@ -199,8 +210,8 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
   );
   requireExactlyOnce(
     main,
-    ENVIRONMENT_HOME_MARKER,
-    "patched wrapper environment HOME marker",
+    PROFILE_PATH_SAFETY_PRELUDE,
+    "patched wrapper dedicated-home safety prelude",
   );
   requireExactlyOnce(main, PROFILE_MODE_MARKER, "patched wrapper profile mode marker");
   requireExactlyOnce(
@@ -223,7 +234,9 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
     profileMode: WRAPPER_PROFILE_MODE,
     profilePathCanonicalAtSetup: true,
     explicitUserDataDirHonored: true,
-    defaultProfileUsesEnvironmentHome: true,
+    profileHomeEnvironment: BLACKGLASS_HOME_ENVIRONMENT,
+    dedicatedHomeValidated: true,
+    nativeHomeFallbackPreserved: true,
     upstreamUpdatesDisabled: true,
     embeddedRendererOnly: true,
   };
@@ -231,7 +244,9 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
 
 function paddedReplacement(value: string, length: number, label: string): string {
   if (value.length > length) {
-    throw new Error(`Configured wrapper ${label} replacement is too long`);
+    throw new Error(
+      `Configured wrapper ${label} replacement is too long (${value.length} > ${length})`,
+    );
   }
   return value.padEnd(length, " ");
 }

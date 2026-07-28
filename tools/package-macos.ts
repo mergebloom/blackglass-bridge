@@ -423,8 +423,12 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
           generatedWrapper.report.profilePathCanonicalAtSetup,
         explicitUserDataDirHonored:
           generatedWrapper.report.explicitUserDataDirHonored,
-        defaultProfileUsesEnvironmentHome:
-          generatedWrapper.report.defaultProfileUsesEnvironmentHome,
+        profileHomeEnvironment:
+          generatedWrapper.report.profileHomeEnvironment,
+        dedicatedHomeValidated:
+          generatedWrapper.report.dedicatedHomeValidated,
+        nativeHomeFallbackPreserved:
+          generatedWrapper.report.nativeHomeFallbackPreserved,
         upstreamUpdatesDisabled:
           generatedWrapper.report.upstreamUpdatesDisabled,
         embeddedRendererOnly: generatedWrapper.report.embeddedRendererOnly,

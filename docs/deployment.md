@@ -60,18 +60,30 @@ bun run client:launch -- \
   /path/to/generated-compatibility.asar \
   /path/to/dedicated-profile \
   /path/to/vault \
-  --app '/path/to/Blackglass Bridge.app'
+  --app '/path/to/Blackglass Bridge.app' \
+  --blackglass-home /private/tmp/blackglass-runtime
 ```
 
-The packaged wrapper itself selects `$HOME/Library/Application Support/Blackglass
-Bridge`, so ordinary launches retain the standard macOS location while a
-LaunchServices-injected `HOME` receives a genuinely isolated default profile.
-It disables its upstream package updater and refuses downloaded renderer
-overrides, including Finder launches. An explicit `--user-data-dir` remains
-available for disposable isolated test clients. The launcher requires existing
-profile and vault directories and refuses Obsidian's normal profile. The
-embedded main process also uses a dedicated `.blackglass-b.sock` CLI socket
-so it can coexist with normal Obsidian without unlinking Obsidian's endpoint.
+The packaged wrapper selects
+`${BLACKGLASS_HOME:-$HOME}/Library/Application Support/Blackglass Bridge`, so
+ordinary Finder launches retain the standard macOS location while the launcher
+can supply a distinct private, canonical, owner-only `BLACKGLASS_HOME`. Create that
+directory at mode `0700`; its full CLI-socket path must fit macOS's 103-byte
+Unix-socket limit. Use the same path as `HOME` only for packaged CLI subprocesses.
+The GUI's native `HOME`
+remains unchanged so Electron uses the login Keychain normally. It disables its
+upstream package updater and refuses downloaded renderer overrides, including
+Finder launches. An explicit `--user-data-dir` remains available for disposable
+isolated test clients. The launcher requires existing profile and vault
+directories and refuses Obsidian's normal profile. The embedded main process
+also uses a dedicated `.blackglass-b.sock` under `BLACKGLASS_HOME`, so it can
+coexist with normal Obsidian without unlinking Obsidian's endpoint. Only the
+packaged CLI subprocess receives that path as `HOME`, which is the interface
+the upstream CLI binary expects.
+If `--blackglass-home` is omitted, the launcher uses the login-home socket and
+therefore refuses to start while any other instance of the same generated app
+is running. Supplying distinct validated runtime homes permits isolated
+multi-profile test instances.
 Endpoint inputs must be canonical: no trailing slash, case normalization,
 default port spelling, path, credentials, query, or fragment.
 For every upstream release:

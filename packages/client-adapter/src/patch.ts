@@ -4,11 +4,19 @@ import {
   BRIDGE_CLI_SOCKET_NAME,
   UPSTREAM_CLI_SOCKET_NAME,
 } from "../../../tools/cli-binary";
+import { BLACKGLASS_HOME_ENVIRONMENT } from "./runtime-home";
 
 const CONTROL_ORIGIN_EXPRESSION =
   '"https://"+[String.fromCharCode(97,112,105),"obsidian","md"].join(".")';
 const DATA_HOST_CONDITION =
   '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h';
+const UPSTREAM_CLI_RUNTIME_ROOT =
+  "!U&&process.env.XDG_RUNTIME_DIR||ce.homedir()";
+const BRIDGE_CLI_RUNTIME_ROOT =
+  `process.env.${BLACKGLASS_HOME_ENVIRONMENT}||ce.homedir()`;
+const BRIDGE_CLI_SOCKET_CONSTRUCTION =
+  `D.join(${BRIDGE_CLI_RUNTIME_ROOT.padEnd(UPSTREAM_CLI_RUNTIME_ROOT.length, " ")},` +
+  `"${BRIDGE_CLI_SOCKET_NAME}")`;
 export { BRIDGE_CLI_SOCKET_NAME } from "../../../tools/cli-binary";
 const UPSTREAM_CLI_REGISTRATION =
   'let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";';
@@ -17,8 +25,8 @@ const BRIDGE_CLI_REGISTRATION =
 export const BRIDGE_CLI_COMMAND_NAME = "blackglass";
 export const BRIDGE_CLI_COMMAND_PATH = "/usr/local/bin/blackglass";
 
-export const RENDERER_PATCH_FORMAT_VERSION = 5;
-export const RENDERER_INCISION_COUNT = 5;
+export const RENDERER_PATCH_FORMAT_VERSION = 6;
+export const RENDERER_INCISION_COUNT = 6;
 
 export interface AdapterOptions {
   controlOrigin: string;
@@ -33,6 +41,7 @@ export interface AdapterReport {
   cliSocketName: typeof BRIDGE_CLI_SOCKET_NAME;
   cliCommandName: typeof BRIDGE_CLI_COMMAND_NAME;
   cliCommandPath: typeof BRIDGE_CLI_COMMAND_PATH;
+  runtimeHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
   upstreamSha256: string;
   patchedSha256: string;
   rendererBeforeSha256: string;
@@ -118,6 +127,16 @@ export function patchMainProcess(main: Buffer): Buffer {
   );
   patched = replaceExactlyOnce(
     patched,
+    UPSTREAM_CLI_RUNTIME_ROOT,
+    paddedSource(
+      BRIDGE_CLI_RUNTIME_ROOT,
+      UPSTREAM_CLI_RUNTIME_ROOT.length,
+      "CLI runtime home",
+    ),
+    "CLI runtime home",
+  );
+  patched = replaceExactlyOnce(
+    patched,
     UPSTREAM_CLI_REGISTRATION,
     paddedSource(
       BRIDGE_CLI_REGISTRATION,
@@ -130,7 +149,43 @@ export function patchMainProcess(main: Buffer): Buffer {
   if (output.length !== main.length) {
     throw new Error("Main-process patch unexpectedly changed the byte length");
   }
+  inspectPatchedMainProcess(output);
   return output;
+}
+
+export function inspectPatchedMainProcess(main: Buffer): {
+  cliSocketName: typeof BRIDGE_CLI_SOCKET_NAME;
+  runtimeHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
+  cliCommandName: typeof BRIDGE_CLI_COMMAND_NAME;
+  runtimeRootValidated: true;
+} {
+  const source = main.toString("utf8");
+  try {
+    new Function(source);
+  } catch (error) {
+    throw new Error(`Patched renderer main.js is not valid JavaScript: ${String(error)}`);
+  }
+  requireExactlyOnce(source, BRIDGE_CLI_SOCKET_NAME, "patched CLI socket name");
+  requireExactlyOnce(source, BRIDGE_CLI_RUNTIME_ROOT, "patched CLI runtime root");
+  requireExactlyOnce(
+    source,
+    BRIDGE_CLI_SOCKET_CONSTRUCTION,
+    "patched CLI socket construction",
+  );
+  requireExactlyOnce(source, BRIDGE_CLI_REGISTRATION, "patched CLI registration");
+  if (
+    source.includes(UPSTREAM_CLI_SOCKET_NAME) ||
+    source.includes(UPSTREAM_CLI_RUNTIME_ROOT) ||
+    source.includes(UPSTREAM_CLI_REGISTRATION)
+  ) {
+    throw new Error("Patched renderer main.js retains an upstream CLI anchor");
+  }
+  return {
+    cliSocketName: BRIDGE_CLI_SOCKET_NAME,
+    runtimeHomeEnvironment: BLACKGLASS_HOME_ENVIRONMENT,
+    cliCommandName: BRIDGE_CLI_COMMAND_NAME,
+    runtimeRootValidated: true,
+  };
 }
 
 export function patchAsar(
@@ -172,6 +227,7 @@ export function patchAsar(
       cliSocketName: BRIDGE_CLI_SOCKET_NAME,
       cliCommandName: BRIDGE_CLI_COMMAND_NAME,
       cliCommandPath: BRIDGE_CLI_COMMAND_PATH,
+      runtimeHomeEnvironment: BLACKGLASS_HOME_ENVIRONMENT,
       upstreamSha256: sha256(upstream),
       patchedSha256: sha256(output),
       rendererBeforeSha256: sha256(rendererBefore),
@@ -381,6 +437,13 @@ function replaceExactlyOnce(
     throw new Error(`${label} must match exactly once`);
   }
   return input.slice(0, first) + replacement + input.slice(first + needle.length);
+}
+
+function requireExactlyOnce(input: string, needle: string, label: string): void {
+  const first = input.indexOf(needle);
+  if (first === -1 || input.indexOf(needle, first + needle.length) !== -1) {
+    throw new Error(`${label} must appear exactly once`);
+  }
 }
 
 function sha256(value: Uint8Array): string {

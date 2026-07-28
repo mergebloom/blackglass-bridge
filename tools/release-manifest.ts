@@ -14,6 +14,7 @@ import {
   WRAPPER_PATCH_FORMAT_VERSION,
   type WrapperPatchReport,
 } from "../packages/client-adapter/src/wrapper";
+import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import {
   BRIDGE_CLI_SOCKET_NAME,
   CLI_BINARY_INCISION_COUNT,
@@ -31,7 +32,7 @@ import {
 } from "./tree-identity";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 
-export const BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION = 5;
+export const BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION = 6;
 
 export interface BridgeReleaseManifest {
   schemaVersion: typeof BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION;
@@ -195,20 +196,28 @@ export function assertBridgeReleaseManifest(
     value.renderer.cliSocketName !== BRIDGE_CLI_SOCKET_NAME ||
     value.renderer.cliCommandName !== BRIDGE_CLI_COMMAND_NAME ||
     value.renderer.cliCommandPath !== BRIDGE_CLI_COMMAND_PATH ||
+    value.renderer.runtimeHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
     value.wrapper.patchFormatVersion !== WRAPPER_PATCH_FORMAT_VERSION ||
     value.wrapper.incisionCount !== WRAPPER_INCISION_COUNT ||
+    value.wrapper.profileHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+    value.wrapper.dedicatedHomeValidated !== true ||
+    value.wrapper.nativeHomeFallbackPreserved !== true ||
     value.cli.patchFormatVersion !== CLI_BINARY_PATCH_FORMAT_VERSION ||
     value.cli.incisionCount !== CLI_BINARY_INCISION_COUNT ||
     value.cli.socketName !== BRIDGE_CLI_SOCKET_NAME ||
     value.renderer.upstreamSha256 === value.renderer.patchedSha256 ||
     value.wrapper.upstreamSha256 === value.wrapper.patchedSha256 ||
+    value.cli.upstreamSha256 === value.cli.patchedSha256 ||
     value.source.rendererAsarSha256 !== value.renderer.upstreamSha256 ||
     value.source.wrapperAsarSha256 !== value.wrapper.upstreamSha256 ||
     value.source.cliExecutableSha256 !== value.cli.upstreamSha256 ||
     value.macOS.embeddedAsarSha256 !== value.renderer.patchedSha256 ||
+    value.macOS.rendererRuntimeHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+    value.macOS.rendererCliRuntimeRootValidated !== true ||
     value.macOS.embeddedWrapperAsarSha256 !== value.wrapper.patchedSha256 ||
     value.macOS.embeddedWrapperHeaderSha256 !== value.wrapper.patchedHeaderSha256 ||
-    value.macOS.schemaVersion !== 5 ||
+    value.macOS.cliExecutableSha256 !== value.cli.patchedSha256 ||
+    value.macOS.schemaVersion !== 6 ||
     value.macOS.applicationTreeSha256 !== value.macOS.applicationTreeIdentity.sha256
   ) {
     throw new Error("Bridge release manifest artifact bindings are inconsistent");
@@ -221,20 +230,26 @@ export function assertBridgeReleaseManifest(
     value.macOS.cliExecutableName !== "obsidian-cli" ||
     value.macOS.cliSocketName !== BRIDGE_CLI_SOCKET_NAME ||
     value.macOS.cliSocketOccurrences !== CLI_BINARY_INCISION_COUNT ||
+    value.macOS.rendererRuntimeHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+    value.macOS.rendererCliRuntimeRootValidated !== true ||
     !isSha256(value.macOS.cliExecutableSha256) ||
     value.macOS.version !== value.rendererVersion ||
     value.macOS.profileDirectory !== "Blackglass Bridge" ||
     value.macOS.profileMode !== 448 ||
     value.macOS.profilePathCanonicalAtSetup !== true ||
     value.macOS.explicitUserDataDirHonored !== true ||
-    value.macOS.defaultProfileUsesEnvironmentHome !== true ||
+    value.macOS.profileHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+    value.macOS.dedicatedHomeValidated !== true ||
+    value.macOS.nativeHomeFallbackPreserved !== true ||
     value.macOS.upstreamUpdatesDisabled !== true ||
     value.macOS.embeddedRendererOnly !== true ||
     value.wrapper.profileDirectory !== "Blackglass Bridge" ||
     value.wrapper.profileMode !== 448 ||
     value.wrapper.profilePathCanonicalAtSetup !== true ||
     value.wrapper.explicitUserDataDirHonored !== true ||
-    value.wrapper.defaultProfileUsesEnvironmentHome !== true ||
+    value.wrapper.profileHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+    value.wrapper.dedicatedHomeValidated !== true ||
+    value.wrapper.nativeHomeFallbackPreserved !== true ||
     value.wrapper.upstreamUpdatesDisabled !== true ||
     value.wrapper.embeddedRendererOnly !== true ||
     !Array.isArray(value.macOS.registeredUrlSchemes) ||

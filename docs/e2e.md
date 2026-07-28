@@ -7,15 +7,16 @@ the project E2E area.
 
 ## What must pass
 
-- the exact official DMG, reviewed compatibility baseline, five-incision client ASAR,
+- the exact official DMG, reviewed compatibility baseline, six-incision client ASAR,
   copied app, release manifest, and Rust server binary all match by SHA-256,
   with the server binary also reporting its exact source revision;
 - two separately identified live app processes use the intended renderer,
   profile, vault, DevTools target, TLS certificate, and resolver rules;
-- a LaunchServices launch with a genuinely empty default profile opens the
-  native `starter.html` flow and completes `/user/signin` and `/vault/list` at
-  the configured control origin without registering a local vault, while the
-  created profile is observed as a real mode-`0700` directory;
+- a LaunchServices launch with a genuinely empty profile under a private
+  `BLACKGLASS_HOME` preserves native `HOME`, opens the native `starter.html`
+  flow, and completes `/user/signin` and `/vault/list` at the configured control
+  origin without registering a local vault, while the created profile is
+  observed as a real mode-`0700` directory;
 - CDP traces started before login show successful POSTs to the configured HTTPS
   control origin and a `101` handshake to the configured WSS data host, with no
   loopback fallback;
@@ -60,17 +61,22 @@ bun run e2e:smoke:macos -- .data/e2e/<run>
 ```
 
 The smoke reserves debugging port `9320`, launches the exact prepared app via
-LaunchServices with an empty disposable default profile, authenticates through
-the starter renderer using the run's owner-only credentials, verifies a
-successful vault list through the run's TLS route, checks for crash reports and
-profile leakage, forwards a packaged-CLI probe through the dedicated socket,
-and terminates the app through its graceful browser shutdown path.
+LaunchServices with an empty disposable `BLACKGLASS_HOME`, proves the GUI kept
+its native login `HOME`, authenticates through the starter renderer using the
+run's owner-only credentials, verifies a successful vault list through the
+run's TLS route, checks for crash reports and profile leakage, forwards a
+packaged-CLI probe with `HOME` set only for that subprocess, and terminates the
+exact generated app by PID through `NSRunningApplication.terminate()`.
 
 Launch client A and B from their prepared profiles with distinct debug ports,
 the run's `tls-metadata.json`, and identity outputs named
 `client-a-launch.json` and `client-b-launch.json`. Start both network captures
 before using the account UI. They remain attached across the server restart and
 post-restart transfers until explicitly finalized:
+
+Each launcher holds an owner-only per-client lease for its full lifetime. The
+source-loss reset acquires the mutually exclusive run lock before staging or
+renaming either profile, so a reset and a relaunch cannot race.
 
 ```sh
 bun run client:launch -- \
