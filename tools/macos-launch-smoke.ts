@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { MacOSArtifact } from "./macos-artifact";
 import { assertPathWithin, pathsEqual } from "./path-safety";
 
-export const FINDER_LAUNCH_SMOKE_SCHEMA_VERSION = 4;
+export const FINDER_LAUNCH_SMOKE_SCHEMA_VERSION = 5;
 export const FINDER_LAUNCH_MINIMUM_HEALTH_MS = 8_000;
 export const FINDER_LAUNCH_DEBUG_PORT = 9_320;
 
@@ -25,9 +25,14 @@ export interface FinderLaunchSmokeEvidence {
   chromiumHostResolverRules: string;
   appPath: string;
   executablePath: string;
+  launchHomePath: string;
+  launchHomeRootMode: 448;
+  launchHomeSameDeviceAsArchive: true;
+  launchHomeRelocatedToRun: true;
+  launchHomeRootRemoved: true;
   cliExecutablePath: string;
   cliExecutableSha256: string;
-  cliSocketPath: string;
+  cliSocketAddress: string;
   cliSocketName: string;
   homePath: string;
   profilePath: string;
@@ -47,8 +52,10 @@ export interface FinderLaunchSmokeEvidence {
   profileMode: 448;
   profileRealDirectoryObserved: true;
   profileActivityObserved: true;
+  profileSingletonArtifactsRemoved: true;
   environmentHomeObserved: true;
   cliSocketObserved: true;
+  cliSocketRemoved: true;
   upstreamCliSocketAbsent: true;
   cliForwardedCommandSucceeded: true;
   cliForwardedResponse: "Command line interface is not enabled. Please turn it on in Settings > General > Advanced.";
@@ -148,10 +155,23 @@ export function assertFinderLaunchSmokeEvidence(
   const layout = finderLaunchSmokeLayout(options.root);
   const executablePath = join(options.appPath, "Contents/MacOS/Obsidian");
   const cliExecutablePath = join(options.appPath, "Contents/MacOS/obsidian-cli");
-  const cliSocketPath = join(layout.homePath, options.artifact.cliSocketName);
+  if (
+    typeof value.launchHomePath !== "string" ||
+    !/^\/private\/tmp\/blackglass-launch-[A-Za-z0-9]{6}\/h$/u.test(
+      value.launchHomePath,
+    ) ||
+    Buffer.byteLength(join(value.launchHomePath, options.artifact.cliSocketName), "utf8") >
+      103 ||
+    value.launchHomeRootMode !== 448 ||
+    value.launchHomeSameDeviceAsArchive !== true ||
+    value.launchHomeRelocatedToRun !== true ||
+    value.launchHomeRootRemoved !== true
+  ) {
+    throw new Error("Finder launch smoke has an invalid short canonical HOME");
+  }
   const expectedCommand = finderLaunchCommand({
     appPath: options.appPath,
-    homePath: layout.homePath,
+    homePath: value.launchHomePath,
     stdoutPath: layout.stdoutPath,
     stderrPath: layout.stderrPath,
     chromiumHostResolverRules: options.chromiumHostResolverRules,
@@ -180,8 +200,7 @@ export function assertFinderLaunchSmokeEvidence(
     typeof value.cliExecutablePath !== "string" ||
     !pathsEqual(value.cliExecutablePath, cliExecutablePath) ||
     value.cliExecutableSha256 !== options.artifact.cliExecutableSha256 ||
-    typeof value.cliSocketPath !== "string" ||
-    !pathsEqual(value.cliSocketPath, cliSocketPath) ||
+    value.cliSocketAddress !== join(value.launchHomePath, options.artifact.cliSocketName) ||
     value.cliSocketName !== options.artifact.cliSocketName ||
     typeof value.homePath !== "string" ||
     !pathsEqual(value.homePath, layout.homePath) ||
@@ -226,8 +245,10 @@ export function assertFinderLaunchSmokeEvidence(
     value.profileMode !== 448 ||
     value.profileRealDirectoryObserved !== true ||
     value.profileActivityObserved !== true ||
+    value.profileSingletonArtifactsRemoved !== true ||
     value.environmentHomeObserved !== true ||
     value.cliSocketObserved !== true ||
+    value.cliSocketRemoved !== true ||
     value.upstreamCliSocketAbsent !== true ||
     value.cliForwardedCommandSucceeded !== true ||
     value.cliForwardedResponse !==

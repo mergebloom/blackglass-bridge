@@ -83,3 +83,7 @@ it; the tooling tree at the tag must remain byte-identical.
   global CLI socket, so the two applications cannot unlink each other's CLI
   endpoint. Its registration action installs `/usr/local/bin/blackglass`, never
   the upstream `/usr/local/bin/obsidian` command.
+- The LaunchServices smoke uses a private, short-lived real HOME under
+  `/private/tmp` so the macOS Unix-socket address stays within the platform
+  limit. After shutdown, that HOME is moved into the disposable run so its
+  profile and diagnostics remain available as qualification evidence.

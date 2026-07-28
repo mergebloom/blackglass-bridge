@@ -2,9 +2,12 @@ import { createHash } from "node:crypto";
 import {
   lstat,
   mkdir,
+  mkdtemp,
   readFile,
-  readdir,
   readlink,
+  readdir,
+  rename,
+  rmdir,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -84,16 +87,16 @@ const cliExecutablePath = await canonicalExistingPath(
 );
 
 await mkdir(layout.smokeRoot, { recursive: false, mode: 0o700 });
-await Promise.all([
-  mkdir(layout.homePath, { recursive: true, mode: 0o700 }),
-  mkdir(layout.vaultPath, { recursive: true, mode: 0o700 }),
-]);
+await mkdir(layout.vaultPath, { recursive: true, mode: 0o700 });
 await Promise.all([
   writeFile(layout.stdoutPath, "", { flag: "wx", mode: 0o600 }),
   writeFile(layout.stderrPath, "", { flag: "wx", mode: 0o600 }),
 ]);
 if (await Bun.file(layout.profilePath).exists()) {
   throw new Error("Finder smoke profile must not exist before the no-vault launch");
+}
+if (await pathExists(layout.homePath)) {
+  throw new Error("Finder smoke archived HOME must not exist before launch");
 }
 if ((await readdir(layout.vaultPath)).length !== 0) {
   throw new Error("Finder smoke vault must be empty before launch");
@@ -126,13 +129,6 @@ const realProfileFingerprintsBefore = await Promise.all(
   realProfiles.map(metadataTreeFingerprint),
 );
 const diagnosticBefore = await diagnosticReportSnapshot();
-const launchCommand = finderLaunchCommand({
-  appPath,
-  ...layout,
-  debugPort: FINDER_LAUNCH_DEBUG_PORT,
-  chromiumHostResolverRules: tls.metadata.chromiumHostResolverRules,
-  tlsSpkiSha256Base64: tls.metadata.spkiSha256Base64,
-});
 const baselineProcesses = listProcesses();
 const baselineAppPids = new Set(
   baselineProcesses
@@ -147,13 +143,67 @@ let debugTargetId: string | undefined;
 let debugTargetUrl: string | undefined;
 let starterControlOrigin: string | undefined;
 let starterControlRequests: FinderLaunchSmokeEvidence["starterControlRequests"] | undefined;
-let cliSocketPath: string | undefined;
+let launchHomeRoot: string | undefined;
+let launchHomePath: string | undefined;
+let launchProfilePath: string | undefined;
+let launchCommand: string[] | undefined;
+let launchAttempted = false;
+let cliSocketAddress: string | undefined;
+let cliSocketRemoved = false;
+let profileSingletonArtifactsRemoved = false;
+let launchHomeSameDeviceAsArchive = false;
+let launchHomeRelocatedToRun = false;
+let launchHomeRootRemoved = false;
 let cliForwardedResponse: FinderLaunchSmokeEvidence["cliForwardedResponse"] | undefined;
 let healthyAt: string | undefined;
 let healthyForMs: number | undefined;
+let primarySmokeError: unknown;
+let smokeFailed = false;
 const startedAt = new Date().toISOString();
 const startedAtMs = Date.now();
 try {
+  launchHomeRoot = await mkdtemp("/private/tmp/blackglass-launch-");
+  const launchHomeRootStat = await lstat(launchHomeRoot);
+  if (
+    !launchHomeRootStat.isDirectory() ||
+    launchHomeRootStat.isSymbolicLink() ||
+    (launchHomeRootStat.mode & 0o777) !== 0o700
+  ) {
+    throw new Error("Short LaunchServices HOME root is not a private real directory");
+  }
+  launchHomePath = join(launchHomeRoot, "h");
+  await mkdir(launchHomePath, { recursive: false, mode: 0o700 });
+  const launchHomeStat = await lstat(launchHomePath);
+  if (
+    !launchHomeStat.isDirectory() ||
+    launchHomeStat.isSymbolicLink() ||
+    (launchHomeStat.mode & 0o777) !== 0o700
+  ) {
+    throw new Error("Short LaunchServices HOME is not a private real directory");
+  }
+  const archiveRootStat = await stat(layout.smokeRoot);
+  if (launchHomeRootStat.dev !== archiveRootStat.dev) {
+    throw new Error("Short LaunchServices HOME cannot be moved into the disposable run");
+  }
+  launchHomeSameDeviceAsArchive = true;
+  launchProfilePath = join(
+    launchHomePath,
+    "Library/Application Support/Blackglass Bridge",
+  );
+  cliSocketAddress = join(launchHomePath, currentClient.cliSocketName);
+  if (Buffer.byteLength(cliSocketAddress, "utf8") > 103) {
+    throw new Error("Packaged CLI socket address exceeds the macOS Unix-socket limit");
+  }
+  launchCommand = finderLaunchCommand({
+    appPath,
+    homePath: launchHomePath,
+    stdoutPath: layout.stdoutPath,
+    stderrPath: layout.stderrPath,
+    debugPort: FINDER_LAUNCH_DEBUG_PORT,
+    chromiumHostResolverRules: tls.metadata.chromiumHostResolverRules,
+    tlsSpkiSha256Base64: tls.metadata.spkiSha256Base64,
+  });
+  launchAttempted = true;
   const opened = Bun.spawnSync(launchCommand, { stdout: "pipe", stderr: "pipe" });
   if (opened.exitCode !== 0) {
     throw new Error(
@@ -195,12 +245,12 @@ try {
     throw new Error("LaunchServices app stayed alive but never created a renderer UI process");
   }
   for (const marker of ["obsidian.log", "id"]) {
-    const path = join(layout.profilePath, marker);
+    const path = join(launchProfilePath, marker);
     if (!(await Bun.file(path).exists()) || !(await lstat(path)).isFile()) {
       throw new Error(`LaunchServices default profile did not create ${marker}`);
     }
   }
-  const profileStat = await lstat(layout.profilePath);
+  const profileStat = await lstat(launchProfilePath);
   if (
     profileStat.isSymbolicLink() ||
     !profileStat.isDirectory() ||
@@ -208,10 +258,10 @@ try {
   ) {
     throw new Error("LaunchServices default profile is not a real mode-0700 directory");
   }
-  if (!processUsesPath(mainPid, layout.profilePath)) {
+  if (!processUsesPath(mainPid, launchProfilePath)) {
     throw new Error("LaunchServices process tree did not open the disposable default profile");
   }
-  if (await registeredVaultCount(layout.profilePath) !== 0) {
+  if (await registeredVaultCount(launchProfilePath) !== 0) {
     throw new Error("No-vault starter smoke unexpectedly registered a local vault");
   }
   if ((await readdir(layout.vaultPath)).length !== 0) {
@@ -219,29 +269,92 @@ try {
   }
   const cliProof = await exercisePackagedCli({
     cliExecutablePath,
-    homePath: layout.homePath,
+    homePath: launchHomePath,
     socketName: currentClient.cliSocketName,
     mainStdoutPath: layout.stdoutPath,
   });
-  cliSocketPath = cliProof.socketPath;
+  if (cliProof.socketAddress !== cliSocketAddress) {
+    throw new Error("Packaged CLI used an unexpected socket address");
+  }
   cliForwardedResponse = cliProof.response;
   healthyAt = new Date().toISOString();
   healthyForMs = Date.now() - startedAtMs;
 } catch (error) {
-  const crashReports = await newDiagnosticReports(diagnosticBefore, appPath);
-  if (crashReports.length > 0) {
-    throw new Error(
-      `${String(error)}; matching macOS crash reports: ${crashReports.map((path) => basename(path)).join(", ")}`,
+  smokeFailed = true;
+  try {
+    const crashReports = await newDiagnosticReports(diagnosticBefore, appPath);
+    primarySmokeError = crashReports.length > 0
+      ? new Error(
+        `${String(error)}; matching macOS crash reports: ${crashReports.map((path) => basename(path)).join(", ")}`,
+      )
+      : error;
+  } catch (diagnosticError) {
+    primarySmokeError = new AggregateError(
+      [asError(error), asError(diagnosticError)],
+      "LaunchServices smoke failed and crash-report inspection also failed",
     );
   }
-  throw error;
 } finally {
-  if (mainPid) {
-    await terminateNewAppProcessTree(
-      appPath,
-      baselineAppPids,
-      FINDER_LAUNCH_DEBUG_PORT,
-    );
+  const cleanupErrors: Error[] = [];
+  try {
+    if (launchAttempted) {
+      await terminateNewAppProcessTree(
+        appPath,
+        baselineAppPids,
+        FINDER_LAUNCH_DEBUG_PORT,
+      );
+    }
+    if (cliSocketAddress) {
+      await assertPathsAbsent(
+        [cliSocketAddress],
+        "Packaged CLI socket remained after graceful shutdown",
+      );
+      cliSocketRemoved = true;
+    }
+    if (launchProfilePath && await pathExists(launchProfilePath)) {
+      await assertPathsAbsent(
+        ["SingletonLock", "SingletonSocket", "SingletonCookie"].map((name) =>
+          join(launchProfilePath!, name)
+        ),
+        "Packaged profile singleton artifact remained after graceful shutdown",
+      );
+      profileSingletonArtifactsRemoved = true;
+    }
+  } catch (cleanupError) {
+    cleanupErrors.push(asError(cleanupError));
+  }
+  try {
+    if (launchHomeRoot) {
+      const survivingProcesses = exactNewAppProcesses(appPath, baselineAppPids);
+      if (survivingProcesses.length > 0) {
+        throw new Error(
+          `Refusing to archive ${launchHomeRoot} while packaged app processes remain: ` +
+            processSummary(survivingProcesses),
+        );
+      }
+      await archiveLaunchHome(
+        launchHomeRoot,
+        launchHomePath,
+        layout.smokeRoot,
+        layout.homePath,
+      );
+      launchHomeRelocatedToRun = true;
+      launchHomeRootRemoved = true;
+    }
+  } catch (cleanupError) {
+    cleanupErrors.push(asError(cleanupError));
+  }
+  if (smokeFailed) {
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [asError(primarySmokeError), ...cleanupErrors],
+        "LaunchServices smoke failed and cleanup also reported errors",
+      );
+    }
+    throw primarySmokeError;
+  }
+  if (cleanupErrors.length > 0) {
+    throw new AggregateError(cleanupErrors, "LaunchServices smoke cleanup failed");
   }
 }
 
@@ -253,7 +366,15 @@ if (
   debugTargetUrl === undefined ||
   starterControlOrigin === undefined ||
   starterControlRequests === undefined ||
-  cliSocketPath === undefined ||
+  launchHomePath === undefined ||
+  launchProfilePath === undefined ||
+  launchCommand === undefined ||
+  cliSocketAddress === undefined ||
+  cliSocketRemoved !== true ||
+  profileSingletonArtifactsRemoved !== true ||
+  launchHomeSameDeviceAsArchive !== true ||
+  launchHomeRelocatedToRun !== true ||
+  launchHomeRootRemoved !== true ||
   cliForwardedResponse === undefined ||
   healthyAt === undefined ||
   healthyForMs === undefined
@@ -298,9 +419,14 @@ const evidence: FinderLaunchSmokeEvidence = {
   chromiumHostResolverRules: tls.metadata.chromiumHostResolverRules,
   appPath,
   executablePath,
+  launchHomePath,
+  launchHomeRootMode: 0o700,
+  launchHomeSameDeviceAsArchive: true,
+  launchHomeRelocatedToRun: true,
+  launchHomeRootRemoved: true,
   cliExecutablePath,
   cliExecutableSha256: artifact.cliExecutableSha256,
-  cliSocketPath,
+  cliSocketAddress,
   cliSocketName: artifact.cliSocketName,
   homePath: layout.homePath,
   profilePath: layout.profilePath,
@@ -320,8 +446,10 @@ const evidence: FinderLaunchSmokeEvidence = {
   profileMode: 0o700,
   profileRealDirectoryObserved: true,
   profileActivityObserved: true,
+  profileSingletonArtifactsRemoved: true,
   environmentHomeObserved: true,
   cliSocketObserved: true,
+  cliSocketRemoved: true,
   upstreamCliSocketAbsent: true,
   cliForwardedCommandSucceeded: true,
   cliForwardedResponse,
@@ -366,13 +494,13 @@ async function exercisePackagedCli(input: {
   socketName: string;
   mainStdoutPath: string;
 }): Promise<{
-  socketPath: string;
+  socketAddress: string;
   response: "Command line interface is not enabled. Please turn it on in Settings > General > Advanced.";
 }> {
-  const socketPath = join(input.homePath, input.socketName);
-  const socketStat = await lstat(socketPath).catch(() => undefined);
+  const socketAddress = join(input.homePath, input.socketName);
+  const socketStat = await lstat(socketAddress).catch(() => undefined);
   if (!socketStat?.isSocket()) {
-    throw new Error(`Packaged main process did not create CLI socket ${socketPath}`);
+    throw new Error(`Packaged main process did not create CLI socket ${socketAddress}`);
   }
   const upstreamSocketPath = join(input.homePath, ".obsidian-cli.sock");
   if (await Bun.file(upstreamSocketPath).exists()) {
@@ -420,11 +548,99 @@ async function exercisePackagedCli(input: {
       mainOutput.includes("Received command line") &&
       mainOutput.includes(forwardedCommand)
     ) {
-      return { socketPath, response };
+      return { socketAddress, response };
     }
     await Bun.sleep(50);
   }
   throw new Error("Packaged main process did not log the forwarded CLI command");
+}
+
+async function archiveLaunchHome(
+  launchHomeRoot: string,
+  launchHomePath: string | undefined,
+  archiveRoot: string,
+  archiveHomePath: string,
+): Promise<void> {
+  if (
+    !/^\/private\/tmp\/blackglass-launch-[A-Za-z0-9]{6}$/u.test(launchHomeRoot) ||
+    launchHomePath !== join(launchHomeRoot, "h") ||
+    archiveHomePath !== join(archiveRoot, "home")
+  ) {
+    throw new Error("Refusing to archive an unrecognized LaunchServices HOME");
+  }
+  const rootStat = await lstat(launchHomeRoot);
+  if (
+    !rootStat.isDirectory() ||
+    rootStat.isSymbolicLink() ||
+    (rootStat.mode & 0o777) !== 0o700
+  ) {
+    throw new Error("Refusing to archive a changed LaunchServices HOME root");
+  }
+  const archiveRootStat = await lstat(archiveRoot);
+  if (
+    !archiveRootStat.isDirectory() ||
+    archiveRootStat.isSymbolicLink() ||
+    rootStat.dev !== archiveRootStat.dev
+  ) {
+    throw new Error("Refusing to move LaunchServices HOME across filesystems");
+  }
+  const entries = await readdir(launchHomeRoot);
+  if (entries.length !== 1 || entries[0] !== "h") {
+    throw new Error("Refusing to archive a LaunchServices HOME root with unexpected entries");
+  }
+  const homeStat = await lstat(launchHomePath);
+  if (
+    !homeStat.isDirectory() ||
+    homeStat.isSymbolicLink() ||
+    (homeStat.mode & 0o777) !== 0o700
+  ) {
+    throw new Error("Refusing to archive a changed LaunchServices HOME");
+  }
+  if (await pathExists(archiveHomePath)) {
+    throw new Error("Refusing to overwrite archived LaunchServices HOME evidence");
+  }
+  await rename(launchHomePath, archiveHomePath);
+  const archivedHomeStat = await lstat(archiveHomePath);
+  if (
+    !archivedHomeStat.isDirectory() ||
+    archivedHomeStat.isSymbolicLink() ||
+    (archivedHomeStat.mode & 0o777) !== 0o700
+  ) {
+    throw new Error("Archived LaunchServices HOME is not a private real directory");
+  }
+  if ((await readdir(launchHomeRoot)).length !== 0) {
+    throw new Error("LaunchServices HOME root was not empty after archival");
+  }
+  await rmdir(launchHomeRoot);
+  if (await pathExists(launchHomeRoot)) {
+    throw new Error("Short LaunchServices HOME root was not removed");
+  }
+}
+
+async function assertPathsAbsent(paths: string[], message: string): Promise<void> {
+  for (const path of new Set(paths)) {
+    if (await pathExists(path)) throw new Error(`${message}: ${path}`);
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      ["ENOENT", "ENOTDIR"].includes(String(error.code))
+    ) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function assertPortAvailable(port: number): void {
@@ -839,12 +1055,7 @@ async function terminateNewAppProcessTree(
   baselinePids: Set<number>,
   debugPort: number,
 ): Promise<void> {
-  const scopedProcesses = (): ProcessRow[] =>
-    listProcesses().filter(
-      (process) =>
-        !baselinePids.has(process.pid) &&
-        process.command.startsWith(`${appPath}/Contents/`),
-    );
+  const scopedProcesses = (): ProcessRow[] => exactNewAppProcesses(appPath, baselinePids);
 
   if (scopedProcesses().length === 0) return;
   try {
@@ -873,12 +1084,32 @@ async function terminateNewAppProcessTree(
       // The process may have exited between the process-table read and cleanup.
     }
   }
+  const forcedExited = await waitForProcessExit(scopedProcesses, 5_000);
+  const survivors = scopedProcesses();
   throw new Error(
     "Packaged app required forced termination after its launch smoke: " +
-      forcedProcesses
-        .map((process) => `${process.pid} ${process.command}`)
-        .join("; "),
+      processSummary(forcedProcesses) +
+      (forcedExited
+        ? ""
+        : `; processes remained after SIGKILL: ${processSummary(survivors)}`),
   );
+}
+
+function exactNewAppProcesses(
+  appPath: string,
+  baselinePids: Set<number>,
+): ProcessRow[] {
+  return listProcesses().filter(
+    (process) =>
+      !baselinePids.has(process.pid) &&
+      process.command.startsWith(`${appPath}/Contents/`),
+  );
+}
+
+function processSummary(processes: ProcessRow[]): string {
+  return processes
+    .map((process) => `${process.pid} ${process.command}`)
+    .join("; ");
 }
 
 async function requestDevToolsBrowserClose(port: number): Promise<void> {
@@ -993,6 +1224,9 @@ async function newDiagnosticReports(
 
 function diagnosticReportDirectories(): string[] {
   return [
+    ...(launchHomePath
+      ? [join(launchHomePath, "Library/Logs/DiagnosticReports")]
+      : []),
     join(layout.homePath, "Library/Logs/DiagnosticReports"),
     join(homedir(), "Library/Logs/DiagnosticReports"),
     "/Library/Logs/DiagnosticReports",

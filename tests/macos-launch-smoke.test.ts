@@ -16,6 +16,7 @@ const appPath = "/workspace/blackglass-bridge/.data/build/Blackglass Bridge.app"
 const controlOrigin = "https://blackglass.example.com";
 const chromiumHostResolverRules = "MAP blackglass.example.com 127.0.0.1:8443";
 const tlsSpkiSha256Base64 = `${"A".repeat(43)}=`;
+const launchHomePath = "/private/tmp/blackglass-launch-ABC123/h";
 const artifact = {
   schemaVersion: 5 as const,
   bundleIdentifier: "com.blackglass.bridge" as const,
@@ -63,7 +64,7 @@ const artifact = {
 function evidence(): FinderLaunchSmokeEvidence {
   const layout = finderLaunchSmokeLayout(root);
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     passed: true,
     platform: "macOS Apple Silicon",
     mechanism: "LaunchServices open -n -a",
@@ -78,16 +79,23 @@ function evidence(): FinderLaunchSmokeEvidence {
     chromiumHostResolverRules,
     appPath,
     executablePath: join(appPath, "Contents/MacOS/Obsidian"),
+    launchHomePath,
+    launchHomeRootMode: 448,
+    launchHomeSameDeviceAsArchive: true,
+    launchHomeRelocatedToRun: true,
+    launchHomeRootRemoved: true,
     cliExecutablePath: join(appPath, "Contents/MacOS/obsidian-cli"),
     cliExecutableSha256: artifact.cliExecutableSha256,
-    cliSocketPath: join(layout.homePath, artifact.cliSocketName),
+    cliSocketAddress: join(launchHomePath, artifact.cliSocketName),
     cliSocketName: artifact.cliSocketName,
     homePath: layout.homePath,
     profilePath: layout.profilePath,
     vaultPath: layout.vaultPath,
     launchCommand: finderLaunchCommand({
       appPath,
-      ...layout,
+      homePath: launchHomePath,
+      stdoutPath: layout.stdoutPath,
+      stderrPath: layout.stderrPath,
       chromiumHostResolverRules,
       tlsSpkiSha256Base64,
     }),
@@ -105,8 +113,10 @@ function evidence(): FinderLaunchSmokeEvidence {
     profileMode: 448,
     profileRealDirectoryObserved: true,
     profileActivityObserved: true,
+    profileSingletonArtifactsRemoved: true,
     environmentHomeObserved: true,
     cliSocketObserved: true,
+    cliSocketRemoved: true,
     upstreamCliSocketAbsent: true,
     cliForwardedCommandSucceeded: true,
     cliForwardedResponse:
@@ -151,7 +161,10 @@ describe("packaged macOS LaunchServices smoke", () => {
     const command = evidence().launchCommand;
     expect(command).toContain("-a");
     expect(command).toContain(appPath);
-    expect(command).toContain(`HOME=${finderLaunchSmokeLayout(root).homePath}`);
+    expect(command).toContain(`HOME=${launchHomePath}`);
+    expect(
+      Buffer.byteLength(join(launchHomePath, artifact.cliSocketName), "utf8"),
+    ).toBeLessThanOrEqual(103);
     expect(command.some((argument) => argument.includes("--user-data-dir"))).toBe(false);
     expect(() => assertFinderLaunchSmokeEvidence(evidence(), options)).not.toThrow();
   });
@@ -165,17 +178,24 @@ describe("packaged macOS LaunchServices smoke", () => {
       (value: any) => (value.explicitUserDataDirUsed = true),
       (value: any) => (value.profileMode = 0o755),
       (value: any) => (value.profileRealDirectoryObserved = false),
+      (value: any) => (value.profileSingletonArtifactsRemoved = false),
       (value: any) => (value.noLocalVaultAtLaunch = false),
       (value: any) => (value.starterNativeUiExercised = false),
       (value: any) => (value.starterControlRequests[1].status = 500),
       (value: any) => (value.starterControlOrigin = "https://api.obsidian.md"),
       (value: any) => (value.noVaultRegisteredAfterLaunch = false),
       (value: any) => (value.cliSocketObserved = false),
+      (value: any) => (value.cliSocketRemoved = false),
       (value: any) => (value.upstreamCliSocketAbsent = false),
       (value: any) => (value.cliForwardedCommandSucceeded = false),
       (value: any) => (value.cliMainProcessReceiptObserved = false),
       (value: any) => (value.cliForwardedResponse = "unexpected"),
       (value: any) => (value.cliSocketName = ".obsidian-cli.sock"),
+      (value: any) => (value.launchHomeSameDeviceAsArchive = false),
+      (value: any) => (value.launchHomeRelocatedToRun = false),
+      (value: any) => (value.launchHomeRootRemoved = false),
+      (value: any) => (value.launchHomeRootMode = 0o755),
+      (value: any) => (value.launchHomePath = "/Users/example/home"),
     ]) {
       const candidate = structuredClone(evidence()) as any;
       mutate(candidate);
