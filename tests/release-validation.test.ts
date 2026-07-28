@@ -44,7 +44,8 @@ const macOS = {
   infoPlistSha256: digest("1"),
   executableSha256: digest("2"),
   cliExecutableName: "obsidian-cli" as const,
-  cliExecutableSha256: digest("e"),
+  // macOS codesigning changes the whole-file identity after the raw CLI patch.
+  cliExecutableSha256: digest("a"),
   cliSocketName: ".blackglass-b.sock" as const,
   cliSocketOccurrences: 2 as const,
   embeddedAsarSha256: digest("3"),
@@ -274,13 +275,27 @@ describe("generated release validation records", () => {
       (value: any) => (value.wrapper.nativeHomeFallbackPreserved = false),
       (value: any) => (value.macOS.rendererCliRuntimeRootValidated = false),
       (value: any) => (value.macOS.nativeHomeFallbackPreserved = false),
-      (value: any) => (value.macOS.cliExecutableSha256 = digest("0")),
+      (value: any) =>
+        (value.macOS.cliExecutableSha256 = value.cli.upstreamSha256),
       (value: any) => (value.cli.patchedSha256 = value.cli.upstreamSha256),
     ]) {
       const candidate = structuredClone(manifest()) as any;
       mutate(candidate);
       expect(() => assertBridgeReleaseManifest(candidate)).toThrow();
     }
+  });
+
+  test("keeps pre-sign and packaged CLI identities distinct", () => {
+    const candidate = structuredClone(manifest());
+    expect(candidate.cli.patchedSha256).not.toBe(
+      candidate.macOS.cliExecutableSha256,
+    );
+    expect(() => assertBridgeReleaseManifest(candidate)).not.toThrow();
+
+    candidate.macOS.cliExecutableSha256 = candidate.cli.upstreamSha256;
+    expect(() => assertBridgeReleaseManifest(candidate)).toThrow(
+      "artifact bindings",
+    );
   });
 
   test("rejects pending workflow, incomplete recovery, and mutated evidence", () => {

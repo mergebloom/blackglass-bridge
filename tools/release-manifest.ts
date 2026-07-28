@@ -216,7 +216,11 @@ export function assertBridgeReleaseManifest(
     value.macOS.rendererCliRuntimeRootValidated !== true ||
     value.macOS.embeddedWrapperAsarSha256 !== value.wrapper.patchedSha256 ||
     value.macOS.embeddedWrapperHeaderSha256 !== value.wrapper.patchedHeaderSha256 ||
-    value.macOS.cliExecutableSha256 !== value.cli.patchedSha256 ||
+    // Deep signing rewrites the Mach-O code signature after the byte-for-byte
+    // socket patch. Preserve both phase identities while rejecting an
+    // unchanged packaged CLI; inspectMacOSArtifact separately proves the
+    // signed executable still has the exact patched socket inventory.
+    value.macOS.cliExecutableSha256 === value.cli.upstreamSha256 ||
     value.macOS.schemaVersion !== 6 ||
     value.macOS.applicationTreeSha256 !== value.macOS.applicationTreeIdentity.sha256
   ) {
