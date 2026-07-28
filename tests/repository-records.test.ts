@@ -131,6 +131,22 @@ describe("committed release records", () => {
       "app.js:push": 1,
       "app.js:ready": 1,
     });
+    expect(
+      Object.fromEntries(
+        Object.entries(loaded.baseline.networkConstructors).filter(
+          ([name]) => name.includes("XMLHttpRequest") || name.includes("electron.net"),
+        ),
+      ),
+    ).toEqual({
+      "enhance.js:new:XMLHttpRequest": 1,
+      "lib/mathjax/tex-chtml-full.js:new:XMLHttpRequest": 1,
+      "lib/pdfjs/pdf.min.mjs:new:XMLHttpRequest": 2,
+      "lib/pdfjs/pdf.worker.min.mjs:new:XMLHttpRequest": 1,
+      "main.js:call:s.net.fetch[electron.net.fetch]": 1,
+      "main.js:call:s.net.request[electron.net.request]": 1,
+      "main.js:read:s.net.fetch[electron.net.fetch]": 1,
+      "main.js:read:s.net.request[electron.net.request]": 1,
+    });
     expect(loaded.baseline.unpackedJavaScriptFiles).toEqual({
       "app.asar.unpacked/node_modules/btime/index.js": {
         bytes: 1726,
@@ -155,7 +171,7 @@ describe("committed release records", () => {
     const bytes = await readFile(path);
     expect(bytes.at(-1)).toBe(10);
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(
-      "14cdd8ca5c13163825ff1a54c5de48b48c291e986d284724a5ee896596ce972d",
+      "98c8d596acc011c4595e69cb81ded93e8fb9221370bd0da743206ebd515fe59a",
     );
   });
 });

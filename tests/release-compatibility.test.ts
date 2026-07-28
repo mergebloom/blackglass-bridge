@@ -164,6 +164,173 @@ describe("release compatibility baseline", () => {
     }))).toContain("network-constructors");
   });
 
+  test("tracks browser constructors and Electron net sinks through proven aliases", () => {
+    const source = rendererArchive(
+      "CONTROL_ANCHOR;" +
+        "const X0=window.XMLHttpRequest,X1=X0;" +
+        "const ES=globalThis.EventSource,R=self['Request'];" +
+        "new X1();new ES('/events');new R('/request');" +
+        "const electron=require('electron'),net=electron.net;" +
+        "const electronFetch=net.fetch,electronRequest=electron['net']['request'];" +
+        "electronFetch('/fetch');electronRequest({url:'/request'});" +
+        "electron.net.fetch('/direct');send({op:'ping'});",
+    );
+    const discovered = discoverRendererRelease(source, anchors);
+
+    expect(discovered.networkConstructors).toMatchObject({
+      "app.js:binding:ES=window.EventSource": 1,
+      "app.js:binding:R=window.Request": 1,
+      "app.js:binding:X0=window.XMLHttpRequest": 1,
+      "app.js:binding:X1=window.XMLHttpRequest": 1,
+      "app.js:binding:electronFetch=electron.net.fetch": 1,
+      "app.js:binding:electronRequest=electron.net.request": 1,
+      "app.js:call:electron.net.fetch[electron.net.fetch]": 1,
+      "app.js:call:electronFetch[electron.net.fetch]": 1,
+      "app.js:call:electronRequest[electron.net.request]": 1,
+      "app.js:new:ES[window.EventSource]": 1,
+      "app.js:new:R[window.Request]": 1,
+      "app.js:new:X1[window.XMLHttpRequest]": 1,
+      "app.js:read:electron.net.fetch[electron.net.fetch]": 1,
+      "app.js:read:electron['net']['request'][electron.net.request]:computed": 1,
+      "app.js:read:window.EventSource": 1,
+      "app.js:read:window.Request:computed": 1,
+      "app.js:read:window.XMLHttpRequest": 1,
+    });
+  });
+
+  test("tracks destructured, computed, and imported Electron net aliases", () => {
+    const source = rendererArchive(
+      "CONTROL_ANCHOR;" +
+        "const {net:n}=window.require('electron');" +
+        "const {fetch:f,request:r}=n;f('/fetch');r({url:'/request'});" +
+        "send({op:'ping'});",
+      {
+        "transport.mjs":
+          "import * as electron from 'electron';" +
+          "const n=electron['net'];n['fetch']('/fetch');electron.net.request({url:'/request'});",
+      },
+    );
+    const discovered = discoverRendererRelease(source, anchors);
+
+    expect(discovered.networkConstructors).toMatchObject({
+      "app.js:binding:f=electron.net.fetch": 1,
+      "app.js:binding:r=electron.net.request": 1,
+      "app.js:call:f[electron.net.fetch]": 1,
+      "app.js:call:r[electron.net.request]": 1,
+      "transport.mjs:call:electron.net.request[electron.net.request]": 1,
+      "transport.mjs:call:n['fetch'][electron.net.fetch]": 1,
+      "transport.mjs:read:electron.net.request[electron.net.request]": 1,
+      "transport.mjs:read:n['fetch'][electron.net.fetch]:computed": 1,
+    });
+  });
+
+  test("discovers literal routes behind Electron POST helpers", () => {
+    const source = rendererArchive(
+      "CONTROL_ANCHOR;send({op:'ping'});",
+      {
+        "transport.js":
+          "const electron=require('electron');" +
+          "function fetchPost(path,body){" +
+          "return electron.net.fetch(base+path,{method:'POST',body})}" +
+          "function requestPost(path,body){" +
+          "return electron.net.request({url:base+path,method:'POST',body})}" +
+          "fetchPost('/user/signin',{});requestPost('/vault/list',{});",
+      },
+    );
+    const discovered = discoverRendererRelease(source, anchors);
+
+    expect(discovered.controlPlaneRoutes).toEqual({
+      "/user/signin": 1,
+      "/vault/list": 1,
+    });
+    expect(discovered.controlPlaneRequestHelpers).toEqual({
+      "transport.js:fetchPost->electron.net.fetch(base+path)": 1,
+      "transport.js:requestPost->electron.net.request(base+path)": 1,
+    });
+  });
+
+  test("fails closed on added, removed, and retargeted network sinks", () => {
+    const sourceText =
+      "CONTROL_ANCHOR;const electron=require('electron'),send=electron.net.fetch;" +
+      "const X=XMLHttpRequest;new X();send('/request');sendMessage({op:'ping'});";
+    const source = rendererArchive(sourceText);
+    const baseline = baselineFor(source);
+    const changes = [
+      sourceText.replace("new X();", "new X();new EventSource('/events');"),
+      sourceText.replace("const X=XMLHttpRequest;new X();", ""),
+      sourceText.replace("send=electron.net.fetch", "send=electron.net.request"),
+      sourceText.replace("const X=XMLHttpRequest", "const Renamed=XMLHttpRequest")
+        .replace("new X()", "new Renamed()"),
+    ];
+
+    for (const [index, changed] of changes.entries()) {
+      const report = analyzeRendererRelease(rendererArchive(changed), {
+        baseline,
+        sha256: String(index).repeat(64),
+      });
+      expect(failedChecks(report), `mutation ${index}`).toContain("network-constructors");
+    }
+  });
+
+  test("does not attribute shadowed, generic, or reassigned values to network globals", () => {
+    const source = rendererArchive(
+      "CONTROL_ANCHOR;" +
+        "function Request(){};new Request();" +
+        "function shadow(XMLHttpRequest,electron,window){" +
+        "new XMLHttpRequest();electron.net.fetch('/shadow');new window.EventSource('/shadow')}" +
+        "const fake={net:{fetch(){},request(){}}};" +
+        "fake.net.fetch('/fake');fake.net.request({url:'/fake'});" +
+        "let electron=require('electron');electron=fake;electron.net.fetch('/reassigned');" +
+        "const stable=require('electron');let send=stable.net.fetch;send=()=>{};send('/local');" +
+        "sendMessage({op:'ping'});",
+    );
+    const discovered = discoverRendererRelease(source, anchors);
+
+    expect(discovered.networkConstructors).toEqual({
+      "app.js:binding:send=electron.net.fetch": 1,
+      "app.js:read:stable.net.fetch[electron.net.fetch]": 1,
+    });
+  });
+
+  test("tracks real calls across linear alias reassignment epochs", () => {
+    const source = rendererArchive(
+      "CONTROL_ANCHOR;const fake={},local=()=>{};" +
+        "let electron=require('electron');electron.net.fetch('/direct-before');" +
+        "electron=fake;electron.net.fetch('/direct-after');" +
+        "const stable=require('electron');let transport=stable.net.fetch;" +
+        "transport('/fetch-before');transport=local;transport('/local-after');" +
+        "transport=stable.net.request;transport({url:'/request-after'});" +
+        "sendMessage({op:'ping'});",
+    );
+    const discovered = discoverRendererRelease(source, anchors);
+
+    expect(discovered.networkConstructors).toEqual({
+      "app.js:binding:transport=electron.net.fetch": 1,
+      "app.js:binding:transport=electron.net.request": 1,
+      "app.js:call:electron.net.fetch[electron.net.fetch]": 1,
+      "app.js:call:transport[electron.net.fetch]": 1,
+      "app.js:call:transport[electron.net.request]": 1,
+      "app.js:read:electron.net.fetch[electron.net.fetch]": 1,
+      "app.js:read:stable.net.fetch[electron.net.fetch]": 1,
+      "app.js:read:stable.net.request[electron.net.request]": 1,
+    });
+  });
+
+  test("retains every possible transport across ambiguous control flow", () => {
+    const source = rendererArchive(
+      "CONTROL_ANCHOR;const electron=require('electron');" +
+        "let transport=electron.net.fetch;" +
+        "if(flag){transport=electron.net.request}" +
+        "transport('/ambiguous',{method:'POST'});sendMessage({op:'ping'});",
+    );
+    const discovered = discoverRendererRelease(source, anchors);
+
+    expect(discovered.networkConstructors).toMatchObject({
+      "app.js:call:transport[electron.net.fetch]": 1,
+      "app.js:call:transport[electron.net.request]": 1,
+    });
+  });
+
   test("binds semantic anchors in secondary packed renderers", () => {
     const source = rendererArchive(
       'CONTROL_ANCHOR;gw("/user/signin");send({op:"ping"});',

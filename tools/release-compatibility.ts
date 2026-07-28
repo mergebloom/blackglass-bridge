@@ -453,7 +453,32 @@ interface NetworkCompatibilityDiscovery {
   networkConstructors: string[];
 }
 
-type NetworkPrimitive = "fetch" | "URL" | "WebSocket";
+type BrowserNetworkPrimitive =
+  | "fetch"
+  | "URL"
+  | "WebSocket"
+  | "XMLHttpRequest"
+  | "EventSource"
+  | "Request";
+type ElectronNetworkPrimitive = "electron.net.fetch" | "electron.net.request";
+type NetworkPrimitive = BrowserNetworkPrimitive | ElectronNetworkPrimitive;
+type NetworkTarget =
+  | NetworkPrimitive
+  | "browser.global"
+  | "electron"
+  | "electron.net";
+
+interface NetworkBindingCandidate {
+  alias: ts.Identifier;
+  source: ts.Expression;
+  properties: string[];
+}
+
+interface NetworkProvenance {
+  checker: ts.TypeChecker;
+  possibleAliases: Map<ts.Symbol, Set<NetworkTarget>>;
+  bindings: Map<ts.Symbol, NetworkBindingCandidate[]>;
+}
 
 /**
  * Inventories the JavaScript network boundary with a real parser. A regex can
@@ -483,41 +508,65 @@ function collectNetworkCompatibility(
     );
   }
 
-  const primitiveAliases = new Map<string, NetworkPrimitive>();
+  const checker = createLexicalChecker(sourceFile);
+  const possibleNetworkAliases = new Map<ts.Symbol, Set<NetworkTarget>>();
+  const networkBindings: NetworkBindingCandidate[] = [];
   const aliasBindings: Array<{ alias: string; source: string }> = [];
   const functions = new Map<string, ts.FunctionLikeDeclaration>();
 
   visit(sourceFile, (node) => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-      const directPrimitive = directWindowPrimitive(node.initializer);
-      if (directPrimitive) primitiveAliases.set(node.name.text, directPrimitive);
-      if (ts.isIdentifier(node.initializer)) {
+    if (ts.isVariableDeclaration(node) && node.initializer) {
+      collectNetworkBindingCandidates(node.name, node.initializer, networkBindings);
+      if (ts.isIdentifier(node.name) && ts.isIdentifier(node.initializer)) {
         aliasBindings.push({ alias: node.name.text, source: node.initializer.text });
       }
-      if (isFunctionLike(node.initializer)) functions.set(node.name.text, node.initializer);
+      if (ts.isIdentifier(node.name) && isFunctionLike(node.initializer)) {
+        functions.set(node.name.text, node.initializer);
+      }
     } else if (ts.isFunctionDeclaration(node) && node.name) {
       functions.set(node.name.text, node);
     } else if (
       ts.isBinaryExpression(node) &&
       node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-      ts.isIdentifier(node.left) &&
-      ts.isIdentifier(node.right)
+      ts.isIdentifier(node.left)
     ) {
-      aliasBindings.push({ alias: node.left.text, source: node.right.text });
+      networkBindings.push({ alias: node.left, source: node.right, properties: [] });
+      if (ts.isIdentifier(node.right)) {
+        aliasBindings.push({ alias: node.left.text, source: node.right.text });
+      }
+    } else if (ts.isImportDeclaration(node)) {
+      collectElectronImportAliases(node, checker, possibleNetworkAliases);
     }
   });
-  resolvePrimitiveAliases(primitiveAliases, aliasBindings);
+  const networkBindingGroups = resolvePossibleNetworkAliases(
+    checker,
+    possibleNetworkAliases,
+    networkBindings,
+  );
+  const provenance: NetworkProvenance = {
+    checker,
+    possibleAliases: possibleNetworkAliases,
+    bindings: networkBindingGroups,
+  };
 
   const networkConstructors: string[] = [];
-  for (const [alias, primitive] of [...primitiveAliases].sort(([left], [right]) =>
-    compareStrings(left, right)
-  )) {
-    networkConstructors.push(`${file}:binding:${alias}=window.${primitive}`);
+  for (const binding of networkBindings) {
+    const targets = applyNetworkProperties(
+      networkTargetsForExpression(binding.source, provenance),
+      binding.properties,
+    );
+    for (const target of targets) {
+      if (!isNetworkPrimitive(target)) continue;
+      networkConstructors.push(
+        `${file}:binding:${binding.alias.text}=${canonicalNetworkPrimitive(target)}`,
+      );
+    }
   }
 
   // `gw` is the reviewed 1.12.7 app.js helper. Other files must prove their
-  // helper from a window.fetch transport so unrelated minified identifiers do
-  // not become protocol routes merely because they happen to be named `gw`.
+  // helper from a POST-capable reviewed transport so unrelated minified
+  // identifiers do not become protocol routes merely because they happen to
+  // be named `gw`.
   const helperNames = new Set<string>(file === "app.js" ? ["gw"] : []);
   const requestHelpers: string[] = [];
   for (const [name, declaration] of functions) {
@@ -528,14 +577,16 @@ function collectNetworkCompatibility(
     );
     visit(declaration, (node) => {
       if (!ts.isCallExpression(node)) return;
-      const primitive = primitiveForExpression(node.expression, primitiveAliases);
-      if (primitive !== "fetch" || node.arguments.length === 0) return;
-      if (!hasLiteralPostMethod(node.arguments[1])) return;
-      const target = compactExpression(node.expression, sourceFile);
-      const address = compactExpression(node.arguments[0]!, sourceFile);
-      if (!expressionUsesIdentifier(node.arguments[0]!, parameters)) return;
-      helperNames.add(name);
-      requestHelpers.push(`${file}:${name}->${target}(${address})`);
+      const primitives = networkPrimitivesForExpression(node.expression, provenance);
+      for (const primitive of primitives) {
+        const address = postRequestAddress(node, primitive);
+        if (!address || !expressionUsesIdentifier(address, parameters)) continue;
+        const target = compactExpression(node.expression, sourceFile);
+        const compactAddress = compactExpression(address, sourceFile);
+        helperNames.add(name);
+        requestHelpers.push(`${file}:${name}->${target}(${compactAddress})`);
+        break;
+      }
     });
   }
 
@@ -557,11 +608,20 @@ function collectNetworkCompatibility(
   const routes: string[] = [];
   const routeLocations: string[] = [];
   const rejectedCalls: string[] = [];
+  // Reads and invocations are separate compatibility facts. A property call
+  // intentionally contributes both, while capturing a sink without invoking
+  // it contributes only the read.
   visit(sourceFile, (node) => {
     if (ts.isPropertyAccessExpression(node)) {
-      const directPrimitive = directWindowPrimitive(node);
-      if (directPrimitive) {
-        networkConstructors.push(`${file}:read:window.${directPrimitive}`);
+      for (const primitive of networkPrimitivesForExpression(node, provenance)) {
+        networkConstructors.push(
+          `${file}:read:${compactNetworkTarget(
+            node,
+            primitive,
+            provenance,
+            sourceFile,
+          )}`,
+        );
       }
       if (node.name.text === "hostname") {
         networkConstructors.push(`${file}:read:hostname`);
@@ -569,20 +629,33 @@ function collectNetworkCompatibility(
       return;
     }
     if (ts.isElementAccessExpression(node)) {
-      const directPrimitive = directWindowPrimitive(node);
-      if (directPrimitive) {
-        networkConstructors.push(`${file}:read:window.${directPrimitive}:computed`);
+      for (const primitive of networkPrimitivesForExpression(node, provenance)) {
+        networkConstructors.push(
+          `${file}:read:${compactNetworkTarget(
+            node,
+            primitive,
+            provenance,
+            sourceFile,
+          )}:computed`,
+        );
       }
       return;
     }
     if (ts.isCallExpression(node)) {
-      const primitive = primitiveForExpression(node.expression, primitiveAliases);
-      if (primitive) {
+      for (const primitive of networkPrimitivesForExpression(
+        node.expression,
+        provenance,
+      )) {
         networkConstructors.push(
-          `${file}:call:${compactNetworkTarget(node.expression, primitive, primitiveAliases)}`,
+          `${file}:call:${compactNetworkTarget(
+            node.expression,
+            primitive,
+            provenance,
+            sourceFile,
+          )}`,
         );
       }
-      if (isHostnameDescriptorCall(node, primitiveAliases)) {
+      if (isHostnameDescriptorCall(node, provenance)) {
         networkConstructors.push(`${file}:read:URL.prototype.hostname`);
       }
       if (!ts.isIdentifier(node.expression) || !helperNames.has(node.expression.text)) return;
@@ -600,10 +673,18 @@ function collectNetworkCompatibility(
       return;
     }
     if (ts.isNewExpression(node)) {
-      const primitive = primitiveForExpression(node.expression, primitiveAliases);
-      if (primitive === "URL" || primitive === "WebSocket") {
+      for (const primitive of networkPrimitivesForExpression(
+        node.expression,
+        provenance,
+      )) {
+        if (!isNetworkConstructor(primitive)) continue;
         networkConstructors.push(
-          `${file}:new:${compactNetworkTarget(node.expression, primitive, primitiveAliases)}`,
+          `${file}:new:${compactNetworkTarget(
+            node.expression,
+            primitive,
+            provenance,
+            sourceFile,
+          )}`,
         );
       }
     }
@@ -635,72 +716,530 @@ function isFunctionLike(node: ts.Expression): node is ts.FunctionExpression | ts
   return ts.isFunctionExpression(node) || ts.isArrowFunction(node);
 }
 
-function directWindowPrimitive(node: ts.Expression): NetworkPrimitive | undefined {
+function createLexicalChecker(sourceFile: ts.SourceFile): ts.TypeChecker {
+  // The checker is used only for lexical binding identity. Omitting libraries
+  // leaves browser globals unresolved while still distinguishing local
+  // shadows and repeated one-letter names in minified scopes.
+  const options: ts.CompilerOptions = {
+    allowJs: true,
+    checkJs: false,
+    noEmit: true,
+    noLib: true,
+    noResolve: true,
+    target: ts.ScriptTarget.Latest,
+  };
+  const host = ts.createCompilerHost(options, true);
+  host.fileExists = (fileName) => fileName === sourceFile.fileName;
+  host.readFile = (fileName) =>
+    fileName === sourceFile.fileName ? sourceFile.text : undefined;
+  host.getSourceFile = (fileName) =>
+    fileName === sourceFile.fileName ? sourceFile : undefined;
+  host.writeFile = () => {};
+  return ts.createProgram([sourceFile.fileName], options, host).getTypeChecker();
+}
+
+function directWindowPrimitive(
+  node: ts.Expression,
+  checker: ts.TypeChecker,
+): BrowserNetworkPrimitive | undefined {
   if (
     ts.isPropertyAccessExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    ["window", "globalThis", "self"].includes(node.expression.text) &&
-    isNetworkPrimitive(node.name.text)
+    isUnboundBrowserGlobal(node.expression, checker) &&
+    isBrowserNetworkPrimitive(node.name.text)
   ) {
     return node.name.text;
   }
   if (
     ts.isElementAccessExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    ["window", "globalThis", "self"].includes(node.expression.text) &&
+    isUnboundBrowserGlobal(node.expression, checker) &&
     node.argumentExpression &&
     (ts.isStringLiteral(node.argumentExpression) ||
       ts.isNoSubstitutionTemplateLiteral(node.argumentExpression)) &&
-    isNetworkPrimitive(node.argumentExpression.text)
+    isBrowserNetworkPrimitive(node.argumentExpression.text)
   ) {
     return node.argumentExpression.text;
   }
   return undefined;
 }
 
-function isNetworkPrimitive(value: string): value is NetworkPrimitive {
-  return value === "fetch" || value === "URL" || value === "WebSocket";
+function isUnboundBrowserGlobal(
+  node: ts.Expression,
+  checker: ts.TypeChecker,
+): node is ts.Identifier {
+  return (
+    ts.isIdentifier(node) &&
+    ["window", "globalThis", "self"].includes(node.text) &&
+    !hasLexicalDeclaration(node, checker)
+  );
 }
 
-function resolvePrimitiveAliases(
-  aliases: Map<string, NetworkPrimitive>,
-  bindings: Array<{ alias: string; source: string }>,
+function hasLexicalDeclaration(
+  node: ts.Identifier,
+  checker: ts.TypeChecker,
+): boolean {
+  return (checker.getSymbolAtLocation(node)?.declarations?.length ?? 0) > 0;
+}
+
+function isBrowserNetworkPrimitive(value: string): value is BrowserNetworkPrimitive {
+  return (
+    value === "fetch" ||
+    value === "URL" ||
+    value === "WebSocket" ||
+    value === "XMLHttpRequest" ||
+    value === "EventSource" ||
+    value === "Request"
+  );
+}
+
+function isNetworkPrimitive(value: NetworkTarget): value is NetworkPrimitive {
+  return (
+    isBrowserNetworkPrimitive(value) ||
+    value === "electron.net.fetch" ||
+    value === "electron.net.request"
+  );
+}
+
+function isNetworkConstructor(value: NetworkPrimitive): boolean {
+  return (
+    value === "URL" ||
+    value === "WebSocket" ||
+    value === "XMLHttpRequest" ||
+    value === "EventSource" ||
+    value === "Request"
+  );
+}
+
+function collectNetworkBindingCandidates(
+  name: ts.BindingName,
+  source: ts.Expression,
+  output: NetworkBindingCandidate[],
+  properties: string[] = [],
 ): void {
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const binding of bindings) {
-      const primitive = aliases.get(binding.source);
-      if (!primitive || aliases.has(binding.alias)) continue;
-      aliases.set(binding.alias, primitive);
-      changed = true;
+  if (ts.isIdentifier(name)) {
+    output.push({ alias: name, source, properties });
+    return;
+  }
+  if (!ts.isObjectBindingPattern(name)) return;
+  for (const element of name.elements) {
+    if (element.dotDotDotToken) continue;
+    const property = bindingPropertyName(element.propertyName ?? element.name);
+    if (!property) continue;
+    collectNetworkBindingCandidates(
+      element.name,
+      source,
+      output,
+      [...properties, property],
+    );
+  }
+}
+
+function bindingPropertyName(name: ts.PropertyName | ts.BindingName): string | undefined {
+  if (
+    ts.isIdentifier(name) ||
+    ts.isStringLiteral(name) ||
+    ts.isNoSubstitutionTemplateLiteral(name)
+  ) {
+    return name.text;
+  }
+  return undefined;
+}
+
+function collectElectronImportAliases(
+  node: ts.ImportDeclaration,
+  checker: ts.TypeChecker,
+  aliases: Map<ts.Symbol, Set<NetworkTarget>>,
+): void {
+  if (
+    (!ts.isStringLiteral(node.moduleSpecifier) &&
+      !ts.isNoSubstitutionTemplateLiteral(node.moduleSpecifier)) ||
+    !isElectronModuleName(node.moduleSpecifier.text) ||
+    !node.importClause
+  ) {
+    return;
+  }
+  if (node.importClause.name) {
+    setNetworkAlias(
+      node.importClause.name,
+      "electron",
+      checker,
+      aliases,
+    );
+  }
+  const bindings = node.importClause.namedBindings;
+  if (!bindings) return;
+  if (ts.isNamespaceImport(bindings)) {
+    setNetworkAlias(bindings.name, "electron", checker, aliases);
+    return;
+  }
+  for (const element of bindings.elements) {
+    const imported = (element.propertyName ?? element.name).text;
+    if (imported === "net") {
+      setNetworkAlias(element.name, "electron.net", checker, aliases);
     }
   }
 }
 
-function primitiveForExpression(
+function resolvePossibleNetworkAliases(
+  checker: ts.TypeChecker,
+  aliases: Map<ts.Symbol, Set<NetworkTarget>>,
+  bindings: NetworkBindingCandidate[],
+): Map<ts.Symbol, NetworkBindingCandidate[]> {
+  // This map is deliberately a union of every proven assignment. Use-site
+  // resolution below narrows definitely ordered writes, while ambiguous
+  // branches and closures retain all possible network provenance.
+  const groups = new Map<ts.Symbol, NetworkBindingCandidate[]>();
+  for (const binding of bindings) {
+    const symbol = checker.getSymbolAtLocation(binding.alias);
+    if (!symbol) continue;
+    const group = groups.get(symbol) ?? [];
+    group.push(binding);
+    groups.set(symbol, group);
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [symbol, group] of groups) {
+      for (const binding of group) {
+        const targets = applyNetworkProperties(
+          possibleNetworkTargetsForExpression(binding.source, checker, aliases),
+          binding.properties,
+        );
+        for (const target of targets) {
+          if (addPossibleNetworkAlias(aliases, symbol, target)) changed = true;
+        }
+      }
+    }
+  }
+  return groups;
+}
+
+function setNetworkAlias(
+  alias: ts.Identifier,
+  target: NetworkTarget,
+  checker: ts.TypeChecker,
+  aliases: Map<ts.Symbol, Set<NetworkTarget>>,
+): void {
+  const symbol = checker.getSymbolAtLocation(alias);
+  if (!symbol) return;
+  addPossibleNetworkAlias(aliases, symbol, target);
+}
+
+function addPossibleNetworkAlias(
+  aliases: Map<ts.Symbol, Set<NetworkTarget>>,
+  symbol: ts.Symbol,
+  target: NetworkTarget,
+): boolean {
+  const targets = aliases.get(symbol) ?? new Set<NetworkTarget>();
+  const size = targets.size;
+  targets.add(target);
+  aliases.set(symbol, targets);
+  return targets.size !== size;
+}
+
+function networkPrimitivesForExpression(
   expression: ts.Expression,
-  aliases: Map<string, NetworkPrimitive>,
-): NetworkPrimitive | undefined {
-  const direct = directWindowPrimitive(expression);
-  if (direct) return direct;
+  provenance: NetworkProvenance,
+): NetworkPrimitive[] {
+  return networkTargetsForExpression(expression, provenance)
+    .filter(isNetworkPrimitive)
+    .sort(compareStrings);
+}
+
+function networkTargetsForExpression(
+  expression: ts.Expression,
+  provenance: NetworkProvenance,
+  resolving: Set<ts.Symbol> = new Set(),
+): NetworkTarget[] {
+  while (ts.isParenthesizedExpression(expression)) expression = expression.expression;
+  if (ts.isCommaListExpression(expression)) {
+    const last = expression.elements.at(-1);
+    return last ? networkTargetsForExpression(last, provenance, resolving) : [];
+  }
+  if (
+    ts.isBinaryExpression(expression) &&
+    expression.operatorToken.kind === ts.SyntaxKind.CommaToken
+  ) {
+    return networkTargetsForExpression(expression.right, provenance, resolving);
+  }
+  const direct = directWindowPrimitive(expression, provenance.checker);
+  if (direct) return [direct];
   if (ts.isIdentifier(expression)) {
-    if (isNetworkPrimitive(expression.text)) return expression.text;
-    return aliases.get(expression.text);
+    const symbol = provenance.checker.getSymbolAtLocation(expression);
+    if (symbol && (symbol.declarations?.length ?? 0) > 0) {
+      return networkTargetsForSymbolAtUse(symbol, expression, provenance, resolving);
+    }
+    if (["window", "globalThis", "self"].includes(expression.text)) {
+      return ["browser.global"];
+    }
+    if (isBrowserNetworkPrimitive(expression.text)) return [expression.text];
+    return [];
+  }
+  if (isElectronRequireCall(expression, provenance.checker)) return ["electron"];
+  const member = networkMemberExpression(expression);
+  if (member) {
+    return uniqueNetworkTargets(
+      networkTargetsForExpression(member.owner, provenance, resolving)
+        .map((owner) => networkMemberTarget(owner, member.property))
+        .filter((target): target is NetworkTarget => target !== undefined),
+    );
+  }
+  return [];
+}
+
+function possibleNetworkTargetsForExpression(
+  expression: ts.Expression,
+  checker: ts.TypeChecker,
+  aliases: Map<ts.Symbol, Set<NetworkTarget>>,
+): NetworkTarget[] {
+  while (ts.isParenthesizedExpression(expression)) expression = expression.expression;
+  if (ts.isCommaListExpression(expression)) {
+    const last = expression.elements.at(-1);
+    return last ? possibleNetworkTargetsForExpression(last, checker, aliases) : [];
+  }
+  if (
+    ts.isBinaryExpression(expression) &&
+    expression.operatorToken.kind === ts.SyntaxKind.CommaToken
+  ) {
+    return possibleNetworkTargetsForExpression(expression.right, checker, aliases);
+  }
+  const direct = directWindowPrimitive(expression, checker);
+  if (direct) return [direct];
+  if (ts.isIdentifier(expression)) {
+    const symbol = checker.getSymbolAtLocation(expression);
+    if (symbol && (symbol.declarations?.length ?? 0) > 0) {
+      return [...(aliases.get(symbol) ?? [])];
+    }
+    if (["window", "globalThis", "self"].includes(expression.text)) {
+      return ["browser.global"];
+    }
+    return isBrowserNetworkPrimitive(expression.text) ? [expression.text] : [];
+  }
+  if (isElectronRequireCall(expression, checker)) return ["electron"];
+  const member = networkMemberExpression(expression);
+  if (!member) return [];
+  return uniqueNetworkTargets(
+    possibleNetworkTargetsForExpression(member.owner, checker, aliases)
+      .map((owner) => networkMemberTarget(owner, member.property))
+      .filter((target): target is NetworkTarget => target !== undefined),
+  );
+}
+
+function networkTargetsForSymbolAtUse(
+  symbol: ts.Symbol,
+  use: ts.Identifier,
+  provenance: NetworkProvenance,
+  resolving: Set<ts.Symbol>,
+): NetworkTarget[] {
+  if (resolving.has(symbol)) return [];
+  const bindings = provenance.bindings.get(symbol) ?? [];
+  const dominating = latestDominatingBinding(bindings, use);
+  if (!dominating) return [...(provenance.possibleAliases.get(symbol) ?? [])];
+
+  const nextResolving = new Set(resolving).add(symbol);
+  const targets = applyNetworkProperties(
+    networkTargetsForExpression(dominating.source, provenance, nextResolving),
+    dominating.properties,
+  );
+  for (const binding of bindings) {
+    if (
+      binding === dominating ||
+      binding.source.getStart() <= dominating.source.getStart() ||
+      binding.source.getStart() >= use.getStart() ||
+      bindingDominatesUse(binding, use)
+    ) {
+      continue;
+    }
+    targets.push(
+      ...applyNetworkProperties(
+        networkTargetsForExpression(binding.source, provenance, nextResolving),
+        binding.properties,
+      ),
+    );
+  }
+  return uniqueNetworkTargets(targets);
+}
+
+function latestDominatingBinding(
+  bindings: NetworkBindingCandidate[],
+  use: ts.Identifier,
+): NetworkBindingCandidate | undefined {
+  if (bindings.some((binding) => nearestFunction(binding.alias) !== nearestFunction(use))) {
+    return undefined;
+  }
+  return bindings
+    .filter((binding) => binding.source.getStart() < use.getStart())
+    .filter((binding) => bindingDominatesUse(binding, use))
+    .sort((left, right) => right.source.getStart() - left.source.getStart())[0];
+}
+
+function bindingDominatesUse(
+  binding: NetworkBindingCandidate,
+  use: ts.Identifier,
+): boolean {
+  if (nearestFunction(binding.alias) !== nearestFunction(use)) return false;
+  const bindingLocation = directStatementLocation(binding.alias);
+  const useLocation = directStatementLocation(use);
+  return Boolean(
+    bindingLocation &&
+      useLocation &&
+      bindingLocation.container === useLocation.container &&
+      bindingLocation.closest === bindingLocation.direct &&
+      bindingLocation.index < useLocation.index,
+  );
+}
+
+function directStatementLocation(node: ts.Node): {
+  container: ts.Node;
+  direct: ts.Statement;
+  closest: ts.Statement;
+  index: number;
+} | undefined {
+  let closest: ts.Statement | undefined;
+  let current: ts.Node | undefined = node;
+  while (current?.parent) {
+    if (!closest && ts.isStatement(current)) closest = current;
+    const statements = statementList(current.parent);
+    if (statements && ts.isStatement(current)) {
+      const index = statements.indexOf(current);
+      if (index >= 0 && closest) {
+        return { container: current.parent, direct: current, closest, index };
+      }
+    }
+    current = current.parent;
   }
   return undefined;
+}
+
+function statementList(node: ts.Node): readonly ts.Statement[] | undefined {
+  if (ts.isSourceFile(node) || ts.isBlock(node) || ts.isModuleBlock(node)) {
+    return node.statements;
+  }
+  if (ts.isCaseClause(node) || ts.isDefaultClause(node)) return node.statements;
+  return undefined;
+}
+
+function nearestFunction(node: ts.Node): ts.Node | undefined {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (ts.isFunctionLike(current)) return current;
+    current = current.parent;
+  }
+  return undefined;
+}
+
+function applyNetworkProperties(
+  targets: NetworkTarget[],
+  properties: string[],
+): NetworkTarget[] {
+  let current = targets;
+  for (const property of properties) {
+    current = current
+      .map((target) => networkMemberTarget(target, property))
+      .filter((target): target is NetworkTarget => target !== undefined);
+  }
+  return uniqueNetworkTargets(current);
+}
+
+function uniqueNetworkTargets(targets: NetworkTarget[]): NetworkTarget[] {
+  return [...new Set(targets)].sort(compareStrings);
 }
 
 function compactNetworkTarget(
   expression: ts.Expression,
   primitive: NetworkPrimitive,
-  aliases: Map<string, NetworkPrimitive>,
+  provenance: NetworkProvenance,
+  sourceFile: ts.SourceFile,
 ): string {
-  if (ts.isIdentifier(expression) && aliases.get(expression.text) === primitive) {
-    return `${expression.text}[window.${primitive}]`;
+  const symbol = ts.isIdentifier(expression)
+    ? provenance.checker.getSymbolAtLocation(expression)
+    : undefined;
+  if (
+    ts.isIdentifier(expression) &&
+    symbol &&
+    networkTargetsForSymbolAtUse(symbol, expression, provenance, new Set()).includes(
+      primitive,
+    )
+  ) {
+    return `${expression.text}[${canonicalNetworkPrimitive(primitive)}]`;
   }
-  if (directWindowPrimitive(expression) === primitive) return `window.${primitive}`;
+  if (directWindowPrimitive(expression, provenance.checker) === primitive) {
+    return canonicalNetworkPrimitive(primitive);
+  }
+  if (primitive.startsWith("electron.")) {
+    return `${compactExpression(expression, sourceFile)}[${primitive}]`;
+  }
   return primitive;
+}
+
+function canonicalNetworkPrimitive(primitive: NetworkPrimitive): string {
+  return primitive.startsWith("electron.") ? primitive : `window.${primitive}`;
+}
+
+function networkMemberExpression(
+  expression: ts.Expression,
+): { owner: ts.Expression; property: string } | undefined {
+  if (ts.isPropertyAccessExpression(expression)) {
+    return { owner: expression.expression, property: expression.name.text };
+  }
+  if (
+    ts.isElementAccessExpression(expression) &&
+    expression.argumentExpression &&
+    (ts.isStringLiteral(expression.argumentExpression) ||
+      ts.isNoSubstitutionTemplateLiteral(expression.argumentExpression))
+  ) {
+    return { owner: expression.expression, property: expression.argumentExpression.text };
+  }
+  return undefined;
+}
+
+function networkMemberTarget(
+  owner: NetworkTarget,
+  property: string,
+): NetworkTarget | undefined {
+  if (owner === "browser.global" && isBrowserNetworkPrimitive(property)) return property;
+  if (owner === "electron" && property === "default") return "electron";
+  if (owner === "electron" && property === "net") return "electron.net";
+  if (owner === "electron.net" && property === "fetch") return "electron.net.fetch";
+  if (owner === "electron.net" && property === "request") return "electron.net.request";
+  return undefined;
+}
+
+function isElectronRequireCall(
+  expression: ts.Expression,
+  checker: ts.TypeChecker,
+): boolean {
+  return (
+    ts.isCallExpression(expression) &&
+    isUnboundRequire(expression.expression, checker) &&
+    expression.arguments.length === 1 &&
+    expression.arguments[0] !== undefined &&
+    (ts.isStringLiteral(expression.arguments[0]) ||
+      ts.isNoSubstitutionTemplateLiteral(expression.arguments[0])) &&
+    isElectronModuleName(expression.arguments[0].text)
+  );
+}
+
+function isUnboundRequire(
+  expression: ts.LeftHandSideExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  if (
+    ts.isIdentifier(expression) &&
+    expression.text === "require" &&
+    !hasLexicalDeclaration(expression, checker)
+  ) {
+    return true;
+  }
+  const member = networkMemberExpression(expression);
+  return Boolean(
+    member &&
+      member.property === "require" &&
+      isUnboundBrowserGlobal(member.owner, checker),
+  );
+}
+
+function isElectronModuleName(value: string): boolean {
+  return value === "electron" || value === "electron/main";
 }
 
 function compactExpression(node: ts.Node, sourceFile: ts.SourceFile): string {
@@ -743,9 +1282,31 @@ function hasLiteralPostMethod(node: ts.Expression | undefined): boolean {
   });
 }
 
+function postRequestAddress(
+  node: ts.CallExpression,
+  primitive: NetworkPrimitive | undefined,
+): ts.Expression | undefined {
+  if (primitive === "fetch" || primitive === "electron.net.fetch") {
+    return hasLiteralPostMethod(node.arguments[1]) ? node.arguments[0] : undefined;
+  }
+  if (primitive !== "electron.net.request") return undefined;
+  const options = node.arguments[0];
+  if (!options || !ts.isObjectLiteralExpression(options) || !hasLiteralPostMethod(options)) {
+    return undefined;
+  }
+  for (const property of options.properties) {
+    if (!ts.isPropertyAssignment(property)) continue;
+    const name = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)
+      ? property.name.text
+      : undefined;
+    if (name === "url") return property.initializer;
+  }
+  return undefined;
+}
+
 function isHostnameDescriptorCall(
   node: ts.CallExpression,
-  aliases: Map<string, NetworkPrimitive>,
+  provenance: NetworkProvenance,
 ): boolean {
   if (
     !ts.isPropertyAccessExpression(node.expression) ||
@@ -761,7 +1322,7 @@ function isHostnameDescriptorCall(
     prototype &&
       ts.isPropertyAccessExpression(prototype) &&
       prototype.name.text === "prototype" &&
-      primitiveForExpression(prototype.expression, aliases) === "URL" &&
+      networkPrimitivesForExpression(prototype.expression, provenance).includes("URL") &&
       property &&
       (ts.isStringLiteral(property) || ts.isNoSubstitutionTemplateLiteral(property)) &&
       property.text === "hostname",
