@@ -282,7 +282,11 @@ try {
 } catch (error) {
   smokeFailed = true;
   try {
-    const crashReports = await newDiagnosticReports(diagnosticBefore, appPath);
+    const crashReports = await newDiagnosticReports(
+      diagnosticBefore,
+      appPath,
+      launchHomePath,
+    );
     primarySmokeError = crashReports.length > 0
       ? new Error(
         `${String(error)}; matching macOS crash reports: ${crashReports.map((path) => basename(path)).join(", ")}`,
@@ -1171,9 +1175,11 @@ async function waitForProcessExit(
   return processes().length === 0;
 }
 
-async function diagnosticReportSnapshot(): Promise<Map<string, string>> {
+async function diagnosticReportSnapshot(
+  additionalHomePath?: string,
+): Promise<Map<string, string>> {
   const snapshot = new Map<string, string>();
-  for (const directory of diagnosticReportDirectories()) {
+  for (const directory of diagnosticReportDirectories(additionalHomePath)) {
     let names: string[];
     try {
       names = await readdir(directory);
@@ -1198,8 +1204,9 @@ async function diagnosticReportSnapshot(): Promise<Map<string, string>> {
 async function newDiagnosticReports(
   before: Map<string, string>,
   appPath: string,
+  additionalHomePath?: string,
 ): Promise<string[]> {
-  const after = await diagnosticReportSnapshot();
+  const after = await diagnosticReportSnapshot(additionalHomePath);
   const candidates: string[] = [];
   for (const [path, identity] of after) {
     if (before.get(path) === identity || !/\.(?:crash|diag|ips)$/iu.test(path)) continue;
@@ -1222,10 +1229,10 @@ async function newDiagnosticReports(
   return candidates.sort();
 }
 
-function diagnosticReportDirectories(): string[] {
+function diagnosticReportDirectories(additionalHomePath?: string): string[] {
   return [
-    ...(launchHomePath
-      ? [join(launchHomePath, "Library/Logs/DiagnosticReports")]
+    ...(additionalHomePath
+      ? [join(additionalHomePath, "Library/Logs/DiagnosticReports")]
       : []),
     join(layout.homePath, "Library/Logs/DiagnosticReports"),
     join(homedir(), "Library/Logs/DiagnosticReports"),
