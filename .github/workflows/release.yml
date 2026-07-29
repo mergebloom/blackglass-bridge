@@ -63,18 +63,8 @@ jobs:
             exit 1
           }
       - run: npm ci
-      - name: Verify tag matches the qualified tooling source
-        shell: bash
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          version=$(node -p "require('./package.json').version")
-          records=(docs/validation/blackglass-bridge-"${version}"-obsidian-*-qualification.json)
-          test "${#records[@]}" -eq 1 || {
-            echo "Expected exactly one canonical release qualification record" >&2
-            exit 1
-          }
-          bun run tooling:verify-qualified -- "${records[0]}" "$GITHUB_SHA"
+      - name: Verify release eligibility and qualified tooling source
+        run: bun run release:verify-eligibility -- "$GITHUB_SHA"
       - run: bun run check
       - name: Build deterministic tooling release assets
         shell: bash

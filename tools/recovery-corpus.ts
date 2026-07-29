@@ -1,10 +1,15 @@
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
 
-export const RECOVERY_CORPUS_SCHEMA_VERSION = 1 as const;
-export const RECOVERY_CORPUS_ID = "blackglass-mixed-vault-v1" as const;
+export const RECOVERY_CORPUS_SCHEMA_VERSION = 2 as const;
+export const RECOVERY_CORPUS_ID = "blackglass-mixed-vault-v2" as const;
 export const RECOVERY_CORPUS_MANIFEST_SHA256 =
-  "6c761cf6226399283726fc29036e2ec35b961c106a18c3fbd8fd36da70e81d68" as const;
+  "b9e9a7e59c99d6bd165cc989619c64e03cee336c866b4733183da2ad3f96afcf" as const;
+export const OBSIDIAN_SYNC_PIECE_BYTES = 2_097_152 as const;
+export const RECOVERY_MULTIPART_IMAGE_PATH =
+  "Assets/multipart-proof.png" as const;
+export const RECOVERY_MULTIPART_IMAGE_WIDTH = 1_024 as const;
+export const RECOVERY_MULTIPART_IMAGE_HEIGHT = 704 as const;
 
 // Keep compressed bytes in source so a zlib/runtime update cannot silently
 // change the versioned corpus identity.
@@ -42,6 +47,13 @@ export interface RecoveryCorpusIdentity {
   bytes: number;
   manifestSha256: string;
   types: Record<string, number>;
+  multipart: {
+    path: typeof RECOVERY_MULTIPART_IMAGE_PATH;
+    bytes: number;
+    sha256: string;
+    pieceBytes: typeof OBSIDIAN_SYNC_PIECE_BYTES;
+    minimumPieces: number;
+  };
 }
 
 const corpusFiles = buildCorpusFiles();
@@ -59,6 +71,12 @@ if (computedManifestSha256 !== RECOVERY_CORPUS_MANIFEST_SHA256) {
       `expected ${RECOVERY_CORPUS_MANIFEST_SHA256}, got ${computedManifestSha256}`,
   );
 }
+const multipartImage = corpusManifest.find(
+  (file) => file.path === RECOVERY_MULTIPART_IMAGE_PATH,
+);
+if (!multipartImage || multipartImage.size <= OBSIDIAN_SYNC_PIECE_BYTES) {
+  throw new Error("Canonical recovery corpus does not force multipart Sync");
+}
 const corpusIdentity: RecoveryCorpusIdentity = {
   schemaVersion: RECOVERY_CORPUS_SCHEMA_VERSION,
   id: RECOVERY_CORPUS_ID,
@@ -74,6 +92,13 @@ const corpusIdentity: RecoveryCorpusIdentity = {
       compareCodePointStrings(left, right),
     ),
   ),
+  multipart: {
+    path: RECOVERY_MULTIPART_IMAGE_PATH,
+    bytes: multipartImage.size,
+    sha256: multipartImage.sha256,
+    pieceBytes: OBSIDIAN_SYNC_PIECE_BYTES,
+    minimumPieces: Math.ceil(multipartImage.size / OBSIDIAN_SYNC_PIECE_BYTES),
+  },
 };
 
 export function canonicalRecoveryCorpusFiles(): Map<string, Buffer> {
@@ -147,7 +172,7 @@ function buildCorpusFiles(): Map<string, Buffer> {
   };
   text(
     "Home.md",
-    `---\ntags: [recovery, sync, e2e]\nstatus: verified-source\n---\n\n# Recovery Drill Home\n\n> [!success] Background sync fixture\n> This vault mixes notes, images, structured data, a canvas, source code, and a PDF.\n\n## Navigation\n\n- [[Projects/Recovery Plan]]\n- [[Research/Field Notes]]\n- [[Journal/2026-07-25]]\n- [[Data/Inventory]]\n- [[Gallery]]\n\n## Visual proof\n\n![[Assets/recovery-chart.png]]\n\n![[Assets/system-map.svg]]\n\n| Stage | Expected result |\n| --- | --- |\n| Client A | Uploads automatically |\n| Server | Stores encrypted revisions |\n| Client B | Restores byte-identical files |\n`,
+    `---\ntags: [recovery, sync, e2e]\nstatus: verified-source\n---\n\n# Recovery Drill Home\n\n> [!success] Background sync fixture\n> This vault mixes notes, images, structured data, a canvas, source code, and a PDF.\n\n## Navigation\n\n- [[Projects/Recovery Plan]]\n- [[Research/Field Notes]]\n- [[Journal/2026-07-25]]\n- [[Data/Inventory]]\n- [[Gallery]]\n\n## Visual proof\n\n![[Assets/recovery-chart.png]]\n\n![[Assets/multipart-proof.png]]\n\n![[Assets/system-map.svg]]\n\n| Stage | Expected result |\n| --- | --- |\n| Client A | Uploads automatically, including the multipart image |\n| Server | Stores encrypted revisions |\n| Client B | Restores byte-identical files |\n`,
   );
   text(
     "Projects/Recovery Plan.md",
@@ -163,7 +188,7 @@ function buildCorpusFiles(): Map<string, Buffer> {
   );
   text(
     "Gallery.md",
-    `# Gallery\n\n## PNG\n\n![[Assets/recovery-chart.png]]\n\n## SVG\n\n![[Assets/system-map.svg]]\n\nThe two images exercise raster and vector attachment synchronization.\n`,
+    `# Gallery\n\n## PNG\n\n![[Assets/recovery-chart.png]]\n\n![[Assets/multipart-proof.png]]\n\nThe multipart proof is a deterministic valid PNG larger than one 2 MiB Sync piece.\n\n## SVG\n\n![[Assets/system-map.svg]]\n\nThese images exercise small raster, multipart raster, and vector attachment synchronization.\n`,
   );
   text(
     "Data/Inventory.md",
@@ -228,6 +253,7 @@ function buildCorpusFiles(): Map<string, Buffer> {
     "Assets/recovery-chart.png",
     Buffer.from(RECOVERY_CHART_PNG_BASE64, "base64"),
   );
+  files.set(RECOVERY_MULTIPART_IMAGE_PATH, makeMultipartProofPng());
   text(
     "Assets/system-map.svg",
     `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="300" viewBox="0 0 900 300"><rect width="900" height="300" rx="24" fill="#171923"/><g font-family="Arial,sans-serif" text-anchor="middle"><rect x="55" y="85" width="210" height="130" rx="18" fill="#7c3aed"/><rect x="345" y="85" width="210" height="130" rx="18" fill="#2563eb"/><rect x="635" y="85" width="210" height="130" rx="18" fill="#059669"/><g fill="white" font-size="25" font-weight="700"><text x="160" y="155">Client A</text><text x="450" y="155">Blackglass</text><text x="740" y="155">Client B</text></g><g stroke="#d1d5db" stroke-width="7" fill="none"><path d="M265 150h75"/><path d="M555 150h75"/></g><g fill="#d1d5db"><path d="M335 135l25 15-25 15z"/><path d="M625 135l25 15-25 15z"/></g></g></svg>\n`,
@@ -262,6 +288,88 @@ function makePdf(): Buffer {
     .join("");
   body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   return Buffer.from(body, "ascii");
+}
+
+// Build a bit-exact PNG without relying on a zlib implementation. Stored
+// DEFLATE blocks keep the generated image above the client's 2 MiB piece size,
+// while deterministic pseudo-random pixels prevent an incidental compressor
+// from collapsing the fixture below that boundary.
+function makeMultipartProofPng(): Buffer {
+  const bytesPerRow = RECOVERY_MULTIPART_IMAGE_WIDTH * 3;
+  const pixels = Buffer.alloc(
+    (bytesPerRow + 1) * RECOVERY_MULTIPART_IMAGE_HEIGHT,
+  );
+  let state = 0x6d_75_6c_74;
+  for (let y = 0; y < RECOVERY_MULTIPART_IMAGE_HEIGHT; y += 1) {
+    const row = y * (bytesPerRow + 1);
+    pixels[row] = 0;
+    for (let x = 0; x < bytesPerRow; x += 1) {
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      pixels[row + x + 1] = (state + x + y) & 0xff;
+    }
+  }
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(RECOVERY_MULTIPART_IMAGE_WIDTH, 0);
+  ihdr.writeUInt32BE(RECOVERY_MULTIPART_IMAGE_HEIGHT, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", storedZlib(pixels)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+function storedZlib(input: Buffer): Buffer {
+  const blocks: Buffer[] = [Buffer.from([0x78, 0x01])];
+  for (let offset = 0; offset < input.length; offset += 65_535) {
+    const length = Math.min(65_535, input.length - offset);
+    const block = Buffer.allocUnsafe(length + 5);
+    block[0] = offset + length === input.length ? 1 : 0;
+    block.writeUInt16LE(length, 1);
+    block.writeUInt16LE((~length) & 0xffff, 3);
+    input.copy(block, 5, offset, offset + length);
+    blocks.push(block);
+  }
+  const checksum = Buffer.alloc(4);
+  checksum.writeUInt32BE(adler32(input));
+  blocks.push(checksum);
+  return Buffer.concat(blocks);
+}
+
+function pngChunk(type: "IHDR" | "IDAT" | "IEND", data: Buffer): Buffer {
+  const name = Buffer.from(type, "ascii");
+  const chunk = Buffer.allocUnsafe(data.length + 12);
+  chunk.writeUInt32BE(data.length, 0);
+  name.copy(chunk, 4);
+  data.copy(chunk, 8);
+  chunk.writeUInt32BE(crc32(Buffer.concat([name, data])), data.length + 8);
+  return chunk;
+}
+
+function adler32(input: Uint8Array): number {
+  let first = 1;
+  let second = 0;
+  for (const byte of input) {
+    first = (first + byte) % 65_521;
+    second = (second + first) % 65_521;
+  }
+  return ((second << 16) | first) >>> 0;
+}
+
+function crc32(input: Uint8Array): number {
+  let value = 0xffff_ffff;
+  for (const byte of input) {
+    value ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = (value >>> 1) ^ (value & 1 ? 0xedb8_8320 : 0);
+    }
+  }
+  return (value ^ 0xffff_ffff) >>> 0;
 }
 
 function stableJson(value: unknown): string {

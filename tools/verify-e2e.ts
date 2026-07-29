@@ -112,6 +112,7 @@ for (const identity of [initialServer, restartedServer]) {
   if (
     JSON.stringify(publicServerArtifact(identity.artifact)) !==
       JSON.stringify(recordedServerPublic) ||
+    identity.expectedSourceRevision !== recordedServer.sourceRevision ||
     identity.binaryPath !== recordedServer.binaryPath ||
     identity.databasePath !== resolve(root, "server.sqlite") ||
     identity.stagingPath !== resolve(root, "uploads") ||
@@ -726,6 +727,7 @@ type ServerProcessIdentity = {
   exitCode: number | null;
   gracefulShutdown: boolean | null;
   binaryPath: string;
+  expectedSourceRevision: string;
   artifact: ServerArtifact;
   databasePath: string;
   stagingPath: string;
@@ -737,12 +739,14 @@ type ServerProcessIdentity = {
 async function readServerIdentity(path: string): Promise<ServerProcessIdentity> {
   const value = JSON.parse(await readFile(path, "utf8")) as ServerProcessIdentity;
   if (
-    value.schemaVersion !== 1 ||
+    value.schemaVersion !== 2 ||
     !Number.isSafeInteger(value.pid) ||
     value.pid <= 1 ||
     !Number.isFinite(Date.parse(value.startedAt)) ||
     !Number.isFinite(Date.parse(value.readyAt)) ||
     (value.stoppedAt !== null && !Number.isFinite(Date.parse(value.stoppedAt))) ||
+    !/^[a-f0-9]{40}$/u.test(value.expectedSourceRevision) ||
+    value.artifact?.sourceRevision !== value.expectedSourceRevision ||
     typeof value.ready !== "object" ||
     value.ready === null ||
     value.ready.ok !== true ||

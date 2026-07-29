@@ -137,7 +137,9 @@ if (role === "client-b-recovery") {
   const restartBytes = await readFile(restartPath);
   const restart = JSON.parse(restartBytes.toString("utf8")) as any;
   if (
-    restart.schemaVersion !== 1 ||
+    restart.schemaVersion !== 2 ||
+    !/^[a-f0-9]{40}$/u.test(String(restart.expectedSourceRevision)) ||
+    restart.artifact?.sourceRevision !== restart.expectedSourceRevision ||
     !Number.isFinite(Date.parse(String(restart.startedAt))) ||
     !Number.isFinite(Date.parse(String(restart.readyAt))) ||
     restart.stoppedAt !== null

@@ -28,6 +28,7 @@
     "e2e:tls:prepare": "bun run tools/prepare-e2e-tls.ts",
     "e2e:tls:proxy": "bun run tools/e2e-tls-proxy.ts",
     "e2e:validation:write": "bun run tools/write-validation-record.ts",
+    "release:verify-eligibility": "bun run tools/verify-release-eligibility.ts",
     "tooling:verify-qualified": "bun run tools/verify-qualified-tooling.ts",
     "recovery:drill": "bun run tools/recovery-drill.ts",
     "check": "bun run typecheck && bun test",

@@ -2,17 +2,32 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { parseStrictFlags } from "./cli-flags";
 import { readPreparedE2ERun } from "./e2e-network";
-import { inspectServerArtifact } from "./server-artifact";
+import {
+  assertServerArtifactSourceRevision,
+  exactServerSourceRevision,
+  inspectServerArtifact,
+} from "./server-artifact";
 
 const [rootArgument, ...flags] = Bun.argv.slice(2);
-const parsedFlags = parseStrictFlags(flags, { valueFlags: ["--identity-out"] });
+const parsedFlags = parseStrictFlags(flags, {
+  valueFlags: ["--identity-out", "--expected-server-source-revision"],
+});
 const identityArgument = parsedFlags.values.get("--identity-out");
-if (!rootArgument || !identityArgument) {
+const expectedSourceRevisionArgument = parsedFlags.values.get(
+  "--expected-server-source-revision",
+);
+if (!rootArgument || !identityArgument || !expectedSourceRevisionArgument) {
   console.error(
-    "Usage: bun run tools/run-e2e-server.ts <run-directory> --identity-out <identity.json>",
+    "Usage: bun run tools/run-e2e-server.ts <run-directory> " +
+      "--identity-out <identity.json> " +
+      "--expected-server-source-revision <full-Git-commit>",
   );
   process.exit(2);
 }
+const expectedSourceRevision = exactServerSourceRevision(
+  expectedSourceRevisionArgument,
+  "Expected server source revision",
+);
 
 const preparedRun = await readPreparedE2ERun(rootArgument);
 const root = preparedRun.root;
@@ -39,6 +54,7 @@ if (!(await Bun.file(binary).exists())) {
   );
 }
 const artifact = await inspectServerArtifact(binary);
+assertServerArtifactSourceRevision(artifact, expectedSourceRevision);
 await recordArtifact(artifact);
 const inheritedEnvironment = Object.fromEntries(
   Object.entries(process.env).filter(([name]) => !name.startsWith("SELFHOST_")),
@@ -76,7 +92,7 @@ const startedAt = new Date().toISOString();
 const ready = await waitForHealth(child);
 const readyAt = new Date().toISOString();
 let processIdentity = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   pid: child.pid,
   startedAt,
   readyAt,
@@ -84,6 +100,7 @@ let processIdentity = {
   exitCode: null as number | null,
   gracefulShutdown: null as boolean | null,
   binaryPath: binary,
+  expectedSourceRevision,
   artifact,
   databasePath: resolve(root, "server.sqlite"),
   stagingPath: resolve(root, "uploads"),

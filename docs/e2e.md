@@ -47,14 +47,24 @@ as `server-initial.json`:
 
 ```sh
 bun run e2e:tls:proxy -- .data/e2e/<run>
+server_source_revision=$(git -C /path/to/blackglass-server rev-parse --verify HEAD)
 BLACKGLASS_SERVER_BINARY=/path/to/blackglass-server \
   bun run e2e:server -- .data/e2e/<run> \
-  --identity-out .data/e2e/<run>/server-initial.json
+  --identity-out .data/e2e/<run>/server-initial.json \
+  --expected-server-source-revision "$server_source_revision"
 ```
 
-Both commands block and must remain running. After the server is ready, run the
+The source revision must be the exact 40-character lowercase commit used to
+build the selected server binary; the runner rejects any mismatch before
+writing server artifact or process evidence. Both commands block and must remain
+running. After the server is ready, run the
 packaged-app smoke in a third terminal and let it finish before launching the
 two E2E clients:
+
+Run the smoke from the active, unlocked macOS desktop session with Xcode Command
+Line Tools available. Quit every Obsidian and Blackglass Bridge application
+first; the smoke fails closed before launch if either bundle identifier is
+running. It also requires its loopback debugging port to be unused.
 
 ```sh
 bun run e2e:smoke:macos -- .data/e2e/<run>
@@ -64,7 +74,9 @@ The smoke reserves debugging port `9320`, launches the exact prepared app via
 LaunchServices with an empty disposable `BLACKGLASS_HOME`, proves the GUI kept
 its native login `HOME`, authenticates through the starter renderer using the
 run's owner-only credentials, verifies a successful vault list through the
-run's TLS route, checks for crash reports and profile leakage, forwards a
+run's TLS route, verifies that DevTools listens only on loopback, observes a
+full eight-second post-readiness health interval, checks for crash reports and
+profile leakage, forwards a
 packaged-CLI probe with `HOME` set only for that subprocess, and terminates the
 exact generated app by PID through `NSRunningApplication.terminate()`.
 
@@ -130,8 +142,9 @@ must use the required checkpoint stems below. The recovery client uses port
 
 Use `e2e:observe` for the three allowed proof transfers and one deletion. The
 first A-to-B transfer occurs before stopping the initial server. Restart the
-same binary as `server-restarted.json`; the remaining observations occur after
-it is ready. Explicitly pause/resume Sync once on each client after readiness so
+same binary as `server-restarted.json`, with the same
+`--expected-server-source-revision`; the remaining observations occur after it
+is ready. Explicitly pause/resume Sync once on each client after readiness so
 the traces record a fresh WSS handshake, then perform the remaining observations.
 Finalize both traces only after all four observations exist; the
 finalizer binds them to the restarted server and requires a successful WSS
@@ -165,11 +178,13 @@ bun run recovery:drill -- capture .data/e2e/<run> \
 ```
 
 The capture refuses a missing or changed canonical member. Its reviewed corpus
-contains six Markdown notes plus PNG, SVG, PDF, canvas, CSV, JSON, and JavaScript
-files; exact paths, sizes, digests, and the extension summary remain bound through
-the recovery report and final validation record. In both the initial and recovery
-Sync setup, enable images, PDFs, and unsupported/other file types before starting
-Sync.
+contains six Markdown notes plus two PNGs, SVG, PDF, canvas, CSV, JSON, and
+JavaScript files. One PNG is generated deterministically at runtime and exceeds
+the client's 2 MiB piece size, making multipart upload and cold download
+mandatory. Exact paths, sizes, digests, piece boundary, and the extension summary
+remain bound through the recovery report and final validation record. In both
+the initial and recovery Sync setup, enable images, PDFs, and unsupported/other
+file types before starting Sync.
 
 Stop both clients. The reset command permanently removes only the two validated
 disposable client trees and creates a new empty client B:
@@ -208,6 +223,6 @@ bun run e2e:qualify -- .data/e2e/<run>
 
 `qualification.json` is emitted only when the empty-profile starter route,
 Sync, restart, deletion, exact endpoint evidence across all lifecycle phases,
-byte-identical user-content recovery including the canonical mixed corpus
+byte-identical user-content recovery including its multipart image
 (`.obsidian/` local settings are excluded), permissions, and current artifact
 identities all pass.

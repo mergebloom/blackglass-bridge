@@ -15,6 +15,32 @@ export interface ServerArtifact {
   architecture: string;
 }
 
+export function exactServerSourceRevision(
+  value: unknown,
+  label = "Server source revision",
+): string {
+  if (typeof value !== "string" || !/^[a-f0-9]{40}$/u.test(value)) {
+    throw new Error(`${label} must be a full lowercase Git commit`);
+  }
+  return value;
+}
+
+export function assertServerArtifactSourceRevision(
+  artifact: Pick<ServerArtifact, "sourceRevision">,
+  expectedSourceRevision: string,
+): void {
+  const expected = exactServerSourceRevision(
+    expectedSourceRevision,
+    "Expected server source revision",
+  );
+  if (artifact.sourceRevision !== expected) {
+    throw new Error(
+      `Server binary reports source revision ${artifact.sourceRevision}, ` +
+        `expected ${expected}`,
+    );
+  }
+}
+
 export async function inspectServerArtifact(binaryArgument: string): Promise<ServerArtifact> {
   const binaryPath = resolve(binaryArgument);
   const file = await lstat(binaryPath);

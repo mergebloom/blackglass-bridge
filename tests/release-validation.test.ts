@@ -331,6 +331,13 @@ describe("generated release validation records", () => {
     expect(record.artifacts.server.version).toBe("0.2.2");
     expect(record.artifacts.server.sourceRevision).toBe("c".repeat(40));
     expect(record.packagedClientE2E.passed).toBe(true);
+    expect(record.packagedClientE2E.recovery.corpus.multipart).toEqual({
+      path: "Assets/multipart-proof.png",
+      bytes: 2_163_625,
+      sha256: "a5ceeffa7a9395783ee7e5b04f5155b5fcce2c4d90707b70a479b7ff51a2da84",
+      pieceBytes: 2_097_152,
+      minimumPieces: 2,
+    });
   });
 
   test("rejects wrong client and server identities", () => {
@@ -401,6 +408,7 @@ describe("generated release validation records", () => {
       },
       (value: any) => (value.recovery.corpus.manifestSha256 = digest("0")),
       (value: any) => (value.recovery.corpus.types[".png"] = 0),
+      (value: any) => (value.recovery.corpus.multipart.minimumPieces = 1),
       (value: any) => (value.evidence.syncReportSha256 = "changed"),
     ]) {
       const candidate = structuredClone(qualification()) as any;

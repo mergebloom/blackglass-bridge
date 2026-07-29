@@ -47,7 +47,7 @@ findings are accepted only when backed by deterministic tooling and tests.
 3. Generate a deterministic compatibility ASAR for the chosen server URLs.
 4. Patch the copied wrapper to isolate state, disable updates, and pin the embedded renderer.
 5. Package and sign a separate `Blackglass Bridge.app`.
-6. Qualify that exact client and server artifact pair with Sync and recovery E2E.
+6. Qualify that exact client and server artifact pair with multipart Sync and recovery E2E.
 
 The client adapter is release-specific. The Sync protocol and durable data live
 in the separate Blackglass Server project, normally checked out beside this one
@@ -59,7 +59,7 @@ as `../blackglass-server`.
 | --- | --- |
 | Platform | macOS on Apple Silicon |
 | Renderer | Obsidian 1.12.7 |
-| Client behavior | Built-in sign-in; remote-vault create/list/access; E2EE Sync; source-loss recovery UI |
+| Client behavior | Built-in sign-in; remote-vault create/list/access; E2EE Sync including multipart attachments; source-loss recovery UI |
 | Packaging | Separate app identity, ad-hoc local signing, updates disabled |
 | Server | Blackglass Server over loopback or HTTPS/WSS |
 

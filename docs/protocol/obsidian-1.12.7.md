@@ -50,5 +50,7 @@ The committed baseline binds every packed and unpacked JavaScript file by
 identity and records semantic anchors, routes, request helpers, network
 constructors, Sync operations, outbound message shapes, and inbound operation
 discriminants. A changed upstream artifact fails closed. Inbound response field
-details, 2 MiB piece ordering, and lifecycle behavior remain explicit review and
-E2E responsibilities rather than inferred stable minified APIs.
+details and lifecycle behavior remain explicit review and E2E responsibilities
+rather than inferred stable minified APIs. The versioned recovery corpus includes
+a deterministic valid PNG larger than 2 MiB, so qualification requires the
+client's multipart upload, download, and byte-identical cold recovery path.

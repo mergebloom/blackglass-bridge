@@ -58,4 +58,7 @@ causes generation to fail before any client profile is touched.
 The packaged qualification also opens `starter.html` from a genuinely empty
 default profile and requires successful `/user/signin` and `/vault/list`
 responses at the configured TLS control origin. This prevents normal-vault E2E
-setup from masking a broken fresh-install route.
+setup from masking a broken fresh-install route. Its canonical recovery corpus
+also contains a runtime-generated PNG larger than the client's 2 MiB piece size;
+the bound manifest makes multipart upload and byte-identical cold download a
+release requirement without committing the generated image.

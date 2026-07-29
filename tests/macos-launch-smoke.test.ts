@@ -1,12 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
+  BLACKGLASS_BUNDLE_IDENTIFIER,
+  FINDER_LAUNCH_DEBUG_ADDRESS,
+  FINDER_LAUNCH_LISTENER_TIMEOUT_MS,
   FINDER_LAUNCH_MINIMUM_HEALTH_MS,
   FINDER_LAUNCH_DEBUG_PORT,
+  FINDER_LAUNCH_SMOKE_SCHEMA_VERSION,
+  FINDER_LAUNCH_STARTER_TIMEOUT_MS,
+  OBSIDIAN_BUNDLE_IDENTIFIER,
+  assertMacOSLaunchPreflight,
   assertFinderLaunchSmokeEvidence,
   finderLaunchCommand,
   finderLaunchSmokeLayout,
+  formatLaunchSmokeFailureMessage,
+  formatStarterTargetTimeout,
+  isLoopbackTcpListenerEndpoint,
+  macOSLaunchPreflightEvidence,
   macOSArtifactBindingSha256,
+  parseLsofTcpListeners,
   type FinderLaunchSmokeEvidence,
 } from "../tools/macos-launch-smoke";
 import { APPROVED_MACOS_ENTITLEMENTS } from "../tools/macos-code-signing";
@@ -150,7 +162,7 @@ const artifact = {
 function evidence(): FinderLaunchSmokeEvidence {
   const layout = finderLaunchSmokeLayout(root);
   return {
-    schemaVersion: 6,
+    schemaVersion: FINDER_LAUNCH_SMOKE_SCHEMA_VERSION,
     passed: true,
     platform: "macOS Apple Silicon",
     mechanism: "LaunchServices open -n -a",
@@ -186,14 +198,18 @@ function evidence(): FinderLaunchSmokeEvidence {
       tlsSpkiSha256Base64,
     }),
     debugPort: FINDER_LAUNCH_DEBUG_PORT,
+    debugAddress: FINDER_LAUNCH_DEBUG_ADDRESS,
     debugListenerPid: 100,
+    debugListenerEndpoints: [`${FINDER_LAUNCH_DEBUG_ADDRESS}:${FINDER_LAUNCH_DEBUG_PORT}`],
     debugTargetId: "starter-target",
     debugTargetUrl: "file:///Applications/Blackglass%20Bridge.app/Contents/Resources/starter.html",
     startedAt: "2026-07-28T12:00:00.000Z",
-    healthyAt: "2026-07-28T12:00:08.000Z",
-    completedAt: "2026-07-28T12:00:09.000Z",
+    healthStartedAt: "2026-07-28T12:00:01.000Z",
+    healthyAt: "2026-07-28T12:00:09.000Z",
+    completedAt: "2026-07-28T12:00:10.000Z",
     mainPid: 100,
     rendererPid: 101,
+    rendererStableDuringHealth: true,
     healthyForMs: FINDER_LAUNCH_MINIMUM_HEALTH_MS,
     defaultProfilePathObserved: true,
     profileMode: 448,
@@ -225,6 +241,10 @@ function evidence(): FinderLaunchSmokeEvidence {
     starterVaultListSucceeded: true,
     noVaultRegisteredAfterLaunch: true,
     disposableVaultStayedEmpty: true,
+    launchPreflight: macOSLaunchPreflightEvidence({
+      screenLocked: false,
+      applications: [],
+    }),
     earlyExit: false,
     diagnosticReportsChecked: true,
     crashReportsCreated: 0,
@@ -255,13 +275,138 @@ describe("packaged macOS LaunchServices smoke", () => {
     const command = evidence().launchCommand;
     expect(command).toContain("-a");
     expect(command).toContain(appPath);
+    expect(command).not.toContain("-g");
+    expect(command).toContain(
+      `--remote-debugging-address=${FINDER_LAUNCH_DEBUG_ADDRESS}`,
+    );
     expect(command).toContain(`BLACKGLASS_HOME=${launchHomePath}`);
     expect(command.some((argument) => argument.startsWith("HOME="))).toBe(false);
     expect(
       Buffer.byteLength(join(launchHomePath, artifact.cliSocketName), "utf8"),
     ).toBeLessThanOrEqual(103);
     expect(command.some((argument) => argument.includes("--user-data-dir"))).toBe(false);
+    expect(FINDER_LAUNCH_LISTENER_TIMEOUT_MS).toBe(30_000);
+    expect(FINDER_LAUNCH_STARTER_TIMEOUT_MS).toBe(90_000);
     expect(() => assertFinderLaunchSmokeEvidence(evidence(), options)).not.toThrow();
+  });
+
+  test("requires an unlocked console without Obsidian or another Blackglass bundle", () => {
+    const officialObsidian = {
+      pid: 10,
+      bundleIdentifier: OBSIDIAN_BUNDLE_IDENTIFIER,
+      bundlePath: "/Applications/Obsidian.app",
+      executablePath: "/Applications/Obsidian.app/Contents/MacOS/Obsidian",
+    };
+    expect(() =>
+      assertMacOSLaunchPreflight(
+        { screenLocked: false, applications: [officialObsidian] },
+        appPath,
+      )
+    ).toThrow("Obsidian");
+
+    expect(() =>
+      assertMacOSLaunchPreflight(
+        { screenLocked: false, applications: [] },
+        appPath,
+      )
+    ).not.toThrow();
+
+    expect(() =>
+      assertMacOSLaunchPreflight(
+        {
+          screenLocked: false,
+          applications: [{ ...officialObsidian, bundleIdentifier: "unexpected.bundle" }],
+        },
+        appPath,
+      )
+    ).toThrow("malformed");
+
+    expect(() =>
+      assertMacOSLaunchPreflight(
+        { screenLocked: true, applications: [] },
+        appPath,
+      )
+    ).toThrow("console is locked");
+
+    const installedBridge = {
+      pid: 11,
+      bundleIdentifier: BLACKGLASS_BUNDLE_IDENTIFIER,
+      bundlePath: "/Applications/Blackglass Bridge.app",
+      executablePath: "/Applications/Blackglass Bridge.app/Contents/MacOS/Obsidian",
+    };
+    expect(() =>
+      assertMacOSLaunchPreflight(
+        { screenLocked: false, applications: [officialObsidian, installedBridge] },
+        appPath,
+      )
+    ).toThrow("another Blackglass Bridge app");
+
+    expect(() =>
+      assertMacOSLaunchPreflight(
+        {
+          screenLocked: false,
+          applications: [{ ...installedBridge, bundlePath: appPath }],
+        },
+        appPath,
+      )
+    ).toThrow("exact generated Blackglass Bridge app");
+  });
+
+  test("parses listener ownership and accepts loopback endpoints only", () => {
+    expect(
+      parseLsofTcpListeners(
+        `p100\nf12\nn127.0.0.1:${FINDER_LAUNCH_DEBUG_PORT}\n` +
+          `p101\nf13\nn[::1]:${FINDER_LAUNCH_DEBUG_PORT}\n`,
+      ),
+    ).toEqual([
+      { pid: 100, endpoint: `127.0.0.1:${FINDER_LAUNCH_DEBUG_PORT}` },
+      { pid: 101, endpoint: `[::1]:${FINDER_LAUNCH_DEBUG_PORT}` },
+    ]);
+    expect(
+      isLoopbackTcpListenerEndpoint(
+        `127.0.0.1:${FINDER_LAUNCH_DEBUG_PORT}`,
+        FINDER_LAUNCH_DEBUG_PORT,
+      ),
+    ).toBe(true);
+    expect(
+      isLoopbackTcpListenerEndpoint(
+        `*:${FINDER_LAUNCH_DEBUG_PORT}`,
+        FINDER_LAUNCH_DEBUG_PORT,
+      ),
+    ).toBe(false);
+    expect(() => parseLsofTcpListeners("n127.0.0.1:9320\n")).toThrow();
+  });
+
+  test("keeps target, CDP, process, and cleanup diagnostics in failures", () => {
+    const timeout = formatStarterTargetTimeout({
+      timeoutMs: FINDER_LAUNCH_STARTER_TIMEOUT_MS,
+      port: FINDER_LAUNCH_DEBUG_PORT,
+      mainPid: 42,
+      lastCdpError: "DevTools returned 503",
+      lastTargets: [
+        {
+          id: "target-1",
+          type: "page",
+          url: "about:blank",
+          hasWebSocketDebuggerUrl: true,
+        },
+      ],
+      processes: ["42 ppid=1 /exact/app/Contents/MacOS/Obsidian"],
+    });
+    expect(timeout).toContain("within 90000ms after DevTools listener readiness");
+    expect(timeout).toContain("DevTools returned 503");
+    expect(timeout).toContain("target-1");
+    expect(timeout).toContain("pid=1");
+
+    expect(
+      formatLaunchSmokeFailureMessage("starter failed", [
+        "native termination failed",
+        "socket remained",
+      ]),
+    ).toBe(
+      "LaunchServices smoke failed: starter failed; cleanup failures: " +
+        "native termination failed | socket remained",
+    );
   });
 
   test("rejects early exit, crash reports, weak health, and profile escape", () => {
@@ -269,6 +414,14 @@ describe("packaged macOS LaunchServices smoke", () => {
       (value: any) => (value.earlyExit = true),
       (value: any) => (value.crashReportsCreated = 1),
       (value: any) => (value.healthyForMs = FINDER_LAUNCH_MINIMUM_HEALTH_MS - 1),
+      (value: any) => (value.rendererStableDuringHealth = false),
+      (value: any) => (value.healthStartedAt = value.startedAt),
+      (value: any) => (value.debugAddress = "0.0.0.0"),
+      (value: any) => (value.debugListenerEndpoints = [`*:${FINDER_LAUNCH_DEBUG_PORT}`]),
+      (value: any) => value.debugListenerEndpoints.push(value.debugListenerEndpoints[0]),
+      (value: any) => (value.launchPreflight.screenLocked = true),
+      (value: any) => (value.launchPreflight.matchingApplications = 1),
+      (value: any) => value.launchPreflight.requiredAbsentBundleIdentifiers.pop(),
       (value: any) => (value.profilePath = "/Users/example/Library/Application Support/Blackglass Bridge"),
       (value: any) => (value.explicitUserDataDirUsed = true),
       (value: any) => (value.profileMode = 0o755),

@@ -9,6 +9,7 @@ import {
   rename,
   rmdir,
   stat,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -20,13 +21,27 @@ import {
   type MacOSArtifact,
 } from "./macos-artifact";
 import {
+  BLACKGLASS_BUNDLE_IDENTIFIER,
+  FINDER_LAUNCH_DEBUG_ADDRESS,
+  FINDER_LAUNCH_LISTENER_TIMEOUT_MS,
   FINDER_LAUNCH_MINIMUM_HEALTH_MS,
   FINDER_LAUNCH_DEBUG_PORT,
   FINDER_LAUNCH_SMOKE_SCHEMA_VERSION,
+  FINDER_LAUNCH_STARTER_TIMEOUT_MS,
+  OBSIDIAN_BUNDLE_IDENTIFIER,
+  assertMacOSLaunchPreflight,
   assertFinderLaunchSmokeEvidence,
   finderLaunchCommand,
   finderLaunchSmokeLayout,
+  formatLaunchSmokeFailureMessage,
+  formatStarterTargetDiagnostics,
+  formatStarterTargetTimeout,
+  isLoopbackTcpListenerEndpoint,
+  macOSLaunchPreflightEvidence,
   macOSArtifactBindingSha256,
+  parseLsofTcpListeners,
+  type DevToolsListenerDiagnostic,
+  type DevToolsTargetDiagnostic,
   type FinderLaunchSmokeEvidence,
 } from "./macos-launch-smoke";
 import { readPreparedE2ERun } from "./e2e-network";
@@ -88,6 +103,9 @@ const cliExecutablePath = await canonicalExistingPath(
   "Prepared Blackglass CLI executable",
   "file",
 );
+const launchPreflight = await inspectMacOSLaunchPreflight();
+assertMacOSLaunchPreflight(launchPreflight, appPath);
+const launchPreflightEvidence = macOSLaunchPreflightEvidence(launchPreflight);
 
 await mkdir(layout.smokeRoot, { recursive: false, mode: 0o700 });
 await mkdir(layout.vaultPath, { recursive: true, mode: 0o700 });
@@ -148,6 +166,7 @@ const baselineAppPids = new Set(
 let mainPid: number | undefined;
 let rendererPid: number | undefined;
 let debugListenerPid: number | undefined;
+let debugListenerEndpoints: string[] | undefined;
 let debugTargetId: string | undefined;
 let debugTargetUrl: string | undefined;
 let starterControlOrigin: string | undefined;
@@ -165,8 +184,10 @@ let launchHomeSameDeviceAsArchive = false;
 let launchHomeRelocatedToRun = false;
 let launchHomeRootRemoved = false;
 let cliForwardedResponse: FinderLaunchSmokeEvidence["cliForwardedResponse"] | undefined;
+let healthStartedAt: string | undefined;
 let healthyAt: string | undefined;
 let healthyForMs: number | undefined;
+let rendererStableDuringHealth = false;
 let primarySmokeError: unknown;
 let smokeFailed = false;
 let terminationEvidence:
@@ -178,7 +199,6 @@ let terminationEvidence:
     }
   | undefined;
 const startedAt = new Date().toISOString();
-const startedAtMs = Date.now();
 try {
   launchHomeRoot = await mkdtemp("/private/tmp/blackglass-launch-");
   const launchHomeRootStat = await lstat(launchHomeRoot);
@@ -236,19 +256,22 @@ try {
     FINDER_LAUNCH_DEBUG_PORT,
     15_000,
   );
+  const debugListener = await waitForDebugListener(
+    FINDER_LAUNCH_DEBUG_PORT,
+    mainPid,
+    appPath,
+    FINDER_LAUNCH_LISTENER_TIMEOUT_MS,
+  );
+  debugListenerPid = debugListener.pid;
+  debugListenerEndpoints = debugListener.endpoints;
   const target = await waitForStarterTarget(
     FINDER_LAUNCH_DEBUG_PORT,
     mainPid,
     appPath,
-    15_000,
+    FINDER_LAUNCH_STARTER_TIMEOUT_MS,
   );
   debugTargetId = target.id;
   debugTargetUrl = target.url;
-  debugListenerPid = await waitForDebugListener(
-    FINDER_LAUNCH_DEBUG_PORT,
-    mainPid,
-    appPath,
-  );
   const starterProof = await exerciseStarterControlFlow({
     webSocketDebuggerUrl: target.webSocketDebuggerUrl,
     controlOrigin: run.manifest.endpoints.controlOrigin,
@@ -260,18 +283,35 @@ try {
   starterControlOrigin = starterProof.controlOrigin;
   starterControlRequests = starterProof.requests;
   runtimeHomeObserved = starterProof.runtimeHomeObserved;
-  const healthDeadline = startedAtMs + FINDER_LAUNCH_MINIMUM_HEALTH_MS;
+  const healthRenderer = rendererDescendant(mainPid, appPath);
+  if (!healthRenderer) {
+    throw new Error("Starter readiness did not leave a renderer process to observe");
+  }
+  rendererPid = healthRenderer.pid;
+  const healthStartedAtMs = Date.now();
+  healthStartedAt = new Date(healthStartedAtMs).toISOString();
+  const healthDeadline = healthStartedAtMs + FINDER_LAUNCH_MINIMUM_HEALTH_MS;
   while (Date.now() < healthDeadline) {
     assertProcessAlive(mainPid, "LaunchServices main process");
     const renderer = rendererDescendant(mainPid, appPath);
-    if (renderer) rendererPid = renderer.pid;
+    if (!renderer || renderer.pid !== rendererPid) {
+      throw new Error(
+        "LaunchServices starter renderer did not remain stable throughout the health interval",
+      );
+    }
     await Bun.sleep(200);
   }
   assertProcessAlive(mainPid, "LaunchServices main process");
-  rendererPid = rendererDescendant(mainPid, appPath)?.pid ?? rendererPid;
-  if (!rendererPid) {
-    throw new Error("LaunchServices app stayed alive but never created a renderer UI process");
+  const finalRenderer = rendererDescendant(mainPid, appPath);
+  if (!finalRenderer || finalRenderer.pid !== rendererPid) {
+    throw new Error(
+      "LaunchServices starter renderer did not survive the complete health interval",
+    );
   }
+  rendererStableDuringHealth = true;
+  const healthyAtMs = Date.now();
+  healthyAt = new Date(healthyAtMs).toISOString();
+  healthyForMs = healthyAtMs - healthStartedAtMs;
   for (const marker of ["obsidian.log", "id"]) {
     const path = join(launchProfilePath, marker);
     if (!(await Bun.file(path).exists()) || !(await lstat(path)).isFile()) {
@@ -305,8 +345,6 @@ try {
     throw new Error("Packaged CLI used an unexpected socket address");
   }
   cliForwardedResponse = cliProof.response;
-  healthyAt = new Date().toISOString();
-  healthyForMs = Date.now() - startedAtMs;
 } catch (error) {
   smokeFailed = true;
   try {
@@ -337,6 +375,14 @@ try {
         terminationHelperPath,
       );
     }
+  } catch (cleanupError) {
+    cleanupErrors.push(
+      new Error(`Native app termination failed: ${asError(cleanupError).message}`, {
+        cause: cleanupError,
+      }),
+    );
+  }
+  try {
     if (cliSocketAddress) {
       await assertPathsAbsent(
         [cliSocketAddress],
@@ -344,6 +390,14 @@ try {
       );
       cliSocketRemoved = true;
     }
+  } catch (cleanupError) {
+    cleanupErrors.push(
+      new Error(`CLI socket cleanup check failed: ${asError(cleanupError).message}`, {
+        cause: cleanupError,
+      }),
+    );
+  }
+  try {
     if (launchProfilePath && await pathExists(launchProfilePath)) {
       await assertPathsAbsent(
         ["SingletonLock", "SingletonSocket", "SingletonCookie"].map((name) =>
@@ -354,7 +408,11 @@ try {
       profileSingletonArtifactsRemoved = true;
     }
   } catch (cleanupError) {
-    cleanupErrors.push(asError(cleanupError));
+    cleanupErrors.push(
+      new Error(`Profile singleton cleanup check failed: ${asError(cleanupError).message}`, {
+        cause: cleanupError,
+      }),
+    );
   }
   try {
     if (launchHomeRoot) {
@@ -375,19 +433,30 @@ try {
       launchHomeRootRemoved = true;
     }
   } catch (cleanupError) {
-    cleanupErrors.push(asError(cleanupError));
+    cleanupErrors.push(
+      new Error(`Disposable HOME archival failed: ${asError(cleanupError).message}`, {
+        cause: cleanupError,
+      }),
+    );
   }
   if (smokeFailed) {
+    const primaryError = asError(primarySmokeError);
     if (cleanupErrors.length > 0) {
       throw new AggregateError(
-        [asError(primarySmokeError), ...cleanupErrors],
-        "LaunchServices smoke failed and cleanup also reported errors",
+        [primaryError, ...cleanupErrors],
+        formatLaunchSmokeFailureMessage(
+          primaryError.message,
+          cleanupErrors.map((error) => error.message),
+        ),
       );
     }
-    throw primarySmokeError;
+    throw primaryError;
   }
   if (cleanupErrors.length > 0) {
-    throw new AggregateError(cleanupErrors, "LaunchServices smoke cleanup failed");
+    throw new AggregateError(
+      cleanupErrors,
+      `LaunchServices smoke cleanup failed: ${cleanupErrors.map((error) => error.message).join(" | ")}`,
+    );
   }
 }
 
@@ -395,6 +464,7 @@ if (
   mainPid === undefined ||
   rendererPid === undefined ||
   debugListenerPid === undefined ||
+  debugListenerEndpoints === undefined ||
   debugTargetId === undefined ||
   debugTargetUrl === undefined ||
   starterControlOrigin === undefined ||
@@ -410,8 +480,10 @@ if (
   launchHomeRelocatedToRun !== true ||
   launchHomeRootRemoved !== true ||
   cliForwardedResponse === undefined ||
+  healthStartedAt === undefined ||
   healthyAt === undefined ||
   healthyForMs === undefined ||
+  rendererStableDuringHealth !== true ||
   terminationEvidence === undefined
 ) {
   throw new Error("Finder launch smoke did not collect complete no-vault evidence");
@@ -468,14 +540,18 @@ const evidence: FinderLaunchSmokeEvidence = {
   vaultPath: layout.vaultPath,
   launchCommand,
   debugPort: FINDER_LAUNCH_DEBUG_PORT,
+  debugAddress: FINDER_LAUNCH_DEBUG_ADDRESS,
   debugListenerPid,
+  debugListenerEndpoints,
   debugTargetId,
   debugTargetUrl,
   startedAt,
+  healthStartedAt,
   healthyAt,
   completedAt: new Date().toISOString(),
   mainPid,
   rendererPid,
+  rendererStableDuringHealth: true,
   healthyForMs,
   defaultProfilePathObserved: true,
   profileMode: 0o700,
@@ -503,6 +579,7 @@ const evidence: FinderLaunchSmokeEvidence = {
   starterVaultListSucceeded: true,
   noVaultRegisteredAfterLaunch: true,
   disposableVaultStayedEmpty: true,
+  launchPreflight: launchPreflightEvidence,
   earlyExit: false,
   diagnosticReportsChecked: true,
   crashReportsCreated: 0,
@@ -710,20 +787,29 @@ async function waitForStarterTarget(
   timeoutMs: number,
 ): Promise<StarterTarget> {
   const deadline = Date.now() + timeoutMs;
+  let lastCdpError: string | undefined;
+  let lastTargets: DevToolsTargetDiagnostic[] = [];
   while (Date.now() < deadline) {
     assertProcessAlive(mainPid, "LaunchServices main process");
     try {
-      const targets = await fetch(`http://127.0.0.1:${port}/json/list`, {
+      const value = await fetch(`http://127.0.0.1:${port}/json/list`, {
         signal: AbortSignal.timeout(500),
       }).then(async (response) => {
         if (!response.ok) throw new Error(`DevTools returned ${response.status}`);
-        return await response.json() as Array<{
-          id?: unknown;
-          type?: unknown;
-          url?: unknown;
-          webSocketDebuggerUrl?: unknown;
-        }>;
+        return await response.json() as unknown;
       });
+      if (!Array.isArray(value)) throw new Error("DevTools target list is not an array");
+      if (value.some((target) => !target || typeof target !== "object" || Array.isArray(target))) {
+        throw new Error("DevTools target list contains a malformed entry");
+      }
+      const targets = value as Array<Record<string, unknown>>;
+      lastCdpError = undefined;
+      lastTargets = targets.map((target) => ({
+        id: typeof target.id === "string" ? target.id : null,
+        type: typeof target.type === "string" ? target.type : null,
+        url: typeof target.url === "string" ? target.url : null,
+        hasWebSocketDebuggerUrl: typeof target.webSocketDebuggerUrl === "string",
+      }));
       const starterTargets = targets.filter(
         (target) =>
           target.type === "page" &&
@@ -753,49 +839,114 @@ async function waitForStarterTarget(
         };
       }
     } catch (error) {
-      if (error instanceof Error && error.message.includes("more than one")) throw error;
-      if (error instanceof Error && error.message.includes("not backed")) throw error;
+      const cdpError = asError(error);
+      if (
+        cdpError.message.includes("more than one") ||
+        cdpError.message.includes("not backed")
+      ) {
+        throw new Error(
+          `${cdpError.message}; diagnostics: ` +
+            formatStarterTargetDiagnostics({
+              port,
+              mainPid,
+              lastCdpError: cdpError.message,
+              lastTargets,
+              processes: launchedAppProcessDiagnostics(mainPid, appPath),
+            }),
+          { cause: cdpError },
+        );
+      }
+      lastCdpError = cdpError.message;
     }
     await Bun.sleep(100);
   }
-  throw new Error("Fresh default profile never opened the native starter.html renderer");
+  throw new Error(
+    formatStarterTargetTimeout({
+      timeoutMs,
+      port,
+      mainPid,
+      lastCdpError,
+      lastTargets,
+      processes: launchedAppProcessDiagnostics(mainPid, appPath),
+    }),
+  );
 }
 
 async function waitForDebugListener(
   port: number,
   mainPid: number,
   appPath: string,
-): Promise<number> {
-  const deadline = Date.now() + 5_000;
+  timeoutMs: number,
+): Promise<{ pid: number; endpoints: string[] }> {
+  const deadline = Date.now() + timeoutMs;
+  let lastListeners: DevToolsListenerDiagnostic[] = [];
   while (Date.now() < deadline) {
+    assertProcessAlive(mainPid, "LaunchServices main process");
     const result = Bun.spawnSync([
       "/usr/sbin/lsof",
       "-nP",
       "-a",
       `-iTCP:${port}`,
       "-sTCP:LISTEN",
-      "-Fp",
+      "-Fpn",
     ]);
-    const listenerPids = result.stdout.toString().split("\n").flatMap((line) => {
-      const match = /^p(\d+)$/u.exec(line);
-      return match ? [Number(match[1])] : [];
-    });
+    if (result.exitCode !== 0 && result.exitCode !== 1) {
+      throw new Error(
+        `Unable to inspect Finder launch debugging port ${port}: ` +
+          result.stderr.toString("utf8").trim(),
+      );
+    }
+    lastListeners = parseLsofTcpListeners(result.stdout.toString());
     const processes = listProcesses();
-    const bound = [...new Set(listenerPids)].filter((pid) => {
-      const process = processes.find((candidate) => candidate.pid === pid);
+    const ownedListeners = lastListeners.filter((listener) => {
+      const process = processes.find((candidate) => candidate.pid === listener.pid);
       return Boolean(
         process &&
         process.command.includes(appPath) &&
-        isDescendant(pid, mainPid, processes),
+        isDescendant(listener.pid, mainPid, processes),
       );
     });
-    if (bound.length === 1) return bound[0]!;
-    if (bound.length > 1) {
+    const unsafeEndpoints = ownedListeners.filter(
+      (listener) => !isLoopbackTcpListenerEndpoint(listener.endpoint, port),
+    );
+    if (unsafeEndpoints.length > 0) {
+      throw new Error(
+        `The exact launched app exposed its DevTools listener beyond loopback: ` +
+          stableJson(unsafeEndpoints),
+      );
+    }
+    const boundPids = [...new Set(ownedListeners.map((listener) => listener.pid))];
+    if (boundPids.length === 1 && ownedListeners.length > 0) {
+      return {
+        pid: boundPids[0]!,
+        endpoints: [...new Set(ownedListeners.map((listener) => listener.endpoint))]
+          .sort(compareStrings),
+      };
+    }
+    if (boundPids.length > 1) {
       throw new Error("More than one launched app process owns the smoke debugging port");
     }
     await Bun.sleep(100);
   }
-  throw new Error("The exact launched app does not own its DevTools listener");
+  throw new Error(
+    `The exact launched app did not own its DevTools listener within ${timeoutMs}ms; ` +
+      `port=${port}; mainPid=${mainPid}; observedListeners=${stableJson(lastListeners)}; ` +
+      `launchedProcesses=${stableJson(launchedAppProcessDiagnostics(mainPid, appPath))}`,
+  );
+}
+
+function launchedAppProcessDiagnostics(mainPid: number, appPath: string): string[] {
+  try {
+    const processes = listProcesses();
+    return processes
+      .filter((process) =>
+        process.command.includes(appPath) &&
+        (process.pid === mainPid || isDescendant(process.pid, mainPid, processes))
+      )
+      .map((process) => `${process.pid} ppid=${process.parentPid} ${process.command}`);
+  } catch (error) {
+    return [`process inspection failed: ${asError(error).message}`];
+  }
 }
 
 async function exerciseStarterControlFlow(input: {
@@ -1106,6 +1257,100 @@ function processUsesPath(mainPid: number, path: string): boolean {
   return result.stdout.toString().split("\n").some((line) => line.startsWith(prefix));
 }
 
+async function inspectMacOSLaunchPreflight(): Promise<unknown> {
+  const helperRoot = await mkdtemp("/private/tmp/blackglass-preflight-");
+  const helperPath = join(helperRoot, "macos-launch-preflight");
+  let snapshot: unknown;
+  let primaryError: Error | undefined;
+  try {
+    const helperRootStat = await lstat(helperRoot);
+    if (
+      !helperRootStat.isDirectory() ||
+      helperRootStat.isSymbolicLink() ||
+      (helperRootStat.mode & 0o777) !== 0o700 ||
+      helperRootStat.uid !== process.getuid!()
+    ) {
+      throw new Error("Disposable macOS launch preflight directory is not private");
+    }
+    const source = resolve(import.meta.dir, "macos-launch-preflight.m");
+    const compiled = Bun.spawnSync([
+      "/usr/bin/xcrun",
+      "clang",
+      "-fobjc-arc",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-framework",
+      "AppKit",
+      "-framework",
+      "CoreGraphics",
+      source,
+      "-o",
+      helperPath,
+    ], { stdout: "pipe", stderr: "pipe" });
+    if (compiled.exitCode !== 0) {
+      throw new Error(
+        `Unable to compile macOS launch preflight helper: ${compiled.stderr.toString("utf8").trim()}`,
+      );
+    }
+    const helperStat = await lstat(helperPath);
+    if (!helperStat.isFile() || helperStat.isSymbolicLink()) {
+      throw new Error("Compiled macOS launch preflight helper is not a real file");
+    }
+    const inspected = Bun.spawnSync(
+      [
+        helperPath,
+        BLACKGLASS_BUNDLE_IDENTIFIER,
+        OBSIDIAN_BUNDLE_IDENTIFIER,
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    if (inspected.exitCode !== 0) {
+      throw new Error(
+        `Unable to inspect macOS launch preflight state (exit ${inspected.exitCode}): ` +
+          inspected.stderr.toString("utf8").trim(),
+      );
+    }
+    try {
+      snapshot = JSON.parse(inspected.stdout.toString("utf8")) as unknown;
+    } catch (error) {
+      throw new Error(`macOS launch preflight returned malformed JSON: ${asError(error).message}`);
+    }
+  } catch (error) {
+    primaryError = asError(error);
+  }
+
+  const cleanupErrors: Error[] = [];
+  try {
+    if (await pathExists(helperPath)) await unlink(helperPath);
+  } catch (error) {
+    cleanupErrors.push(new Error(`Unable to remove launch preflight helper: ${asError(error).message}`));
+  }
+  try {
+    await rmdir(helperRoot);
+  } catch (error) {
+    cleanupErrors.push(
+      new Error(`Unable to remove launch preflight directory: ${asError(error).message}`),
+    );
+  }
+  if (primaryError && cleanupErrors.length > 0) {
+    throw new AggregateError(
+      [primaryError, ...cleanupErrors],
+      `macOS launch preflight failed: ${primaryError.message}; cleanup failures: ` +
+        cleanupErrors.map((error) => error.message).join(" | "),
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (cleanupErrors.length > 0) {
+    throw new AggregateError(
+      cleanupErrors,
+      `macOS launch preflight cleanup failed: ` +
+        cleanupErrors.map((error) => error.message).join(" | "),
+    );
+  }
+  return snapshot;
+}
+
 async function compileMacOSTerminationHelper(smokeRoot: string): Promise<string> {
   const source = resolve(import.meta.dir, "macos-terminate.m");
   const output = join(smokeRoot, "terminate-macos-application");
@@ -1382,4 +1627,8 @@ function isMissingOrDenied(error: unknown): boolean {
     "code" in error &&
     ["ENOENT", "EACCES", "EPERM"].includes(String(error.code))
   );
+}
+
+function compareStrings(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
