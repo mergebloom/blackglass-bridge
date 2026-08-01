@@ -18,6 +18,7 @@ import {
   isLoopbackTcpListenerEndpoint,
   macOSLaunchPreflightEvidence,
   macOSArtifactBindingSha256,
+  parseStarterControlPost,
   parseLsofTcpListeners,
   type FinderLaunchSmokeEvidence,
 } from "../tools/macos-launch-smoke";
@@ -383,6 +384,34 @@ describe("packaged macOS LaunchServices smoke", () => {
         appPath,
       )
     ).toThrow("exact generated Blackglass Bridge app");
+  });
+
+  test("counts starter control POSTs without treating CORS preflights as duplicates", () => {
+    expect(parseStarterControlPost({
+      method: "OPTIONS",
+      url: `${controlOrigin}/user/signin`,
+    })).toBeUndefined();
+    expect(parseStarterControlPost({
+      method: "POST",
+      url: `${controlOrigin}/user/signin`,
+    })).toEqual({
+      method: "POST",
+      origin: controlOrigin,
+      path: "/user/signin",
+    });
+    expect(parseStarterControlPost({
+      method: "POST",
+      url: `${controlOrigin}/vault/list`,
+    })).toEqual({
+      method: "POST",
+      origin: controlOrigin,
+      path: "/vault/list",
+    });
+    expect(parseStarterControlPost({
+      method: "POST",
+      url: `${controlOrigin}/subscription/list`,
+    })).toBeUndefined();
+    expect(parseStarterControlPost({ method: "POST", url: "not a URL" })).toBeUndefined();
   });
 
   test("parses listener ownership and accepts loopback endpoints only", () => {

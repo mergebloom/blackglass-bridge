@@ -49,6 +49,12 @@ export interface DevToolsTargetDiagnostic {
   hasWebSocketDebuggerUrl: boolean;
 }
 
+export interface StarterControlPost {
+  method: "POST";
+  origin: string;
+  path: "/user/signin" | "/vault/list";
+}
+
 type PublicMacOSArtifact = Omit<MacOSArtifact, "appPath">;
 
 export interface FinderLaunchSmokeEvidence {
@@ -157,6 +163,21 @@ export function finderLaunchSmokeLayout(root: string): {
     stderrPath: join(smokeRoot, "stderr.log"),
     evidencePath: join(root, "finder-launch-smoke.json"),
   };
+}
+
+export function parseStarterControlPost(value: unknown): StarterControlPost | undefined {
+  if (!isRecord(value) || value.method !== "POST" || typeof value.url !== "string") {
+    return undefined;
+  }
+  try {
+    const url = new URL(value.url);
+    if (url.pathname !== "/user/signin" && url.pathname !== "/vault/list") {
+      return undefined;
+    }
+    return { method: "POST", origin: url.origin, path: url.pathname };
+  } catch {
+    return undefined;
+  }
 }
 
 export function finderLaunchCommand(input: {

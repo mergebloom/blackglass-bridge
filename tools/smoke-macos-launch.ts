@@ -39,6 +39,7 @@ import {
   isLoopbackTcpListenerEndpoint,
   macOSLaunchPreflightEvidence,
   macOSArtifactBindingSha256,
+  parseStarterControlPost,
   parseLsofTcpListeners,
   type DevToolsListenerDiagnostic,
   type DevToolsTargetDiagnostic,
@@ -999,17 +1000,12 @@ async function exerciseStarterControlFlow(input: {
     }
     const params = message.params ?? {};
     if (message.method === "Network.requestWillBeSent") {
-      try {
-        const url = new URL(String(params.request?.url ?? ""));
-        if (!["/user/signin", "/vault/list"].includes(url.pathname)) return;
-        requests.set(String(params.requestId), {
-          method: String(params.request?.method ?? ""),
-          origin: url.origin,
-          path: url.pathname,
-        });
-      } catch {
-        // Ignore non-URL DevTools events.
-      }
+      // Chromium may emit a CORS OPTIONS preflight for these JSON requests.
+      // The release claim is bound to the starter renderer's two control
+      // operations, so count their POSTs without treating preflights as
+      // duplicated application requests.
+      const request = parseStarterControlPost(params.request);
+      if (request) requests.set(String(params.requestId), request);
     } else if (message.method === "Network.responseReceived") {
       const request = requests.get(String(params.requestId));
       if (request) request.status = Number(params.response?.status);
@@ -1115,7 +1111,14 @@ async function exerciseStarterControlFlow(input: {
       [...requests.values()].filter((request) => request.path === path)
     );
     if (ordered.some((matches) => matches.length !== 1)) {
-      throw new Error("Native starter control requests were missing or duplicated");
+      const uiState = await evaluate(`({
+        href:location.href,
+        text:document.body?.innerText?.slice(0,1000)??"",
+      })`);
+      throw new Error(
+        "Native starter control requests were missing or duplicated: " +
+          JSON.stringify({ requests: [...requests.values()], uiState }),
+      );
     }
     const evidenceRequests = ordered.map(([request], index) => {
       const status = request?.status;

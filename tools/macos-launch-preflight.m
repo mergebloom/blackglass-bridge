@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <sysexits.h>
+#include <unistd.h>
 
 static NSString *CanonicalPath(NSURL *url) {
   NSString *path = url.path;
@@ -28,9 +29,30 @@ int main(int argc, const char *argv[]) {
     }
     NSDictionary *session = CFBridgingRelease(sessionRef);
     id lockedValue = session[@"CGSSessionScreenIsLocked"];
-    if (![lockedValue isKindOfClass:[NSNumber class]]) {
-      fputs("macOS GUI session did not report its lock state\n", stderr);
-      return EX_UNAVAILABLE;
+    BOOL screenLocked = NO;
+    if (lockedValue != nil) {
+      if (![lockedValue isKindOfClass:[NSNumber class]]) {
+        fputs("macOS GUI session reported a malformed lock state\n", stderr);
+        return EX_UNAVAILABLE;
+      }
+      screenLocked = [lockedValue boolValue];
+    } else {
+      // Recent macOS releases omit CGSSessionScreenIsLocked from an unlocked
+      // session instead of returning @NO. Accept that representation only
+      // when the remaining session facts positively identify this process's
+      // active, fully logged-in console session.
+      id onConsoleValue = session[@"kCGSSessionOnConsoleKey"];
+      id loginDoneValue = session[@"kCGSessionLoginDoneKey"];
+      id userIDValue = session[@"kCGSSessionUserIDKey"];
+      if (![onConsoleValue isKindOfClass:[NSNumber class]] ||
+          ![loginDoneValue isKindOfClass:[NSNumber class]] ||
+          ![userIDValue isKindOfClass:[NSNumber class]] ||
+          ![onConsoleValue boolValue] || ![loginDoneValue boolValue] ||
+          [userIDValue unsignedIntValue] != getuid()) {
+        fputs("macOS GUI session did not prove an active unlocked console\n",
+              stderr);
+        return EX_UNAVAILABLE;
+      }
     }
 
     NSMutableArray<NSDictionary *> *applications = [NSMutableArray array];
@@ -56,7 +78,7 @@ int main(int argc, const char *argv[]) {
     ]];
 
     NSDictionary *snapshot = @{
-      @"screenLocked" : @([lockedValue boolValue]),
+      @"screenLocked" : @(screenLocked),
       @"applications" : applications,
     };
     NSError *jsonError = nil;
