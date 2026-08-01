@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
+  assertPreparedClientAdapterPath,
   assertClientLaunchIdentity,
   resolvePreparedClientLayout,
 } from "../tools/e2e-client";
@@ -103,6 +104,27 @@ describe("E2E runtime binding", () => {
       );
       expect(layout.clientName).toBe("client-a");
       expect(layout.clientRoot).toBe(join(runRoot, "client-a"));
+      const adapterPath = join(runRoot, "client-a/user-data/obsidian-1.12.7.asar");
+      expect(
+        assertPreparedClientAdapterPath(
+          join(runRoot, "client-a/user-data"),
+          adapterPath,
+          "obsidian-1.12.7.asar",
+        ),
+      ).toBe(adapterPath);
+      for (const wrongAdapter of [
+        join(runRoot, "obsidian-1.12.7.asar"),
+        join(runRoot, "client-b/user-data/obsidian-1.12.7.asar"),
+        join(runRoot, "client-a/user-data/obsidian-1.12.8.asar"),
+      ]) {
+        expect(() =>
+          assertPreparedClientAdapterPath(
+            join(runRoot, "client-a/user-data"),
+            wrongAdapter,
+            "obsidian-1.12.7.asar",
+          ),
+        ).toThrow("exact adapter inside its client profile");
+      }
       await expect(
         resolvePreparedClientLayout(
           join(runRoot, "client-a/user-data"),

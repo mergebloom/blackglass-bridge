@@ -97,6 +97,18 @@ export async function resolvePreparedClientLayout(
   return { run, clientRoot, clientName };
 }
 
+export function assertPreparedClientAdapterPath(
+  profile: string,
+  adapter: string,
+  adapterFileName: string,
+): string {
+  const expected = join(profile, adapterFileName);
+  if (!pathsEqual(adapter, expected)) {
+    throw new Error("Prepared E2E adapter must be the exact adapter inside its client profile");
+  }
+  return expected;
+}
+
 export async function readClientLaunchIdentity(
   path: string,
 ): Promise<ClientLaunchIdentity> {

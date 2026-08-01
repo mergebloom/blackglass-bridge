@@ -18,6 +18,7 @@ import { parseStrictFlags } from "./cli-flags";
 import { MACOS_PACKAGING_EXECUTABLES } from "./packaging-toolchain";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import {
+  assertPreparedClientAdapterPath,
   type ClientLaunchIdentity,
   resolvePreparedClientLayout,
 } from "./e2e-client";
@@ -91,8 +92,15 @@ assertNonOverlappingPaths([
   { label: "Client profile", path: profile },
   { label: "Client vault", path: vault },
   { label: "macOS app bundle", path: appBundle },
-  { label: "Compatibility ASAR", path: asar },
 ]);
+if (!e2eRequested) {
+  assertNonOverlappingPaths([
+    { label: "Client profile", path: profile },
+    { label: "Client vault", path: vault },
+    { label: "macOS app bundle", path: appBundle },
+    { label: "Compatibility ASAR", path: asar },
+  ]);
+}
 assertNonOverlappingPaths([
   { label: "Client profile", path: profile },
   {
@@ -201,11 +209,17 @@ if (e2eRequested) {
   if (run.manifest.compatibilityAsarSha256 !== adapterSha256) {
     throw new Error("Compatibility ASAR is not bound to the selected prepared run");
   }
+  const expectedAdapter = assertPreparedClientAdapterPath(
+    profile,
+    asar,
+    run.manifest.adapterFileName,
+  );
   targetAsar = await canonicalExistingPath(
-    join(profile, run.manifest.adapterFileName),
+    expectedAdapter,
     "Prepared client adapter",
     "file",
   );
+  await assertNoSymlinkSegments(run.root, targetAsar, "Prepared client adapter");
   if ((await fileSha256(targetAsar)) !== adapterSha256) {
     throw new Error("Prepared client adapter no longer matches the run manifest");
   }
