@@ -557,7 +557,8 @@ async function setObsidianCheckbox(checkbox, checked) {
     ? await container.evaluate((element) => element.classList.contains("is-enabled"))
     : await checkbox.isChecked();
   if (current !== checked) {
-    if (hasContainer) await checkbox.click({ force: true });
+    // Obsidian owns toggle state and click handling on the styled container.
+    if (hasContainer) await container.click({ force: true });
     else if (checked) await checkbox.check();
     else await checkbox.uncheck();
   }
