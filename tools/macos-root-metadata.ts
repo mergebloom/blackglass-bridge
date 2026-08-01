@@ -69,20 +69,19 @@ export async function inspectMacOSRootMetadata(
     throw new Error("macOS app root must be owned by the packaging user");
   }
   const entries = await listMetadataEntries(appPath);
+  const bsdFlags = readBsdFlags(entries);
   const descendantXattrEntries: Array<{
     path: string;
     name: "com.apple.provenance";
     bytes: number;
     sha256: string;
   }> = [];
-  for (const entry of entries) {
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]!;
     if (entry.uid !== processUid) {
       throw new Error(`macOS app entry is not owned by the packaging user: ${entry.path}`);
     }
-    const flags = parseUnsignedInteger(
-      runText([MACOS_PACKAGING_EXECUTABLES.stat, "-f", "%f", entry.fullPath]),
-      `macOS app BSD flags for ${entry.path}`,
-    );
+    const flags = bsdFlags[index]!;
     if (flags !== 0) {
       throw new Error(`macOS app entry has unsupported BSD flags: ${entry.path}: ${flags}`);
     }
@@ -155,6 +154,39 @@ export async function inspectMacOSRootMetadata(
   };
   assertMacOSRootMetadata(metadata);
   return metadata;
+}
+
+function readBsdFlags(entries: MetadataEntry[]): number[] {
+  const flags: number[] = [];
+  const batchSize = 64;
+  for (let offset = 0; offset < entries.length; offset += batchSize) {
+    const batch = entries.slice(offset, offset + batchSize);
+    const arguments_ = [
+      MACOS_PACKAGING_EXECUTABLES.stat,
+      "-f",
+      "%f",
+      ...batch.map((entry) => entry.fullPath),
+    ];
+    // A successful-but-empty stdout was observed once when two independent
+    // packages recursively inspected the same source in parallel. Retry only
+    // that impossible metadata result once; command failures and malformed
+    // output continue to fail closed.
+    let output = runText(arguments_, true);
+    if (output.length === 0) output = runText(arguments_);
+    const lines = output.split("\n");
+    if (lines.length !== batch.length) {
+      throw new Error("macOS app BSD flags output is incomplete");
+    }
+    for (let index = 0; index < batch.length; index += 1) {
+      flags.push(
+        parseUnsignedInteger(
+          lines[index]!,
+          `macOS app BSD flags for ${batch[index]!.path}`,
+        ),
+      );
+    }
+  }
+  return flags;
 }
 
 export function assertMacOSRootMetadata(
