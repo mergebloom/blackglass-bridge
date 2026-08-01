@@ -2,6 +2,7 @@ import { chromium } from "#release-playwright-core";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { connectOverBunNativeCDP } from "./bun-native-cdp.ts";
 import { verifyLiveClientLaunchBinding } from "./e2e-client.ts";
 
 const [portArgument, action = "snapshot", ...arguments_] = process.argv.slice(2);
@@ -30,7 +31,7 @@ if (
 ) {
   throw new Error("Live renderer target does not match the bound launch identity");
 }
-const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+const browser = await connectOverBunNativeCDP(chromium, port);
 const pages = browser.contexts().flatMap((context) => context.pages());
 const rendererPages = pages.filter((candidate) => candidate.url().includes("index.html"));
 const visibleRendererPages = [];
