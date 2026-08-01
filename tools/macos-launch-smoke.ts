@@ -55,6 +55,16 @@ export interface StarterControlPost {
   path: "/user/signin" | "/vault/list";
 }
 
+export interface StarterSyncEntryAttempt {
+  opened: boolean;
+  href: string;
+  readyState: string;
+  rows: Array<{
+    name: string | null;
+    button: string | null;
+  }>;
+}
+
 type PublicMacOSArtifact = Omit<MacOSArtifact, "appPath">;
 
 export interface FinderLaunchSmokeEvidence {
@@ -178,6 +188,63 @@ export function parseStarterControlPost(value: unknown): StarterControlPost | un
   } catch {
     return undefined;
   }
+}
+
+export async function waitForStarterSyncEntry(
+  attempt: () => Promise<unknown>,
+  options: {
+    timeoutMs?: number;
+    intervalMs?: number;
+    now?: () => number;
+    sleep?: (milliseconds: number) => Promise<void>;
+  } = {},
+): Promise<StarterSyncEntryAttempt> {
+  const timeoutMs = options.timeoutMs ?? 5_000;
+  const intervalMs = options.intervalMs ?? 100;
+  if (
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs < 1 ||
+    !Number.isSafeInteger(intervalMs) ||
+    intervalMs < 1 ||
+    intervalMs > timeoutMs
+  ) {
+    throw new Error("Invalid native starter Sync entry wait bounds");
+  }
+  const now = options.now ?? Date.now;
+  const sleep = options.sleep ?? ((milliseconds: number) =>
+    new Promise<void>((resolveSleep) => setTimeout(resolveSleep, milliseconds)));
+  const deadline = now() + timeoutMs;
+  let lastAttempt: StarterSyncEntryAttempt | undefined;
+  while (true) {
+    const value = await attempt();
+    if (!isStarterSyncEntryAttempt(value)) {
+      throw new Error("Native starter Sync entry inspection returned malformed data");
+    }
+    lastAttempt = value;
+    if (value.opened) return value;
+    const remainingMs = deadline - now();
+    if (remainingMs <= 0) break;
+    await sleep(Math.min(intervalMs, remainingMs));
+  }
+  throw new Error(
+    "Native starter Sync sign-in entry point is unavailable after bounded readiness wait: " +
+      stableJson(lastAttempt),
+  );
+}
+
+export function starterSyncEntryRowIndex(value: unknown): number | undefined {
+  if (
+    !isStarterSyncEntryAttempt(value) ||
+    !value.href.includes("starter.html") ||
+    value.rows.length < 3 ||
+    value.rows.slice(0, 3).some((row) => row.button === null)
+  ) {
+    return undefined;
+  }
+  // The reviewed 1.12.7 starter renderer has three action rows in a fixed
+  // order: create, open, and Sync. Labels are localized from navigator.language,
+  // so their text is not a stable selector even within this exact release.
+  return 2;
 }
 
 export function finderLaunchCommand(input: {
@@ -580,6 +647,22 @@ function validLoopbackListenerEndpoints(value: unknown, port: number): value is 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStarterSyncEntryAttempt(value: unknown): value is StarterSyncEntryAttempt {
+  return Boolean(
+    isRecord(value) &&
+      typeof value.opened === "boolean" &&
+      typeof value.href === "string" &&
+      typeof value.readyState === "string" &&
+      Array.isArray(value.rows) &&
+      value.rows.length <= 16 &&
+      value.rows.every((row) =>
+        isRecord(row) &&
+        (row.name === null || typeof row.name === "string") &&
+        (row.button === null || typeof row.button === "string")
+      ),
+  );
 }
 
 function same(left: unknown, right: unknown): boolean {

@@ -20,6 +20,8 @@ import {
   macOSArtifactBindingSha256,
   parseStarterControlPost,
   parseLsofTcpListeners,
+  starterSyncEntryRowIndex,
+  waitForStarterSyncEntry,
   type FinderLaunchSmokeEvidence,
 } from "../tools/macos-launch-smoke";
 import { APPROVED_MACOS_ENTITLEMENTS } from "../tools/macos-code-signing";
@@ -412,6 +414,95 @@ describe("packaged macOS LaunchServices smoke", () => {
       url: `${controlOrigin}/subscription/list`,
     })).toBeUndefined();
     expect(parseStarterControlPost({ method: "POST", url: "not a URL" })).toBeUndefined();
+  });
+
+  test("waits for the native starter Sync entry instead of racing renderer hydration", async () => {
+    let currentTime = 0;
+    let attempts = 0;
+    const result = await waitForStarterSyncEntry(
+      async () => ({
+        opened: ++attempts === 3,
+        href: "app://obsidian.md/starter.html",
+        readyState: attempts === 1 ? "loading" : "complete",
+        rows: attempts < 3
+          ? []
+          : [{ name: "Open vault from Obsidian Sync", button: "Sign in" }],
+      }),
+      {
+        timeoutMs: 10,
+        intervalMs: 2,
+        now: () => currentTime,
+        sleep: async (milliseconds) => {
+          currentTime += milliseconds;
+        },
+      },
+    );
+    expect(attempts).toBe(3);
+    expect(result).toEqual({
+      opened: true,
+      href: "app://obsidian.md/starter.html",
+      readyState: "complete",
+      rows: [{ name: "Open vault from Obsidian Sync", button: "Sign in" }],
+    });
+  });
+
+  test("selects the reviewed third starter row independently of localized labels", () => {
+    for (const name of [
+      "Open vault from Obsidian Sync",
+      "Obsidian سینک",
+      "同步远程仓库",
+      "ከ Obsidian ማመሳሰል",
+    ]) {
+      expect(starterSyncEntryRowIndex({
+        opened: false,
+        href: "app://obsidian.md/starter.html",
+        readyState: "complete",
+        rows: [
+          { name: "localized create", button: "localized button" },
+          { name: "localized open", button: "localized button" },
+          { name, button: "localized button" },
+        ],
+      })).toBe(2);
+    }
+    for (const rows of [
+      [],
+      [{ name: "create", button: "button" }],
+      [
+        { name: "create", button: "button" },
+        { name: "open", button: "button" },
+        { name: "sync", button: null },
+      ],
+    ]) {
+      expect(starterSyncEntryRowIndex({
+        opened: false,
+        href: "app://obsidian.md/starter.html",
+        readyState: "complete",
+        rows,
+      })).toBeUndefined();
+    }
+  });
+
+  test("reports bounded starter DOM diagnostics when the Sync entry never appears", async () => {
+    let currentTime = 0;
+    const waiting = waitForStarterSyncEntry(
+      async () => ({
+        opened: false,
+        href: "app://obsidian.md/starter.html",
+        readyState: "complete",
+        rows: [{ name: "Create new vault", button: "Create" }],
+      }),
+      {
+        timeoutMs: 4,
+        intervalMs: 2,
+        now: () => currentTime,
+        sleep: async (milliseconds) => {
+          currentTime += milliseconds;
+        },
+      },
+    );
+    await expect(waiting).rejects.toThrow(
+      '"rows":[{"button":"Create","name":"Create new vault"}]',
+    );
   });
 
   test("parses listener ownership and accepts loopback endpoints only", () => {

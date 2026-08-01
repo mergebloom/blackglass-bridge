@@ -41,6 +41,8 @@ import {
   macOSArtifactBindingSha256,
   parseStarterControlPost,
   parseLsofTcpListeners,
+  starterSyncEntryRowIndex,
+  waitForStarterSyncEntry,
   type DevToolsListenerDiagnostic,
   type DevToolsTargetDiagnostic,
   type FinderLaunchSmokeEvidence,
@@ -1050,18 +1052,30 @@ async function exerciseStarterControlFlow(input: {
         "Native starter did not preserve HOME while using the isolated BLACKGLASS_HOME",
       );
     }
-    const openedLogin = await evaluate(`(()=>{
-      if (!location.href.includes("starter.html")) return false;
+    await waitForStarterSyncEntry(async () => {
+      const snapshot = await evaluate(`(()=>{
       const rows=[...document.querySelectorAll(".open-vault-options.mod-open-vault .setting-item")];
-      const syncRow=rows[2];
-      const button=syncRow?.querySelector("button");
-      if (!(button instanceof HTMLButtonElement)) return false;
-      button.click();
-      return true;
-    })()`);
-    if (openedLogin !== true) {
-      throw new Error("Native starter Sync sign-in entry point is unavailable");
-    }
+      return {
+        opened:false,
+        href:location.href,
+        readyState:document.readyState,
+        rows:rows.slice(0,16).map((row)=>({
+          name:row.querySelector(".setting-item-name")?.textContent?.trim()??null,
+          button:row.querySelector("button")?.textContent?.trim()??null,
+        })),
+      };
+      })()`);
+      const rowIndex = starterSyncEntryRowIndex(snapshot);
+      if (rowIndex === undefined) return snapshot;
+      const opened = await evaluate(`(()=>{
+        const rows=[...document.querySelectorAll(".open-vault-options.mod-open-vault .setting-item")];
+        const button=rows[${rowIndex}]?.querySelector("button");
+        if (!(button instanceof HTMLButtonElement)) return false;
+        button.click();
+        return true;
+      })()`);
+      return { ...(snapshot as object), opened: opened === true };
+    });
 
     const loginDeadline = Date.now() + 5_000;
     while (Date.now() < loginDeadline) {
