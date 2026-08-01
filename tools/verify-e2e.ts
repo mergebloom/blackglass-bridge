@@ -443,7 +443,7 @@ const vault = database
 const revisionSummary = database
   .query<{ revisions: number; maxUid: number; encryptedBytes: number }, []>(
     `SELECT COUNT(*) AS revisions,
-            COALESCE(MAX(uid), 0) AS maxUid,
+            COALESCE(MAX(r.uid), 0) AS maxUid,
             COALESCE(SUM(LENGTH(${hasExternalContent ? "COALESCE(rc.content, r.content)" : "r.content"})), 0) AS encryptedBytes
        FROM revisions r
        ${hasExternalContent ? "LEFT JOIN revision_content rc ON rc.uid = r.uid" : ""}`,
@@ -529,6 +529,7 @@ const uxEvidence: Array<{
   debugPort: number;
   observedAt: string;
   bodyTextSha256: string;
+  accessibleTextSha256: string;
 }> = [];
 for (const checkpoint of uiCheckpoints) {
   const screenshot = resolve(root, `${checkpoint.path}.png`);
@@ -565,6 +566,7 @@ for (const checkpoint of uiCheckpoints) {
     url?: unknown;
     title?: unknown;
     bodyText?: unknown;
+    accessibleText?: unknown;
     screenshotPath?: unknown;
     screenshotSha256?: unknown;
     launchIdentityPath?: unknown;
@@ -580,7 +582,7 @@ for (const checkpoint of uiCheckpoints) {
   const binding = liveClientBindings.get(checkpoint.client)!;
   const identity = binding.identity;
   if (
-    state.schemaVersion !== 1 ||
+    state.schemaVersion !== 2 ||
     typeof state.observedAt !== "string" ||
     typeof state.debugPort !== "number" ||
     !Number.isInteger(state.debugPort) ||
@@ -591,6 +593,8 @@ for (const checkpoint of uiCheckpoints) {
     typeof state.title !== "string" ||
     state.title.length === 0 ||
     typeof state.bodyText !== "string" ||
+    !Array.isArray(state.accessibleText) ||
+    state.accessibleText.some((value) => typeof value !== "string") ||
     typeof state.screenshotPath !== "string" ||
     resolve(state.screenshotPath) !== screenshot ||
     state.screenshotSha256 !== sha256(bytes) ||
@@ -608,6 +612,7 @@ for (const checkpoint of uiCheckpoints) {
   ) {
     throw new Error(`Malformed or mismatched UI checkpoint: ${statePath}`);
   }
+  const uiText = [state.bodyText, ...state.accessibleText].join("\n");
   const observedAt = Date.parse(state.observedAt);
   if (
     !Number.isFinite(observedAt) ||
@@ -617,12 +622,12 @@ for (const checkpoint of uiCheckpoints) {
     throw new Error(`UI checkpoint has an implausible observation time: ${statePath}`);
   }
   for (const requiredText of checkpoint.requiredText) {
-    if (!state.bodyText.includes(requiredText)) {
+    if (!uiText.includes(requiredText)) {
       throw new Error(`UI checkpoint ${statePath} is missing required text: ${requiredText}`);
     }
   }
   for (const forbiddenText of checkpoint.forbiddenText) {
-    if (state.bodyText.toLowerCase().includes(forbiddenText.toLowerCase())) {
+    if (uiText.toLowerCase().includes(forbiddenText.toLowerCase())) {
       throw new Error(`UI checkpoint ${statePath} contains failure text: ${forbiddenText}`);
     }
   }
@@ -637,6 +642,7 @@ for (const checkpoint of uiCheckpoints) {
     debugPort: state.debugPort,
     observedAt: state.observedAt,
     bodyTextSha256: sha256(Buffer.from(state.bodyText)),
+    accessibleTextSha256: sha256(Buffer.from(state.accessibleText.join("\n"))),
   });
 }
 if (new Set(uxEvidence.map((item) => item.sha256)).size !== uxEvidence.length) {

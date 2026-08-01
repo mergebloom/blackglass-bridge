@@ -4,7 +4,7 @@ import { connect as connectTcp, type Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { readVerifiedE2ETls } from "./e2e-tls";
 
-const [rootArgument, ...extraArguments] = Bun.argv.slice(2);
+const [rootArgument, ...extraArguments] = process.argv.slice(2);
 if (!rootArgument || extraArguments.length !== 0) usage();
 
 const tls = await readVerifiedE2ETls(rootArgument);
@@ -138,6 +138,6 @@ function shutdown(proxy: Server): void {
 }
 
 function usage(): never {
-  console.error("Usage: bun run tools/e2e-tls-proxy.ts <prepared-E2E-run-directory>");
+  console.error("Usage: bun run e2e:tls:proxy -- <prepared-E2E-run-directory>");
   process.exit(2);
 }

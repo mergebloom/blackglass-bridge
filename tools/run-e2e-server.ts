@@ -83,7 +83,10 @@ const child = Bun.spawn([binary, "serve"], {
     SELFHOST_ALLOWED_ORIGIN: "app://obsidian.md",
     SELFHOST_MAX_CONCURRENT_UPLOADS: "4",
     SELFHOST_MAX_WS_CONNECTIONS: "8",
-    SELFHOST_SESSION_TTL_SECONDS: "3600",
+    // Manual desktop qualification can include a long source-loss recovery
+    // drill. Keep its session valid for a full working day while remaining far
+    // below the server's production maximum.
+    SELFHOST_SESSION_TTL_SECONDS: String(24 * 60 * 60),
     SELFHOST_LOG_FORMAT: "pretty",
   },
 });

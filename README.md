@@ -70,8 +70,9 @@ with later Obsidian releases are not qualified yet.
 
 ## Quick start
 
-Requirements: Bun 1.3.8 (pinned in `.bun-version`), npm for the lockfile-verified
-dependency install, and an authorized official Obsidian DMG.
+Requirements: Bun 1.3.8 (pinned in `.bun-version`), Node.js/npm for the
+lockfile-verified dependency install and E2E TLS proxy, and an authorized
+official Obsidian DMG.
 
 ```sh
 npm ci

@@ -338,6 +338,7 @@ async function verifyRecoveryUi(
     visibleRendererPageCount?: unknown;
     url?: unknown;
     bodyText?: unknown;
+    accessibleText?: unknown;
     screenshotPath?: unknown;
     screenshotSha256?: unknown;
     launchIdentityPath?: unknown;
@@ -363,7 +364,7 @@ async function verifyRecoveryUi(
     height < 400 ||
     width > 16_384 ||
     height > 16_384 ||
-    state.schemaVersion !== 1 ||
+    state.schemaVersion !== 2 ||
     state.debugPort !== identity.debugPort ||
     state.rendererPageCount !== 1 ||
     state.visibleRendererPageCount !== 1 ||
@@ -375,6 +376,9 @@ async function verifyRecoveryUi(
     Math.abs(screenshotStat.mtimeMs - Date.parse(state.observedAt)) > 30_000 ||
     typeof state.bodyText !== "string" ||
     !state.bodyText.includes("Recovery Drill Home") ||
+    !Array.isArray(state.accessibleText) ||
+    state.accessibleText.some((value) => typeof value !== "string") ||
+    !state.accessibleText.includes("Fully synced") ||
     typeof state.screenshotPath !== "string" ||
     resolve(state.screenshotPath) !== screenshotPath ||
     state.screenshotSha256 !== sha256(screenshot) ||

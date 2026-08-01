@@ -288,8 +288,16 @@ try {
       return response.json();
     });
     const screenshotBytes = screenshotPath ? await readFile(screenshotPath) : null;
+    const accessibleText = await page.locator("[aria-label], [title]").evaluateAll((elements) =>
+      [...new Set(elements.flatMap((element) => {
+        if (element.getClientRects().length === 0) return [];
+        return [element.getAttribute("aria-label"), element.getAttribute("title")]
+          .filter((value) => typeof value === "string" && value.trim().length > 0)
+          .map((value) => value.trim().slice(0, 1000));
+      }))].slice(0, 1000),
+    );
     const snapshot = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       observedAt: new Date().toISOString(),
       launchIdentityPath: launch.path,
       launchIdentitySha256: launch.sha256,
@@ -312,6 +320,7 @@ try {
       url: page.url(),
       title: await page.title(),
       bodyText: (await page.locator("body").innerText()).slice(0, 30_000),
+      accessibleText,
       interactive,
       screenshotPath,
       screenshotSha256: screenshotBytes
@@ -350,24 +359,45 @@ try {
     console.log(JSON.stringify({ pressed: key, url: page.url() }));
   } else if (action === "checkboxes") {
     const checkboxes = await page.locator('input[type="checkbox"]').evaluateAll((elements) =>
-      elements.map((element, index) => ({
-        index,
-        checked: element.checked,
-        disabled: element.disabled,
-        context:
-          element.closest(".setting-item")?.innerText?.trim().slice(0, 500) ??
-          element.parentElement?.innerText?.trim().slice(0, 500) ??
-          "",
-      })),
+      elements.map((element, index) => {
+        const container = element.closest(".checkbox-container");
+        return {
+          index,
+          checked: container
+            ? container.classList.contains("is-enabled")
+            : element.checked,
+          nativeChecked: element.checked,
+          disabled: element.disabled,
+          context:
+            element.closest(".setting-item")?.innerText?.trim().slice(0, 500) ??
+            element.parentElement?.innerText?.trim().slice(0, 500) ??
+            "",
+        };
+      }),
     );
     console.log(JSON.stringify({ checkboxes, url: page.url() }, null, 2));
   } else if (action === "set-checkbox") {
     const index = Number(required(arguments_[0], "checkbox index"));
     const checked = required(arguments_[1], "checked state") === "true";
     const checkbox = page.locator('input[type="checkbox"]').nth(index);
-    if (checked) await checkbox.check();
-    else await checkbox.uncheck();
+    await setObsidianCheckbox(checkbox, checked);
     console.log(JSON.stringify({ checkbox: index, checked, url: page.url() }));
+  } else if (action === "set-checkbox-label") {
+    const label = required(arguments_[0], "setting label");
+    const checked = required(arguments_[1], "checked state") === "true";
+    const setting = page
+      .locator(".setting-item")
+      .filter({ has: page.getByText(label, { exact: true }) })
+      .last();
+    if ((await setting.count()) !== 1) {
+      throw new Error(`Expected one checkbox setting named: ${label}`);
+    }
+    const checkbox = setting.locator('input[type="checkbox"]');
+    if ((await checkbox.count()) !== 1) {
+      throw new Error(`Setting does not contain exactly one checkbox: ${label}`);
+    }
+    await setObsidianCheckbox(checkbox, checked);
+    console.log(JSON.stringify({ label, checked, url: page.url() }));
   } else if (action === "set-checkboxes") {
     const indexes = required(arguments_[0], "checkbox indexes")
       .split(",")
@@ -378,8 +408,7 @@ try {
     const checked = required(arguments_[1], "checked state") === "true";
     for (const index of indexes) {
       const checkbox = page.locator('input[type="checkbox"]').nth(index);
-      if (checked) await checkbox.check();
-      else await checkbox.uncheck();
+      await setObsidianCheckbox(checkbox, checked);
     }
     console.log(JSON.stringify({ checkboxes: indexes, checked, url: page.url() }));
   } else if (action === "trace-reconnect") {
@@ -519,6 +548,25 @@ function required(value, label) {
     throw new Error(`Missing ${label}`);
   }
   return value;
+}
+
+async function setObsidianCheckbox(checkbox, checked) {
+  const container = checkbox.locator("xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' checkbox-container ')][1]");
+  const hasContainer = (await container.count()) === 1;
+  const current = hasContainer
+    ? await container.evaluate((element) => element.classList.contains("is-enabled"))
+    : await checkbox.isChecked();
+  if (current !== checked) {
+    if (hasContainer) await checkbox.click({ force: true });
+    else if (checked) await checkbox.check();
+    else await checkbox.uncheck();
+  }
+  const observed = hasContainer
+    ? await container.evaluate((element) => element.classList.contains("is-enabled"))
+    : await checkbox.isChecked();
+  if (observed !== checked) {
+    throw new Error(`Checkbox did not reach requested state: ${checked}`);
+  }
 }
 
 async function findBoundLaunchIdentity(debugPort) {

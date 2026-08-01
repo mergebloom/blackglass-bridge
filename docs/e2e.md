@@ -77,6 +77,11 @@ BLACKGLASS_SERVER_BINARY=/path/to/blackglass-server \
   --expected-server-source-revision "$server_source_revision"
 ```
 
+The launcher bundles the verified proxy source to an owner-only temporary
+directory and runs it with Node.js. This avoids a Bun 1.3.8 TLS-upgrade socket
+forwarding defect while keeping the documented command and source provenance
+unchanged.
+
 The source revision must be the exact 40-character lowercase commit used to
 build the selected server binary; the runner rejects any mismatch before
 writing server artifact or process evidence. Both commands block and must remain
