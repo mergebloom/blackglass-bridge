@@ -15,8 +15,8 @@ Blackglass Bridge owns the desktop compatibility boundary:
    `HOME`, disabling its upstream package updater, and pinning the embedded
    qualified renderer;
 6. rebuild both ASAR integrity records;
-7. bind the official DMG digest and full source tree, then stage, verify, sign,
-   and publish a separate macOS application copy;
+7. bind the official DMG digest, full source tree, and every signed bundle/Mach-O
+   target, then stage, verify, sign, and publish a separate macOS application copy;
 8. launch it through LaunchServices with a genuinely empty default profile,
    prove the native starter's sign-in and vault-list requests use the configured
    TLS origin, and record the exact process, executable, app, adapter, debug
@@ -49,7 +49,10 @@ sizes, and SHA-256 identities. If any packed or unpacked JavaScript file,
 anchor, request helper, network constructor, route, operation, or message shape
 is new, removed, or changed, generation stops. Packaging then reproduces the
 six-incision client ASAR from the reviewed source and canonical endpoints and
-requires a byte-identical result. A single release manifest binds
+requires a byte-identical result. Two packages in separate output roots must
+have distinct invocation receipts and the same complete app and manifest
+identities. E2E preparation re-inspects both roots and recomputes their
+path-free proof; final qualification embeds and binds that proof. A single release manifest binds
 the baseline, source/result hashes, endpoints, patcher formats, wrapper, and app
 identity into the isolated E2E report. The E2E TLS certificate, resolver rules,
 proxy routes, and server ports are derived from that run's endpoint-bound

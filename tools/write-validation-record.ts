@@ -13,7 +13,11 @@ import {
   canonicalExistingPath,
   canonicalOutputPath,
 } from "./path-safety";
-import { readBridgeReleaseManifest } from "./release-manifest";
+import { parseBridgeReleaseManifest } from "./release-manifest";
+import {
+  loadCompatibilityBaseline,
+} from "./release-compatibility";
+import { macOSCodeInventoriesEqual } from "./macos-code-inventory";
 import {
   buildReleaseValidationRecord,
   releaseValidationRecordFileName,
@@ -47,7 +51,27 @@ const releaseManifestSha256 = sha256(releaseManifestBytes);
 if (releaseManifestSha256 !== run.manifest.releaseManifestSha256) {
   throw new Error("Prepared release manifest changed after the E2E run was created");
 }
-const { manifest } = await readBridgeReleaseManifest(releaseManifestPath);
+const manifest = parseBridgeReleaseManifest(releaseManifestBytes);
+const repositoryRoot = resolve(import.meta.dir, "..");
+const loadedBaseline = await loadCompatibilityBaseline(
+  resolve(
+    repositoryRoot,
+    `compatibility/obsidian-${manifest.rendererVersion}.json`,
+  ),
+);
+if (
+  manifest.compatibilityBaseline.id !== loadedBaseline.baseline.id ||
+  manifest.compatibilityBaseline.schemaVersion !== loadedBaseline.baseline.schemaVersion ||
+  manifest.compatibilityBaseline.sha256 !== loadedBaseline.sha256 ||
+  !macOSCodeInventoriesEqual(
+    manifest.source.macOSCodeInventory,
+    loadedBaseline.baseline.sourceMacOSCodeInventory,
+  )
+) {
+  throw new Error(
+    "Prepared release manifest does not bind the repository compatibility baseline inventory",
+  );
+}
 
 const qualificationPath = await canonicalExistingPath(
   resolve(run.root, "qualification.json"),
@@ -71,6 +95,7 @@ const evidenceFiles = {
   recoveryUiStateSha256: "evidence/recovery/client-b-restored.json",
   recoveryScreenshotSha256: "evidence/recovery/client-b-restored.png",
   finderLaunchSmokeSha256: "finder-launch-smoke.json",
+  clientReproducibilitySha256: run.manifest.reproducibilityEvidenceFileName,
 } as const;
 for (const [field, file] of Object.entries(evidenceFiles) as Array<
   [keyof typeof evidenceFiles, (typeof evidenceFiles)[keyof typeof evidenceFiles]]

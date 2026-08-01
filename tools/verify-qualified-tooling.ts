@@ -42,7 +42,8 @@ export async function verifyQualifiedTooling(
   if (recordStat.isSymbolicLink() || !recordStat.isFile()) {
     throw new Error("Validation record must be a real file");
   }
-  const record = JSON.parse(await readFile(recordPath, "utf8")) as unknown;
+  const recordBytes = await readFile(recordPath);
+  const record = JSON.parse(recordBytes.toString("utf8")) as unknown;
   assertReleaseValidationRecord(record);
   const expectedName = releaseValidationRecordFileName(
     record.bridgeVersion,
@@ -67,7 +68,13 @@ export async function verifyQualifiedTooling(
   ) {
     throw new Error("Qualified tag tooling tree differs from the packaged and tested source");
   }
-  assertValidationOnlyDescendant(root, sourceRevision, tagRevision);
+  assertValidationOnlyDescendant(
+    root,
+    sourceRevision,
+    tagRevision,
+    `docs/validation/${expectedName}`,
+    recordBytes,
+  );
 
   return {
     validated: true,

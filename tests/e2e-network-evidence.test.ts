@@ -20,13 +20,15 @@ const endpoints = {
   dataHost: "blackglass-data.example.com",
 };
 const run: PreparedE2ERunManifest = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   endpoints,
   network: deriveE2ENetworkPlan(endpoints),
   compatibilityAsarSha256: "a".repeat(64),
   releaseManifestSha256: "b".repeat(64),
   adapterFileName: "obsidian-1.12.7.asar",
   releaseManifestFileName: "bridge-release-manifest.json",
+  reproducibilityEvidenceFileName: "client-reproducibility.json",
+  reproducibilityEvidenceSha256: "c".repeat(64),
 };
 const identity = {
   schemaVersion: 4,
@@ -225,6 +227,22 @@ describe("E2E network evidence", () => {
       finalize.handshakeNotBefore,
     );
     expect(() => assertNetworkEvidence(unpaired, assertionOptions)).toThrow(
+      "did not exercise every required endpoint",
+    );
+
+    const responseFirst = structuredClone(evidence);
+    [responseFirst.events[0], responseFirst.events[1]] = [
+      responseFirst.events[1]!,
+      responseFirst.events[0]!,
+    ];
+    responseFirst.events.forEach((event, index) => (event.sequence = index + 1));
+    responseFirst.requirements = buildNetworkRequirements(
+      "client-a",
+      run,
+      responseFirst.events,
+      finalize.handshakeNotBefore,
+    );
+    expect(() => assertNetworkEvidence(responseFirst, assertionOptions)).toThrow(
       "did not exercise every required endpoint",
     );
   });

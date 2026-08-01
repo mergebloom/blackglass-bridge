@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   canonicalAdapterOptions,
   RENDERER_INCISION_COUNT,
@@ -15,9 +16,18 @@ import {
   CLI_BINARY_PATCH_FORMAT_VERSION,
 } from "./cli-binary";
 import { assertMacOSCodeSigningEvidence } from "./macos-code-signing";
+import {
+  assertMacOSCodeInventory,
+  macOSCodeInventoriesEqual,
+} from "./macos-code-inventory";
+import { assertMacOSRootMetadata } from "./macos-root-metadata";
 import type { MacOSArtifact } from "./macos-artifact";
 import type { BridgeReleaseManifest } from "./release-manifest";
 import type { ServerArtifact } from "./server-artifact";
+import {
+  assertMacOSPackagingToolchain,
+  type MacOSPackagingToolchain,
+} from "./packaging-toolchain";
 import {
   assertCanonicalRecoveryCorpusIdentity,
   type RecoveryCorpusIdentity,
@@ -27,14 +37,19 @@ import {
   type ToolingSourceIdentity,
 } from "./tooling-source";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
+import { stableJson } from "./stable-json";
+import {
+  assertMacOSReproducibilityEvidenceBindsRelease,
+  type MacOSReproducibilityEvidence,
+} from "./verify-macos-reproducibility";
 
-export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 8;
+export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 11;
 
 type PublicMacOSArtifact = Omit<MacOSArtifact, "appPath">;
 type PublicServerArtifact = Omit<ServerArtifact, "binaryPath">;
 
 export interface ReleaseQualification {
-  schemaVersion: 6;
+  schemaVersion: 8;
   qualifiedAt: string;
   passed: true;
   platform: "macOS Apple Silicon";
@@ -80,6 +95,8 @@ export interface ReleaseQualification {
     recoveryUiStateSha256: string;
     recoveryScreenshotSha256: string;
     finderLaunchSmokeSha256: string;
+    clientReproducibilitySha256: string;
+    clientReproducibility: MacOSReproducibilityEvidence;
     networkEvidenceSha256: {
       "client-a": string;
       "client-b": string;
@@ -104,6 +121,7 @@ export interface ReleaseValidationRecord {
   source: BridgeReleaseManifest["source"];
   endpoints: AdapterOptions;
   toolingSource: ToolingSourceIdentity;
+  packagingToolchain: MacOSPackagingToolchain;
   patcher: BridgeReleaseManifest["patcher"];
   artifacts: {
     compatibilityAsarSha256: string;
@@ -153,6 +171,7 @@ export function buildReleaseValidationRecord(input: {
     source: manifest.source,
     endpoints: manifest.endpoints,
     toolingSource: manifest.toolingSource,
+    packagingToolchain: manifest.packagingToolchain,
     patcher: manifest.patcher,
     artifacts: {
       compatibilityAsarSha256: manifest.renderer.patchedSha256,
@@ -180,7 +199,7 @@ export function assertReleaseQualification(
 ): asserts value is ReleaseQualification {
   if (
     !isRecord(value) ||
-    value.schemaVersion !== 6 ||
+    value.schemaVersion !== 8 ||
     value.passed !== true ||
     value.platform !== "macOS Apple Silicon" ||
     value.bridgeVersion !== manifest.bridgeVersion ||
@@ -209,6 +228,17 @@ export function assertReleaseQualification(
     throw new Error("Qualification does not contain complete cold recovery");
   }
   assertEvidence(value.evidence);
+  assertMacOSReproducibilityEvidenceBindsRelease(
+    value.evidence.clientReproducibility,
+    {
+      bridgeVersion: manifest.bridgeVersion,
+      rendererVersion: manifest.rendererVersion,
+      releaseManifestSha256: value.artifacts.releaseManifestSha256,
+      artifact: value.artifacts.client,
+      packagingToolchainSha256: sha256(stableJson(manifest.packagingToolchain)),
+      toolingSourceSha256: sha256(stableJson(manifest.toolingSource)),
+    },
+  );
 }
 
 export function assertReleaseValidationRecord(
@@ -223,7 +253,7 @@ export function assertReleaseValidationRecord(
     !isSupportedSemver(value.bridgeVersion) ||
     !isSupportedStableSemver(value.rendererVersion) ||
     !isRecord(value.compatibilityBaseline) ||
-    value.compatibilityBaseline.schemaVersion !== 4 ||
+    value.compatibilityBaseline.schemaVersion !== 5 ||
     typeof value.compatibilityBaseline.id !== "string" ||
     !isSha256(value.compatibilityBaseline.sha256) ||
     !isRecord(value.source) ||
@@ -236,6 +266,7 @@ export function assertReleaseValidationRecord(
     typeof value.endpoints.controlOrigin !== "string" ||
     typeof value.endpoints.dataHost !== "string" ||
     !isRecord(value.toolingSource) ||
+    !isRecord(value.packagingToolchain) ||
     !isRecord(value.patcher) ||
     !isRecord(value.artifacts) ||
     !isSha256(value.artifacts.compatibilityAsarSha256) ||
@@ -251,6 +282,8 @@ export function assertReleaseValidationRecord(
     throw new Error("Invalid release validation record");
   }
   assertToolingSourceIdentity(value.toolingSource);
+  assertMacOSPackagingToolchain(value.packagingToolchain);
+  assertMacOSCodeInventory(value.source.macOSCodeInventory);
   if (value.toolingSource.worktreeClean !== true) {
     throw new Error("Release validation record does not bind a clean tooling source");
   }
@@ -287,8 +320,11 @@ export function assertReleaseValidationRecord(
   assertEvidence(value.packagedClientE2E.evidence);
   const macOS = value.artifacts.macOS;
   assertMacOSCodeSigningEvidence(macOS.codeSigning);
+  assertMacOSCodeInventory(macOS.codeInventory);
+  assertMacOSRootMetadata(macOS.rootMetadata);
   if (
-    macOS.schemaVersion !== 7 ||
+    macOS.schemaVersion !== 8 ||
+    macOS.appBundleName !== "Blackglass Bridge.app" ||
     macOS.bundleIdentifier !== "com.blackglass.bridge" ||
     macOS.bundleName !== "Obsidian" ||
     macOS.displayName !== "Blackglass Bridge" ||
@@ -329,12 +365,27 @@ export function assertReleaseValidationRecord(
       "md.obsidian.helper.Renderer",
     ]) ||
     macOS.applicationTreeSha256 !== macOS.applicationTreeIdentity.sha256 ||
+    macOS.codeSigning.strictInventoryTargets !== macOS.codeInventory.entries.length ||
+    macOS.codeSigning.strictMachOTargets !==
+      macOS.codeInventory.entries.filter((entry) => entry.kind === "mach-o").length ||
+    !macOSCodeInventoriesEqual(macOS.codeInventory, value.source.macOSCodeInventory) ||
     macOS.embeddedAsarSha256 !== value.artifacts.compatibilityAsarSha256 ||
     macOS.embeddedWrapperAsarSha256 !== value.artifacts.wrapperAsarSha256 ||
     macOS.embeddedWrapperHeaderSha256 !== value.artifacts.wrapperHeaderSha256
   ) {
     throw new Error("Release validation record has an inconsistent macOS artifact");
   }
+  assertMacOSReproducibilityEvidenceBindsRelease(
+    value.packagedClientE2E.evidence.clientReproducibility,
+    {
+      bridgeVersion: value.bridgeVersion,
+      rendererVersion: value.rendererVersion,
+      releaseManifestSha256: value.artifacts.releaseManifestSha256,
+      artifact: macOS as PublicMacOSArtifact,
+      packagingToolchainSha256: sha256(stableJson(value.packagingToolchain)),
+      toolingSourceSha256: sha256(stableJson(value.toolingSource)),
+    },
+  );
   if (
     value.source.rendererAsarSha256 === value.artifacts.compatibilityAsarSha256 ||
     value.source.wrapperAsarSha256 === value.artifacts.wrapperAsarSha256 ||
@@ -344,7 +395,9 @@ export function assertReleaseValidationRecord(
   }
 }
 
-function assertEvidence(value: unknown): void {
+function assertEvidence(
+  value: unknown,
+): asserts value is ReleaseQualification["evidence"] {
   if (
     !isRecord(value) ||
     !isSha256(value.runManifestSha256) ||
@@ -356,6 +409,8 @@ function assertEvidence(value: unknown): void {
     !isSha256(value.recoveryUiStateSha256) ||
     !isSha256(value.recoveryScreenshotSha256) ||
     !isSha256(value.finderLaunchSmokeSha256) ||
+    !isSha256(value.clientReproducibilitySha256) ||
+    !isRecord(value.clientReproducibility) ||
     !isRecord(value.networkEvidenceSha256) ||
     !isSha256(value.networkEvidenceSha256["client-a"]) ||
     !isSha256(value.networkEvidenceSha256["client-b"]) ||
@@ -371,6 +426,10 @@ function assertEvidence(value: unknown): void {
   ) {
     throw new Error("Release validation evidence hashes are incomplete");
   }
+}
+
+function sha256(value: string | Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function isPassedWorkflow(value: unknown): value is ReleaseQualification["workflow"] {

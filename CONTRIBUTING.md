@@ -7,7 +7,7 @@ bundles.
 
 ## Development gate
 
-Use Bun 1.3 or newer, then run:
+Use the pinned Bun 1.3.8 runtime, then run:
 
 ```sh
 npm ci

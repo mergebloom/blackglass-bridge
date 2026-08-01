@@ -7,6 +7,8 @@ import {
 } from "./release-validation";
 import { isSupportedSemver } from "./semver";
 import { compareCodeUnitStrings } from "./stable-json";
+import { loadCompatibilityBaseline } from "./release-compatibility";
+import { macOSCodeInventoriesEqual } from "./macos-code-inventory";
 
 export type CurrentReleaseRecordRequirement = "optional" | "required";
 
@@ -73,6 +75,28 @@ export async function readCurrentReleaseValidationRecord(
   );
   if (name !== expectedName) {
     throw new Error(`Current release qualification record must be named ${expectedName}`);
+  }
+  const loadedBaseline = await loadCompatibilityBaseline(
+    resolve(root, `compatibility/obsidian-${value.rendererVersion}.json`),
+  );
+  if (
+    value.compatibilityBaseline.id !== loadedBaseline.baseline.id ||
+    value.compatibilityBaseline.schemaVersion !== loadedBaseline.baseline.schemaVersion ||
+    value.compatibilityBaseline.sha256 !== loadedBaseline.sha256 ||
+    value.source.officialDmgSha256 !== loadedBaseline.baseline.officialDmgSha256 ||
+    JSON.stringify(value.source.appTree) !==
+      JSON.stringify(loadedBaseline.baseline.sourceAppTree) ||
+    value.source.rendererAsarSha256 !== loadedBaseline.baseline.sourceAsarSha256 ||
+    value.source.wrapperAsarSha256 !==
+      loadedBaseline.baseline.sourceWrapperAsarSha256 ||
+    !macOSCodeInventoriesEqual(
+      value.source.macOSCodeInventory,
+      loadedBaseline.baseline.sourceMacOSCodeInventory,
+    )
+  ) {
+    throw new Error(
+      "Current release qualification record does not bind the reviewed compatibility baseline",
+    );
   }
   return { name, path, bytes, record: value };
 }

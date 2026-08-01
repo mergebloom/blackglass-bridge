@@ -62,7 +62,7 @@ describe("release-critical tooling source identity", () => {
     }
   });
 
-  test("allows only linear validation-record commits after qualification", async () => {
+  test("allows exactly one commit that creates the exact verified validation record", async () => {
     const root = await createRepository();
     try {
       const source = await computeToolingSourceIdentity(root);
@@ -74,14 +74,29 @@ describe("release-critical tooling source identity", () => {
         ),
       ).toBe(true);
 
-      await commitValidationRecord(root, "0.1.1", "first\n");
-      await commitValidationRecord(root, "0.1.2", "second\n");
+      const record = await commitValidationRecord(root, "0.1.1", "first\n");
       const qualifiedRevision = git(root, "rev-parse", "HEAD");
       const qualified = computeToolingSourceIdentityAtRevision(root, qualifiedRevision);
       expect(toolingSourceTreeEqual(source, qualified)).toBe(true);
       expect(() =>
-        assertValidationOnlyDescendant(root, sourceRevision, qualifiedRevision),
+        assertValidationOnlyDescendant(
+          root,
+          sourceRevision,
+          qualifiedRevision,
+          record.path,
+          record.bytes,
+        ),
       ).not.toThrow();
+
+      expect(() =>
+        assertValidationOnlyDescendant(
+          root,
+          sourceRevision,
+          qualifiedRevision,
+          record.path,
+          Buffer.from("different\n"),
+        ),
+      ).toThrow(/bytes differ from the verified record/u);
 
       await writeFile(join(root, "README.md"), "unauthorized tooling change\n");
       git(root, "add", "README.md");
@@ -94,8 +109,136 @@ describe("release-critical tooling source identity", () => {
         ),
       ).toBe(false);
       expect(() =>
-        assertValidationOnlyDescendant(root, sourceRevision, changedRevision),
-      ).toThrow(/only generated Bridge validation records/u);
+        assertValidationOnlyDescendant(
+          root,
+          sourceRevision,
+          changedRevision,
+          record.path,
+          record.bytes,
+        ),
+      ).toThrow(/exactly one linear validation-record commit/u);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects an unrelated record added beside the current record", async () => {
+    const root = await createRepository();
+    try {
+      const sourceRevision = git(root, "rev-parse", "HEAD");
+      const currentPath = validationRecordPath("0.1.1");
+      const currentBytes = Buffer.from("current\n");
+      await writeFile(join(root, currentPath), currentBytes);
+      await writeFile(join(root, validationRecordPath("0.1.2")), "unrelated\n");
+      git(root, "add", "-A");
+      git(root, "commit", "--quiet", "-m", "add unrelated validation record");
+
+      expect(() =>
+        assertValidationOnlyDescendant(
+          root,
+          sourceRevision,
+          git(root, "rev-parse", "HEAD"),
+          currentPath,
+          currentBytes,
+        ),
+      ).toThrow(/only the exact verified validation record/u);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects modification of a historical record beside the current record", async () => {
+    const root = await createRepository();
+    try {
+      const historical = await commitValidationRecord(root, "0.1.0", "historical\n");
+      const sourceRevision = git(root, "rev-parse", "HEAD");
+      const currentPath = validationRecordPath("0.1.1");
+      const currentBytes = Buffer.from("current\n");
+      await writeFile(join(root, historical.path), "modified historical\n");
+      await writeFile(join(root, currentPath), currentBytes);
+      git(root, "add", "-A");
+      git(root, "commit", "--quiet", "-m", "modify historical record");
+
+      expect(() =>
+        assertValidationOnlyDescendant(
+          root,
+          sourceRevision,
+          git(root, "rev-parse", "HEAD"),
+          currentPath,
+          currentBytes,
+        ),
+      ).toThrow(/only the exact verified validation record/u);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects deletion of a historical record beside the current record", async () => {
+    const root = await createRepository();
+    try {
+      const historical = await commitValidationRecord(root, "0.1.0", "historical\n");
+      const sourceRevision = git(root, "rev-parse", "HEAD");
+      const currentPath = validationRecordPath("0.1.1");
+      const currentBytes = Buffer.from("current\n");
+      await unlink(join(root, historical.path));
+      await writeFile(join(root, currentPath), currentBytes);
+      git(root, "add", "-A");
+      git(root, "commit", "--quiet", "-m", "delete historical record");
+
+      expect(() =>
+        assertValidationOnlyDescendant(
+          root,
+          sourceRevision,
+          git(root, "rev-parse", "HEAD"),
+          currentPath,
+          currentBytes,
+        ),
+      ).toThrow(/only the exact verified validation record/u);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects overwriting a record path that existed at the source revision", async () => {
+    const root = await createRepository();
+    try {
+      const existing = await commitValidationRecord(root, "0.1.1", "old\n");
+      const sourceRevision = git(root, "rev-parse", "HEAD");
+      const replacementBytes = Buffer.from("replacement\n");
+      await writeFile(join(root, existing.path), replacementBytes);
+      git(root, "add", existing.path);
+      git(root, "commit", "--quiet", "-m", "replace validation record");
+
+      expect(() =>
+        assertValidationOnlyDescendant(
+          root,
+          sourceRevision,
+          git(root, "rev-parse", "HEAD"),
+          existing.path,
+          replacementBytes,
+        ),
+      ).toThrow(/must not exist at the tooling source revision/u);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects more than one descendant commit", async () => {
+    const root = await createRepository();
+    try {
+      const sourceRevision = git(root, "rev-parse", "HEAD");
+      git(root, "commit", "--quiet", "--allow-empty", "-m", "empty intermediate");
+      const record = await commitValidationRecord(root, "0.1.1", "current\n");
+
+      expect(() =>
+        assertValidationOnlyDescendant(
+          root,
+          sourceRevision,
+          git(root, "rev-parse", "HEAD"),
+          record.path,
+          record.bytes,
+        ),
+      ).toThrow(/exactly one linear validation-record commit/u);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -128,13 +271,20 @@ async function commitValidationRecord(
   root: string,
   bridgeVersion: string,
   contents: string,
-): Promise<void> {
-  const relative =
-    `docs/validation/blackglass-bridge-${bridgeVersion}-` +
-    "obsidian-1.12.7-qualification.json";
-  await writeFile(join(root, relative), contents);
-  git(root, "add", relative);
+): Promise<{ path: string; bytes: Buffer }> {
+  const path = validationRecordPath(bridgeVersion);
+  const bytes = Buffer.from(contents);
+  await writeFile(join(root, path), bytes);
+  git(root, "add", path);
   git(root, "commit", "--quiet", "-m", `record ${bridgeVersion}`);
+  return { path, bytes };
+}
+
+function validationRecordPath(bridgeVersion: string): string {
+  return (
+    `docs/validation/blackglass-bridge-${bridgeVersion}-` +
+    "obsidian-1.12.7-qualification.json"
+  );
 }
 
 function git(root: string, ...arguments_: string[]): string {

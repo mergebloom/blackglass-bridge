@@ -175,6 +175,8 @@ export function buildNetworkRequirements(
           (candidate) =>
             candidate.kind === "request" &&
             candidate.requestId === event.requestId &&
+            candidate.sequence < event.sequence &&
+            Date.parse(candidate.observedAt) <= Date.parse(event.observedAt) &&
             candidate.method === "POST" &&
             candidate.url.scheme === "https:" &&
             candidate.url.authority === control.host &&

@@ -39,12 +39,14 @@ bun run package:macos -- \
   --control-origin https://sync-control.example.com \
   --data-host sync-data.example.com \
   --official-dmg /path/to/official-Obsidian.dmg \
-  --manifest /path/to/blackglass-bridge-release.json
+  --manifest /path/to/blackglass-bridge-release.json \
+  --receipt /path/to/blackglass-bridge-package-receipt.json
 ```
 
 The packager verifies the DMG digest and complete extracted application tree
 against the reviewed baseline, builds in a private staging directory, and only
-publishes the app and manifest after every check passes. The output is ad-hoc
+publishes the app, manifest, and path-free invocation receipt after every check
+passes. The output is ad-hoc
 signed for local authorized use; it is not notarized for
 redistribution. Its bundle identifier is `com.blackglass.bridge`; the packager
 removes upstream URL-scheme and iCloud-container registrations so it can coexist
@@ -55,7 +57,24 @@ outer filename and display name are Blackglass Bridge, but the upstream
 deliberately preserved. Ad-hoc signing reapplies the exact reviewed entitlement
 and hardened-runtime contracts to the outer app, patched CLI, helpers, framework
 auxiliaries, and framework bundles; packaging and artifact inspection fail
-closed on drift.
+closed on drift. A release-specific recursive inventory additionally requires
+every real code bundle and Mach-O—including native modules—to remain signed and
+present with the reviewed architectures. Packaging re-signs every Mach-O leaf
+before its containing bundles, preserves the reviewed per-architecture runtime,
+identifier, and entitlement policy, then verifies every inventory target with
+strict all-architecture checks. The manifest records the pinned Bun
+runtime, macOS/Xcode identity, actual Xcode-selected Git backend, packaging-tool
+hashes, exact installed TypeScript and Playwright package trees, and recursively
+checked bundle metadata. E2E setup and qualification recompute that environment
+identity. ACLs, BSD flags, and unknown
+extended attributes fail closed; macOS provenance attributes are path/value
+hash-bound.
+
+Package the same inputs a second time in another directory and run
+`package:macos:verify-reproducibility`; E2E preparation requires both concrete
+app/manifest/receipt sets, proves the receipts came from distinct package
+invocations, recomputes the resulting path-free evidence, and binds it through
+final qualification.
 
 The copied wrapper still contains upstream proprietary code and artwork. Keep
 it out of source control and distribution artifacts.
@@ -100,18 +119,23 @@ For every upstream release:
    packed/unpacked-JavaScript, anchor, route, operation, and message-shape
    inventory to pass;
 3. generate a new ASAR for canonical endpoints;
-4. package a copied app; the packager independently reproduces and byte-compares
-   the renderer and emits the bound release manifest;
+4. package two independent copied apps, require distinct invocation receipts
+   plus matching complete identities and manifests, and retain the sanitized
+   reproducibility evidence;
 5. run typecheck, packaging, Bun-oracle, Rust, cross-implementation protocol,
    and isolated packaged-client recovery checks;
-6. require the E2E report's release-manifest, server, wrapper, app, endpoint, and
-   compatibility-ASAR identities to match the intended release artifacts;
+6. require the E2E report's reproducibility, release-manifest, server, wrapper,
+   app, endpoint, and compatibility-ASAR identities to match the intended
+   release artifacts;
 7. roll out the qualified build without changing the stable server endpoints.
 
 An unqualified upstream client update is expected to fail closed rather than
 silently falling back to Obsidian's servers.
 
 Package and qualify from a clean committed tooling tree. After qualification,
-commit only the generated `docs/validation/*-qualification.json` record and tag
-that linear descendant. The release workflow verifies that the source commit is
-an ancestor and that the release-critical tooling tree is otherwise unchanged.
+create the exact current `docs/validation/*-qualification.json` record in one
+new commit and tag that direct linear descendant. The record path must not exist
+in the qualified source commit, and the commit may not add, modify, or delete
+any other file, including historical qualification records. The release
+workflow verifies those constraints and byte-compares the committed record with
+the record it validates.

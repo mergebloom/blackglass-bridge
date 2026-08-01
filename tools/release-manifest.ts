@@ -22,7 +22,17 @@ import {
   type CliBinaryPatchReport,
 } from "./cli-binary";
 import { assertMacOSCodeSigningEvidence } from "./macos-code-signing";
+import {
+  assertMacOSCodeInventory,
+  macOSCodeInventoriesEqual,
+  type MacOSCodeInventory,
+} from "./macos-code-inventory";
+import { assertMacOSRootMetadata } from "./macos-root-metadata";
 import type { MacOSArtifact } from "./macos-artifact";
+import {
+  assertMacOSPackagingToolchain,
+  type MacOSPackagingToolchain,
+} from "./packaging-toolchain";
 import {
   assertToolingSourceIdentity,
   type ToolingSourceIdentity,
@@ -33,7 +43,7 @@ import {
 } from "./tree-identity";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 
-export const BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION = 7;
+export const BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION = 8;
 
 export interface BridgeReleaseManifest {
   schemaVersion: typeof BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION;
@@ -50,6 +60,7 @@ export interface BridgeReleaseManifest {
     rendererAsarSha256: string;
     wrapperAsarSha256: string;
     cliExecutableSha256: string;
+    macOSCodeInventory: MacOSCodeInventory;
   };
   patcher: {
     renderer: {
@@ -66,6 +77,7 @@ export interface BridgeReleaseManifest {
     };
   };
   endpoints: AdapterOptions;
+  packagingToolchain: MacOSPackagingToolchain;
   toolingSource: ToolingSourceIdentity;
   renderer: AdapterReport;
   wrapper: WrapperPatchReport;
@@ -82,6 +94,8 @@ export interface BridgeReleaseManifest {
     packagedWrapperIntegrityVerified: true;
     packagedCliSocketVerified: true;
     reviewedCodeSigningPreserved: true;
+    sourceCodeInventoryMatchedBaseline: true;
+    packagedCodeInventoryMatchedSource: true;
   };
 }
 
@@ -89,9 +103,18 @@ export async function readBridgeReleaseManifest(
   path: string,
 ): Promise<{ path: string; manifest: BridgeReleaseManifest }> {
   const resolvedPath = resolve(path);
-  const value = JSON.parse(await readFile(resolvedPath, "utf8")) as unknown;
+  return {
+    path: resolvedPath,
+    manifest: parseBridgeReleaseManifest(await readFile(resolvedPath)),
+  };
+}
+
+export function parseBridgeReleaseManifest(
+  bytes: Uint8Array,
+): BridgeReleaseManifest {
+  const value = JSON.parse(Buffer.from(bytes).toString("utf8")) as unknown;
   assertBridgeReleaseManifest(value);
-  return { path: resolvedPath, manifest: value };
+  return value;
 }
 
 export function assertBridgeReleaseManifest(
@@ -111,7 +134,7 @@ export function assertBridgeReleaseManifest(
   if (
     !isRecord(value.compatibilityBaseline) ||
     typeof value.compatibilityBaseline.id !== "string" ||
-    value.compatibilityBaseline.schemaVersion !== 4 ||
+    value.compatibilityBaseline.schemaVersion !== 5 ||
     !isSha256(value.compatibilityBaseline.sha256)
   ) {
     throw new Error("Bridge release manifest has an invalid compatibility baseline");
@@ -126,6 +149,7 @@ export function assertBridgeReleaseManifest(
     throw new Error("Bridge release manifest has invalid source provenance");
   }
   assertTreeIdentity(value.source.appTree);
+  assertMacOSCodeInventory(value.source.macOSCodeInventory);
   if (
     !isRecord(value.patcher) ||
     !isRecord(value.patcher.renderer) ||
@@ -144,6 +168,7 @@ export function assertBridgeReleaseManifest(
     throw new Error("Bridge release manifest has no endpoints");
   }
   assertToolingSourceIdentity(value.toolingSource);
+  assertMacOSPackagingToolchain(value.packagingToolchain);
   const endpoints = canonicalAdapterOptions({
     controlOrigin: String(value.endpoints.controlOrigin ?? ""),
     dataHost: String(value.endpoints.dataHost ?? ""),
@@ -163,6 +188,8 @@ export function assertBridgeReleaseManifest(
     throw new Error("Bridge release manifest is missing artifact identities");
   }
   assertMacOSCodeSigningEvidence(value.macOS.codeSigning);
+  assertMacOSCodeInventory(value.macOS.codeInventory);
+  assertMacOSRootMetadata(value.macOS.rootMetadata);
   for (const hash of [
     value.renderer.upstreamSha256,
     value.renderer.patchedSha256,
@@ -187,6 +214,8 @@ export function assertBridgeReleaseManifest(
     value.macOS.embeddedWrapperAsarSha256,
     value.macOS.embeddedWrapperHeaderSha256,
     value.macOS.applicationTreeSha256,
+    value.macOS.codeInventory.sha256,
+    value.macOS.rootMetadata.sha256,
   ]) {
     if (!isSha256(hash)) throw new Error("Bridge release manifest contains an invalid SHA-256");
   }
@@ -224,13 +253,22 @@ export function assertBridgeReleaseManifest(
     // rejecting an unchanged packaged CLI; inspectMacOSArtifact separately
     // proves the signed executable still has the exact patched socket inventory.
     value.macOS.cliExecutableSha256 === value.cli.upstreamSha256 ||
-    value.macOS.schemaVersion !== 7 ||
-    value.macOS.applicationTreeSha256 !== value.macOS.applicationTreeIdentity.sha256
+    value.macOS.schemaVersion !== 8 ||
+    value.macOS.applicationTreeSha256 !== value.macOS.applicationTreeIdentity.sha256 ||
+    value.macOS.codeSigning.strictInventoryTargets !==
+      value.macOS.codeInventory.entries.length ||
+    value.macOS.codeSigning.strictMachOTargets !==
+      value.macOS.codeInventory.entries.filter((entry) => entry.kind === "mach-o").length ||
+    !macOSCodeInventoriesEqual(
+      value.macOS.codeInventory,
+      value.source.macOSCodeInventory,
+    )
   ) {
     throw new Error("Bridge release manifest artifact bindings are inconsistent");
   }
   if (
     value.macOS.bundleIdentifier !== "com.blackglass.bridge" ||
+    value.macOS.appBundleName !== "Blackglass Bridge.app" ||
     value.macOS.bundleName !== "Obsidian" ||
     value.macOS.displayName !== "Blackglass Bridge" ||
     value.macOS.executableName !== "Obsidian" ||
@@ -276,7 +314,9 @@ export function assertBridgeReleaseManifest(
     value.reproduction.packagedRendererByteIdentical !== true ||
     value.reproduction.packagedWrapperIntegrityVerified !== true ||
     value.reproduction.packagedCliSocketVerified !== true ||
-    value.reproduction.reviewedCodeSigningPreserved !== true
+    value.reproduction.reviewedCodeSigningPreserved !== true ||
+    value.reproduction.sourceCodeInventoryMatchedBaseline !== true ||
+    value.reproduction.packagedCodeInventoryMatchedSource !== true
   ) {
     throw new Error("Bridge release manifest does not attest deterministic reproduction");
   }

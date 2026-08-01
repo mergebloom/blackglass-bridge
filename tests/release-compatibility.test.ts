@@ -12,6 +12,8 @@ import {
   type CompatibilityBaseline,
   type UnpackedJavaScriptFiles,
 } from "../tools/release-compatibility";
+import type { MacOSCodeInventory } from "../tools/macos-code-inventory";
+import { stableJson } from "../tools/stable-json";
 
 const anchors: CompatibilityAnchor[] = [
   {
@@ -462,6 +464,43 @@ describe("release compatibility baseline", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  test("rejects empty semantic inventories in a reviewed baseline", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "blackglass-empty-inventory-"));
+    try {
+      const source = rendererArchive(
+        "CONTROL_ANCHOR;" +
+          "var mw=window.fetch,WS=window.WebSocket;" +
+          "function gw(path){return mw(base+path,{method:'POST'})}" +
+          "gw('/user/signin');new WS(url);send({op:'ping'});" +
+          "x.prototype.onMessage=function(e){var t=e.op;if('ready'===t)return}",
+      );
+      const baseline = baselineFor(source);
+      const fields = [
+        "controlPlaneRoutes",
+        "controlPlaneRouteLocations",
+        "controlPlaneRequestHelpers",
+        "networkConstructors",
+        "syncOperations",
+        "syncOperationLocations",
+        "syncMessageShapes",
+        "syncMessageShapeLocations",
+        "syncInboundOperations",
+      ] as const;
+      const path = join(directory, "compatibility.json");
+
+      for (const field of fields) {
+        const changed = structuredClone(baseline);
+        changed[field] = {};
+        await writeFile(path, `${JSON.stringify(changed)}\n`);
+        await expect(loadCompatibilityBaseline(path), field).rejects.toThrow(
+          `Compatibility baseline ${field} is invalid`,
+        );
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 function failedChecks(
@@ -480,7 +519,7 @@ function baselineFor(
     unpackedJavaScriptFiles,
   );
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     id: "synthetic-release",
     rendererVersion: discovered.rendererVersion,
     officialDmgSha256: "c".repeat(64),
@@ -493,6 +532,7 @@ function baselineFor(
       symlinks: 0,
       fileBytes: 1,
     },
+    sourceMacOSCodeInventory: syntheticMacOSCodeInventory(),
     sourceAsarSha256: discovered.sourceAsarSha256,
     sourceWrapperAsarSha256: "d".repeat(64),
     keyFiles: discovered.keyFiles,
@@ -512,6 +552,15 @@ function baselineFor(
     syncMessageShapes: discovered.syncMessageShapes,
     syncMessageShapeLocations: discovered.syncMessageShapeLocations,
     syncInboundOperations: discovered.syncInboundOperations,
+  };
+}
+
+function syntheticMacOSCodeInventory(): MacOSCodeInventory {
+  const entries = [{ path: ".", kind: "bundle", architectures: [] }] as const;
+  return {
+    formatVersion: 1,
+    sha256: createHash("sha256").update(stableJson(entries)).digest("hex"),
+    entries: entries.map((entry) => ({ ...entry, architectures: [...entry.architectures] })),
   };
 }
 

@@ -32,7 +32,8 @@ const tlsSpkiSha256Base64 = `${"A".repeat(43)}=`;
 const launchHomePath = "/private/tmp/blackglass-launch-ABC123/h";
 const nativeHomePath = "/Users/example";
 const artifact = {
-  schemaVersion: 7 as const,
+  schemaVersion: 8 as const,
+  appBundleName: "Blackglass Bridge.app" as const,
   bundleIdentifier: "com.blackglass.bridge" as const,
   bundleName: "Obsidian" as const,
   displayName: "Blackglass Bridge" as const,
@@ -67,9 +68,14 @@ const artifact = {
     "md.obsidian.helper.Renderer",
   ],
   codeSigning: {
-    formatVersion: 1 as const,
+    formatVersion: 2 as const,
     signature: "ad-hoc" as const,
     allReviewedTargetsHardenedRuntime: true as const,
+    allInventoryTargetsStrictlyVerified: true as const,
+    allArchitecturesStrictlyVerified: true as const,
+    strictInventoryTargets: 1,
+    strictMachOTargets: 1,
+    inventorySigningSha256: digest("c"),
     approvedEntitlements: [...APPROVED_MACOS_ENTITLEMENTS],
     targets: [
       {
@@ -145,6 +151,33 @@ const artifact = {
         entitlementPolicy: "none" as const,
       },
     ],
+  },
+  codeInventory: {
+    formatVersion: 1 as const,
+    sha256: digest("8"),
+    entries: [
+      { path: ".", kind: "bundle" as const, architectures: [] as string[] },
+    ],
+  },
+  rootMetadata: {
+    formatVersion: 2 as const,
+    sha256: digest("9"),
+    mode: 493 as const,
+    bsdFlags: 0 as const,
+    ownerUidMatchesProcess: true as const,
+    quarantineAbsent: true as const,
+    entriesChecked: 2,
+    entriesSha256: digest("a"),
+    allEntriesOwnedByProcess: true as const,
+    allEntriesBsdFlagsZero: true as const,
+    allEntriesAclFree: true as const,
+    unsupportedXattrsAbsent: true as const,
+    xattrs: [],
+    descendantXattrs: {
+      allowedNames: ["com.apple.provenance"] as ["com.apple.provenance"],
+      entries: 0,
+      sha256: digest("b"),
+    },
   },
   profileDirectory: "Blackglass Bridge" as const,
   profileMode: 448 as const,

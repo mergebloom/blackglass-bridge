@@ -10,10 +10,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { expect, test } from "bun:test";
 import { patchAsar } from "../packages/client-adapter/src/patch";
 import { inspectMacOSArtifact } from "../tools/macos-artifact";
+import { inspectMacOSCodeInventory } from "../tools/macos-code-inventory";
 import {
   APPROVED_MACOS_ENTITLEMENTS,
   approvedMacOSEntitlementsPlist,
@@ -28,6 +29,7 @@ import {
   type CompatibilityBaseline,
 } from "../tools/release-compatibility";
 import { computeTreeIdentity } from "../tools/tree-identity";
+import { assertMacOSReproducibilityEvidenceBinds } from "../tools/verify-macos-reproducibility";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -61,6 +63,7 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
     const patchedPath = join(directory, "patched.asar");
     const baselinePath = join(directory, "compatibility.json");
     const manifestPath = join(directory, "release-manifest.json");
+    const receiptPath = join(directory, "package-receipt.json");
     const officialDmgPath = join(directory, "Obsidian-1.12.7.dmg");
     await Promise.all([
       writeFile(join(resources, "obsidian.asar"), sourceAsar),
@@ -86,17 +89,63 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
     ]);
     await chmod(join(executableDirectory, "Obsidian"), 0o755);
     await chmod(join(executableDirectory, "obsidian-cli"), 0o755);
+    const staleNestedMachO = join(
+      resources,
+      "app.asar.unpacked/node_modules/stale-native/binding.node",
+    );
+    await mkdir(dirname(staleNestedMachO), { recursive: true });
+    await copyFile("/usr/bin/true", staleNestedMachO);
+    await chmod(staleNestedMachO, 0o755);
+    runCommand([
+      "codesign",
+      "--force",
+      "--sign",
+      "-",
+      "--options",
+      "runtime",
+      "--timestamp=none",
+      staleNestedMachO,
+    ]);
+    const staleNestedBytes = await readFile(staleNestedMachO);
+    const staleFirstSliceOffset =
+      staleNestedBytes.readUInt32BE(0) === 0xca_fe_ba_be
+        ? staleNestedBytes.readUInt32BE(16)
+        : 0;
+    staleNestedBytes[staleFirstSliceOffset + 4096] =
+      staleNestedBytes[staleFirstSliceOffset + 4096]! ^ 1;
+    await writeFile(staleNestedMachO, staleNestedBytes);
     const entitlementsPath = join(directory, "source-entitlements.plist");
     await writeFile(entitlementsPath, approvedMacOSEntitlementsPlist());
     signSyntheticSource(sourceApp, entitlementsPath);
+    expect(
+      Bun.spawnSync([
+        "codesign",
+        "--verify",
+        "--strict",
+        "--all-architectures",
+        staleNestedMachO,
+      ]).exitCode,
+    ).not.toBe(0);
+    const compatibilityBaseline = await testCompatibilityBaseline(
+      sourceAsar,
+      sourceWrapperAsar,
+      sourceApp,
+      officialDmgPath,
+    );
     await writeFile(
       baselinePath,
-      `${JSON.stringify(await testCompatibilityBaseline(
-        sourceAsar,
-        sourceWrapperAsar,
-        sourceApp,
-        officialDmgPath,
-      ), null, 2)}\n`,
+      `${JSON.stringify(compatibilityBaseline, null, 2)}\n`,
+    );
+
+    const wrongNameResult = Bun.spawnSync([
+      "bun", "run", "tools/package-macos.ts", sourceApp, patchedPath,
+      join(directory, "Renamed Bridge.app"), "--control-origin", endpoints.controlOrigin,
+      "--data-host", endpoints.dataHost, "--manifest", join(directory, "wrong-name.json"),
+      "--official-dmg", officialDmgPath, "--baseline", baselinePath,
+    ], { cwd: root, stdout: "pipe", stderr: "pipe" });
+    expect(wrongNameResult.exitCode).not.toBe(0);
+    expect(wrongNameResult.stderr.toString()).toContain(
+      'basename must be exactly "Blackglass Bridge.app"',
     );
 
     const outputApp = join(directory, "Blackglass Bridge.app");
@@ -113,6 +162,8 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       endpoints.dataHost,
       "--manifest",
       manifestPath,
+      "--receipt",
+      receiptPath,
       "--official-dmg",
       officialDmgPath,
       "--baseline",
@@ -146,16 +197,22 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
         "md.obsidian.helper.Renderer",
       ],
       codeSigning: {
-        formatVersion: 1,
+        formatVersion: 2,
         signature: "ad-hoc",
         allReviewedTargetsHardenedRuntime: true,
+        allInventoryTargetsStrictlyVerified: true,
+        allArchitecturesStrictlyVerified: true,
+        strictInventoryTargets: compatibilityBaseline.sourceMacOSCodeInventory.entries.length,
+        strictMachOTargets: compatibilityBaseline.sourceMacOSCodeInventory.entries.filter(
+          (entry) => entry.kind === "mach-o",
+        ).length,
         approvedEntitlements: [...APPROVED_MACOS_ENTITLEMENTS],
       },
       registeredUrlSchemes: [],
       signature: "ad-hoc",
     });
     expect(report.releaseManifest).toMatchObject({
-      schemaVersion: 7,
+      schemaVersion: 8,
       rendererVersion: "1.12.7",
       endpoints,
       patcher: {
@@ -174,12 +231,75 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
         packagedWrapperIntegrityVerified: true,
         packagedCliSocketVerified: true,
         reviewedCodeSigningPreserved: true,
+        sourceCodeInventoryMatchedBaseline: true,
+        packagedCodeInventoryMatchedSource: true,
       },
     });
     expect(JSON.parse(await Bun.file(manifestPath).text())).toEqual(
       report.releaseManifest,
     );
+    expect(JSON.parse(await Bun.file(receiptPath).text())).toEqual(
+      report.packageReceipt,
+    );
     expect(() => assertBridgeReleaseManifest(report.releaseManifest)).not.toThrow();
+    const secondDirectory = join(directory, "independent-build");
+    await mkdir(secondDirectory);
+    const secondApp = join(secondDirectory, "Blackglass Bridge.app");
+    const secondManifest = join(secondDirectory, "release-manifest.json");
+    const secondReceipt = join(secondDirectory, "package-receipt.json");
+    const secondPackageResult = Bun.spawnSync([
+      "bun", "run", "tools/package-macos.ts", sourceApp, patchedPath, secondApp,
+      "--control-origin", endpoints.controlOrigin, "--data-host", endpoints.dataHost,
+      "--manifest", secondManifest, "--official-dmg", officialDmgPath,
+      "--baseline", baselinePath, "--receipt", secondReceipt,
+    ], { cwd: root, stdout: "pipe", stderr: "pipe" });
+    expect(secondPackageResult.exitCode, secondPackageResult.stderr.toString()).toBe(0);
+    const reproducibilityPath = join(directory, "client-reproducibility.json");
+    const reproducibilityResult = Bun.spawnSync([
+      "bun", "run", "tools/verify-macos-reproducibility.ts",
+      outputApp, manifestPath, receiptPath,
+      secondApp, secondManifest, secondReceipt, reproducibilityPath,
+    ], { cwd: root, stdout: "pipe", stderr: "pipe" });
+    expect(reproducibilityResult.exitCode, reproducibilityResult.stderr.toString()).toBe(0);
+    const reproducibility = JSON.parse(await Bun.file(reproducibilityPath).text());
+    expect(reproducibility).toMatchObject({
+      schemaVersion: 3,
+      passed: true,
+      separateOutputs: true,
+      independentPackageInvocations: true,
+      bridgeVersion: "0.1.1",
+      rendererVersion: "1.12.7",
+      applicationTreeSha256: report.releaseManifest.macOS.applicationTreeSha256,
+      codeInventorySha256: report.releaseManifest.macOS.codeInventory.sha256,
+      rootMetadataSha256: report.releaseManifest.macOS.rootMetadata.sha256,
+    });
+    expect(JSON.stringify(reproducibility)).not.toContain(directory);
+    expect(reproducibility.packageReceipts).toHaveLength(2);
+    expect(reproducibility.packageReceipts[0].receipt.invocationId).not.toBe(
+      reproducibility.packageReceipts[1].receipt.invocationId,
+    );
+    const copiedReceipt = join(secondDirectory, "copied-first-receipt.json");
+    await copyFile(receiptPath, copiedReceipt);
+    const copiedReceiptResult = Bun.spawnSync([
+      "bun", "run", "tools/verify-macos-reproducibility.ts",
+      outputApp, manifestPath, receiptPath,
+      secondApp, secondManifest, copiedReceipt,
+      join(directory, "copied-receipt-evidence.json"),
+    ], { cwd: root, stdout: "pipe", stderr: "pipe" });
+    expect(copiedReceiptResult.exitCode).not.toBe(0);
+    expect(copiedReceiptResult.stderr.toString()).toContain(
+      "distinct package invocations",
+    );
+    expect(() =>
+      assertMacOSReproducibilityEvidenceBinds(
+        { ...reproducibility, codeInventorySha256: "0".repeat(64) },
+        {
+          manifest: report.releaseManifest,
+          releaseManifestSha256: reproducibility.releaseManifestSha256,
+          artifact: report.releaseManifest.macOS,
+        },
+      ),
+    ).toThrow("does not bind");
     const tamperedSource = structuredClone(report.releaseManifest);
     tamperedSource.source.rendererAsarSha256 = "0".repeat(64);
     expect(() => assertBridgeReleaseManifest(tamperedSource)).toThrow(
@@ -218,7 +338,8 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       ).toBe(true);
     }
     expect(await inspectMacOSArtifact(outputApp)).toMatchObject({
-      schemaVersion: 7,
+      schemaVersion: 8,
+      appBundleName: "Blackglass Bridge.app",
       bundleIdentifier: "com.blackglass.bridge",
       version: "1.12.7",
       bundleName: "Obsidian",
@@ -245,25 +366,64 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
         "md.obsidian.helper.Renderer",
       ],
       codeSigning: {
-        formatVersion: 1,
+        formatVersion: 2,
         signature: "ad-hoc",
         allReviewedTargetsHardenedRuntime: true,
+        allInventoryTargetsStrictlyVerified: true,
+        allArchitecturesStrictlyVerified: true,
+        strictInventoryTargets: compatibilityBaseline.sourceMacOSCodeInventory.entries.length,
+        strictMachOTargets: compatibilityBaseline.sourceMacOSCodeInventory.entries.filter(
+          (entry) => entry.kind === "mach-o",
+        ).length,
         approvedEntitlements: [...APPROVED_MACOS_ENTITLEMENTS],
         targets: expectedPackagedSigningTargets(),
       },
+      codeInventory: compatibilityBaseline.sourceMacOSCodeInventory,
       embeddedAsarSha256: createHash("sha256").update(patchedAsar).digest("hex"),
       registeredUrlSchemes: [],
     });
 
-    const strippedApp = join(directory, "Stripped Bridge.app");
+    const metadataProbe = join(outputApp, "Contents/Resources");
+    runCommand(["xattr", "-w", "com.blackglass.unexpected", "blocked", metadataProbe]);
+    await expect(inspectMacOSArtifact(outputApp)).rejects.toThrow(
+      "unsupported extended attribute",
+    );
+    runCommand(["xattr", "-d", "com.blackglass.unexpected", metadataProbe]);
+    runCommand(["chflags", "hidden", metadataProbe]);
+    await expect(inspectMacOSArtifact(outputApp)).rejects.toThrow(
+      "unsupported BSD flags",
+    );
+    runCommand(["chflags", "nohidden", metadataProbe]);
+    runCommand(["chmod", "+a", "everyone deny delete", metadataProbe]);
+    await expect(inspectMacOSArtifact(outputApp)).rejects.toThrow(
+      "unsupported ACL",
+    );
+    runCommand(["chmod", "-N", metadataProbe]);
+    await expect(inspectMacOSArtifact(outputApp)).resolves.toBeDefined();
+    runCommand([
+      "codesign",
+      "--verify",
+      "--strict",
+      "--all-architectures",
+      join(
+        outputApp,
+        "Contents/Resources/app.asar.unpacked/node_modules/stale-native/binding.node",
+      ),
+    ]);
+
+    const strippedDirectory = join(directory, "stripped");
+    await mkdir(strippedDirectory);
+    const strippedApp = join(strippedDirectory, "Blackglass Bridge.app");
     runCommand(["ditto", outputApp, strippedApp]);
     runCommand(["codesign", "--force", "--deep", "--sign", "-", strippedApp]);
     await expect(inspectMacOSArtifact(strippedApp)).rejects.toThrow(
       "code-signing metadata",
     );
 
-    const mismatchedOutput = join(directory, "Mismatched Bridge.app");
-    const mismatchedManifest = join(directory, "mismatched-release.json");
+    const mismatchedDirectory = join(directory, "mismatched-endpoint");
+    await mkdir(mismatchedDirectory);
+    const mismatchedOutput = join(mismatchedDirectory, "Blackglass Bridge.app");
+    const mismatchedManifest = join(mismatchedDirectory, "release.json");
     const mismatchedResult = Bun.spawnSync(
       [
         "bun",
@@ -294,8 +454,10 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
 
     const wrongDmg = join(directory, "wrong.dmg");
     await writeFile(wrongDmg, "not the reviewed release");
-    const wrongDmgOutput = join(directory, "Wrong DMG Bridge.app");
-    const wrongDmgManifest = join(directory, "wrong-dmg-release.json");
+    const wrongDmgDirectory = join(directory, "wrong-dmg");
+    await mkdir(wrongDmgDirectory);
+    const wrongDmgOutput = join(wrongDmgDirectory, "Blackglass Bridge.app");
+    const wrongDmgManifest = join(wrongDmgDirectory, "release.json");
     const wrongDmgResult = Bun.spawnSync([
       "bun", "run", "tools/package-macos.ts", sourceApp, patchedPath,
       wrongDmgOutput, "--control-origin", endpoints.controlOrigin,
@@ -307,9 +469,39 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
     expect(await Bun.file(wrongDmgOutput).exists()).toBe(false);
     expect(await Bun.file(wrongDmgManifest).exists()).toBe(false);
 
+    const unexpectedCode = join(resources, "unexpected-native.node");
+    await copyFile("/usr/bin/true", unexpectedCode);
+    await chmod(unexpectedCode, 0o755);
+    runCommand(["codesign", "--force", "--sign", "-", "--timestamp=none", unexpectedCode]);
+    await writeFile(
+      baselinePath,
+      `${JSON.stringify({
+        ...compatibilityBaseline,
+        sourceAppTree: await computeTreeIdentity(sourceApp),
+      }, null, 2)}\n`,
+    );
+    const unexpectedCodeDirectory = join(directory, "unexpected-code");
+    await mkdir(unexpectedCodeDirectory);
+    const unexpectedCodeResult = Bun.spawnSync([
+      "bun", "run", "tools/package-macos.ts", sourceApp, patchedPath,
+      join(unexpectedCodeDirectory, "Blackglass Bridge.app"),
+      "--control-origin", endpoints.controlOrigin, "--data-host", endpoints.dataHost,
+      "--manifest", join(unexpectedCodeDirectory, "release.json"),
+      "--official-dmg", officialDmgPath, "--baseline", baselinePath,
+    ], { cwd: root, stdout: "pipe", stderr: "pipe" });
+    expect(unexpectedCodeResult.exitCode).not.toBe(0);
+    expect(unexpectedCodeResult.stderr.toString()).toContain("code inventory");
+    await rm(unexpectedCode);
+    await writeFile(
+      baselinePath,
+      `${JSON.stringify(compatibilityBaseline, null, 2)}\n`,
+    );
+
     await writeFile(join(resources, "unexpected.txt"), "mutated source");
-    const changedSourceOutput = join(directory, "Changed Source Bridge.app");
-    const changedSourceManifest = join(directory, "changed-source-release.json");
+    const changedSourceDirectory = join(directory, "changed-source");
+    await mkdir(changedSourceDirectory);
+    const changedSourceOutput = join(changedSourceDirectory, "Blackglass Bridge.app");
+    const changedSourceManifest = join(changedSourceDirectory, "release.json");
     const changedSourceResult = Bun.spawnSync([
       "bun", "run", "tools/package-macos.ts", sourceApp, patchedPath,
       changedSourceOutput, "--control-origin", endpoints.controlOrigin,
@@ -337,13 +529,18 @@ test("macOS packaging gives Blackglass Bridge an independent identity", async ()
       "--timestamp=none",
       helperWithoutEntitlements,
     ]);
-    expect(() => inspectSourceMacOSCodeSigning(sourceApp)).toThrow(
+    expect(() =>
+      inspectSourceMacOSCodeSigning(
+        sourceApp,
+        compatibilityBaseline.sourceMacOSCodeInventory,
+      )
+    ).toThrow(
       "entitlements",
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-}, 30_000);
+}, 120_000);
 
 function makeRendererArchive(): Buffer {
   const controlExpression =
@@ -352,8 +549,11 @@ function makeRendererArchive(): Buffer {
     '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h';
   return makeArchive({
     "app.js": Buffer.from(
-      `var dw=${controlExpression};if(${hostnameCondition})throw Error();` +
-        'gw("/user/signin");socket.send({op:"ping"});',
+      `var dw=${controlExpression},mw=window.fetch;` +
+        'function gw(path){return mw(dw+path,{method:"POST"})}' +
+        `if(${hostnameCondition})throw Error();` +
+        'gw("/user/signin");new WebSocket(url);socket.send({op:"ping"});' +
+        'x.prototype.onMessage=function(e){var t=e.op;if("ready"===t)return};',
     ),
     "main.js": Buffer.from(
       'module.exports=function(c,i,l){const socket=D.join(!U&&process.env.XDG_RUNTIME_DIR||ce.homedir(),".obsidian-cli.sock");let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";ipcMain.on("is-dev",t=>{t.returnValue=l})}}',
@@ -408,13 +608,17 @@ async function testCompatibilityBaseline(
     unpackedJavaScriptFiles,
   );
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     id: "synthetic-obsidian-1.12.7",
     rendererVersion: discovered.rendererVersion,
     officialDmgSha256: createHash("sha256")
       .update(Buffer.from(await Bun.file(officialDmgPath).arrayBuffer()))
       .digest("hex"),
     sourceAppTree: await computeTreeIdentity(sourceApp),
+    sourceMacOSCodeInventory: await inspectMacOSCodeInventory(
+      sourceApp,
+      "source-contract",
+    ),
     sourceAsarSha256: discovered.sourceAsarSha256,
     sourceWrapperAsarSha256: createHash("sha256")
       .update(sourceWrapperAsar)

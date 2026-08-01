@@ -8,7 +8,8 @@ the project E2E area.
 ## What must pass
 
 - the exact official DMG, reviewed compatibility baseline, six-incision client ASAR,
-  copied app, release manifest, and Rust server binary all match by SHA-256,
+  two independently packaged app/manifest/receipt outputs, and Rust server binary all
+  match by SHA-256,
   with the server binary also reporting its exact source revision;
 - two separately identified live app processes use the intended renderer,
   profile, vault, DevTools target, TLS certificate, and resolver rules;
@@ -32,15 +33,37 @@ qualifying a newly built artifact.
 
 ## Run outline
 
-Build the app and server first. Then create a fresh run and its scoped TLS
-material:
+Build the app twice from the same inputs into separate directories, retaining
+the receipt emitted by each package invocation, then verify the two outputs and
+build the server. The verifier writes path-free evidence and fails if the
+receipts do not prove distinct invocations or if either complete app identity
+or release manifest differs:
+
+```sh
+bun run package:macos:verify-reproducibility -- \
+  '/path/to/build-a/Blackglass Bridge.app' /path/to/build-a/release.json \
+  /path/to/build-a/package-receipt.json \
+  '/path/to/build-b/Blackglass Bridge.app' /path/to/build-b/release.json \
+  /path/to/build-b/package-receipt.json \
+  /path/to/client-reproducibility.json
+```
+
+Then create a fresh run and its scoped TLS material:
 
 ```sh
 bun run e2e:prepare -- .data/e2e/<run> /path/to/blackglass.asar \
-  --app '/path/to/Blackglass Bridge.app' \
-  --release-manifest /path/to/release-manifest.json
+  --app '/path/to/build-a/Blackglass Bridge.app' \
+  --release-manifest /path/to/build-a/release.json \
+  --package-receipt /path/to/build-a/package-receipt.json \
+  --second-app '/path/to/build-b/Blackglass Bridge.app' \
+  --second-release-manifest /path/to/build-b/release.json \
+  --second-package-receipt /path/to/build-b/package-receipt.json \
+  --reproducibility-evidence /path/to/client-reproducibility.json
 bun run e2e:tls:prepare -- .data/e2e/<run>
 ```
+
+Preparation re-inspects both non-overlapping app/manifest/receipt sets and
+recomputes the supplied evidence before it creates the run.
 
 Run the TLS proxy and the server in separate terminals. Record the first server
 as `server-initial.json`:

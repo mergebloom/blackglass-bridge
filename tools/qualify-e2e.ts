@@ -15,6 +15,7 @@ import {
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
 import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
+import { inspectMacOSPackagingToolchain } from "./packaging-toolchain";
 import {
   assertFinderLaunchSmokeEvidence,
   finderLaunchSmokeLayout,
@@ -26,7 +27,7 @@ import {
   assertCanonicalRecoveryCorpusManifest,
 } from "./recovery-corpus";
 import { inspectServerArtifact, publicServerArtifact } from "./server-artifact";
-import { readBridgeReleaseManifest } from "./release-manifest";
+import { parseBridgeReleaseManifest } from "./release-manifest";
 import {
   assertRecoveryReportResetBinding,
   assertSourceLossResetRecord,
@@ -35,6 +36,11 @@ import {
   computeToolingSourceIdentity,
   toolingSourceTreeEqual,
 } from "./tooling-source";
+import { stableJson } from "./stable-json";
+import {
+  assertMacOSReproducibilityEvidenceBinds,
+  parseMacOSReproducibilityEvidence,
+} from "./verify-macos-reproducibility";
 
 const [rootArgument, ...flags] = Bun.argv.slice(2);
 if (!rootArgument || flags.length !== 0) {
@@ -44,10 +50,17 @@ if (!rootArgument || flags.length !== 0) {
 
 const preparedRun = await readPreparedE2ERun(rootArgument);
 const root = preparedRun.root;
-const { manifest: releaseManifest } = await readBridgeReleaseManifest(
-  resolve(root, preparedRun.manifest.releaseManifestFileName),
+const runManifest = preparedRun.manifest as typeof preparedRun.manifest &
+  Record<string, any>;
+const releaseManifestBytes = await readFile(
+  resolve(root, runManifest.releaseManifestFileName),
 );
+if (sha256(releaseManifestBytes) !== runManifest.releaseManifestSha256) {
+  throw new Error("Prepared release manifest changed after E2E setup");
+}
+const releaseManifest = parseBridgeReleaseManifest(releaseManifestBytes);
 const currentToolingSource = await computeToolingSourceIdentity();
+const currentPackagingToolchain = await inspectMacOSPackagingToolchain();
 if (
   releaseManifest.toolingSource.worktreeClean !== true ||
   currentToolingSource.worktreeClean !== true ||
@@ -58,16 +71,22 @@ if (
     "E2E qualification tooling source differs from the clean packaged source",
   );
 }
+if (
+  stableJson(releaseManifest.packagingToolchain) !==
+  stableJson(currentPackagingToolchain)
+) {
+  throw new Error(
+    "E2E qualification runtime dependencies or packaging tools differ from the packaged release",
+  );
+}
 
 const [
-  runManifest,
   syncReport,
   recoveryManifest,
   recoveryReport,
   recordedClient,
   recordedServer,
 ] = await Promise.all([
-  readJson("run-manifest.json"),
   readJson("report.json"),
   readJson("recovery-manifest.json"),
   readJson("recovery-report.json"),
@@ -76,7 +95,7 @@ const [
 ]);
 
 if (
-  runManifest.schemaVersion !== 2 ||
+  runManifest.schemaVersion !== 3 ||
   syncReport.schemaVersion !== 2 ||
   syncReport.passed !== true ||
   recoveryManifest.schemaVersion !== 3 ||
@@ -123,7 +142,7 @@ if (
   throw new Error("Recovery report does not prove complete source-loss restoration");
 }
 
-const runManifestSha256 = await fileSha256("run-manifest.json");
+const runManifestSha256 = preparedRun.manifestSha256;
 const syncReportSha256 = await fileSha256("report.json");
 const recoveryManifestSha256 = await fileSha256("recovery-manifest.json");
 const serverArtifactFileSha256 = await fileSha256("server-artifact.json");
@@ -163,6 +182,22 @@ if (
 ) {
   throw new Error("A qualified client or server artifact changed after the E2E run");
 }
+const reproducibilityPath = resolve(
+  root,
+  preparedRun.manifest.reproducibilityEvidenceFileName,
+);
+const reproducibilityBytes = await readFile(reproducibilityPath);
+if (sha256(reproducibilityBytes) !== preparedRun.manifest.reproducibilityEvidenceSha256) {
+  throw new Error("Prepared macOS reproducibility evidence changed after E2E setup");
+}
+const reproducibilityEvidence = parseMacOSReproducibilityEvidence(
+  reproducibilityBytes,
+);
+assertMacOSReproducibilityEvidenceBinds(reproducibilityEvidence, {
+  manifest: releaseManifest,
+  releaseManifestSha256: preparedRun.manifest.releaseManifestSha256,
+  artifact: publicMacOSArtifact(currentClient),
+});
 const finderSmokePath = finderLaunchSmokeLayout(root).evidencePath;
 const verifiedTls = await readVerifiedE2ETls(root);
 const finderSmokeBytes = await readFile(finderSmokePath);
@@ -368,6 +403,7 @@ for (const file of [
   "server-artifact.json",
   "server-restarted.json",
   "finder-launch-smoke.json",
+  preparedRun.manifest.reproducibilityEvidenceFileName,
   "observations/transfer-e2e-sync-proof.json",
   "observations/transfer-reverse-sync-proof.json",
   "observations/transfer-deletion-sync-proof.json",
@@ -385,7 +421,7 @@ for (const file of [
 }
 
 const qualification = {
-  schemaVersion: 6,
+  schemaVersion: 8,
   qualifiedAt: new Date().toISOString(),
   passed: true,
   platform: "macOS Apple Silicon",
@@ -431,6 +467,8 @@ const qualification = {
     recoveryUiStateSha256: sha256(recoveryUiStateBytes),
     recoveryScreenshotSha256: sha256(recoveryScreenshotBytes),
     finderLaunchSmokeSha256: sha256(finderSmokeBytes),
+    clientReproducibilitySha256: sha256(reproducibilityBytes),
+    clientReproducibility: reproducibilityEvidence,
     networkEvidenceSha256: rawNetworkEvidence,
     networkFinalizeSha256: rawNetworkFinalizers,
   },

@@ -15,6 +15,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { AsarArchive } from "./asar";
 import { parseStrictFlags } from "./cli-flags";
+import { MACOS_PACKAGING_EXECUTABLES } from "./packaging-toolchain";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import {
   type ClientLaunchIdentity,
@@ -884,7 +885,15 @@ function processInfo(pid: number): { parentPid: number; command: string } {
 }
 
 function plistString(infoPlist: string, key: string): string {
-  const result = Bun.spawnSync(["plutil", "-extract", key, "raw", "-o", "-", infoPlist]);
+  const result = Bun.spawnSync([
+    MACOS_PACKAGING_EXECUTABLES.plutil,
+    "-extract",
+    key,
+    "raw",
+    "-o",
+    "-",
+    infoPlist,
+  ]);
   if (result.exitCode !== 0) {
     throw new Error(Buffer.from(result.stderr).toString("utf8").trim());
   }

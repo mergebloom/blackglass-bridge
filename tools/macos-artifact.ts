@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { inspectPatchedMacOSWrapperAsar } from "../packages/client-adapter/src/wrapper";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import { inspectPatchedMainProcess } from "../packages/client-adapter/src/patch";
@@ -14,8 +14,17 @@ import {
   inspectPackagedMacOSCodeSigning,
   type MacOSCodeSigningEvidence,
 } from "./macos-code-signing";
+import {
+  inspectMacOSCodeInventory,
+  type MacOSCodeInventory,
+} from "./macos-code-inventory";
+import {
+  inspectMacOSRootMetadata,
+  type MacOSRootMetadata,
+} from "./macos-root-metadata";
 import { computeTreeIdentity, type TreeIdentity } from "./tree-identity";
 import { isSupportedStableSemver } from "./semver";
+import { MACOS_PACKAGING_EXECUTABLES } from "./packaging-toolchain";
 
 export const ELECTRON_HELPER_VARIANTS = [
   { nameSuffix: "", identifierSuffix: "" },
@@ -25,8 +34,9 @@ export const ELECTRON_HELPER_VARIANTS = [
 ] as const;
 
 export interface MacOSArtifact {
-  schemaVersion: 7;
+  schemaVersion: 8;
   appPath: string;
+  appBundleName: "Blackglass Bridge.app";
   bundleIdentifier: "com.blackglass.bridge";
   bundleName: "Obsidian";
   displayName: "Blackglass Bridge";
@@ -48,6 +58,8 @@ export interface MacOSArtifact {
   applicationTreeIdentity: TreeIdentity;
   helperBundleIdentifiers: string[];
   codeSigning: MacOSCodeSigningEvidence;
+  codeInventory: MacOSCodeInventory;
+  rootMetadata: MacOSRootMetadata;
   profileDirectory: "Blackglass Bridge";
   profileMode: 448;
   profilePathCanonicalAtSetup: true;
@@ -63,7 +75,10 @@ export interface MacOSArtifact {
 
 export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSArtifact> {
   const appPath = resolve(appArgument);
-  if (!appPath.endsWith(".app") || !(await lstat(appPath)).isDirectory()) {
+  if (
+    basename(appPath) !== "Blackglass Bridge.app" ||
+    !(await lstat(appPath)).isDirectory()
+  ) {
     throw new Error(`macOS artifact is not an app bundle: ${appPath}`);
   }
   const infoPlist = join(appPath, "Contents/Info.plist");
@@ -85,9 +100,23 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   if (hasPlistKey(infoPlist, "NSUbiquitousContainers")) {
     throw new Error("Blackglass Bridge must not register an upstream iCloud container");
   }
-  run(["codesign", "--verify", "--deep", "--strict", appPath]);
-  const codeSigning = inspectPackagedMacOSCodeSigning(appPath);
-  const signatureDetails = runText(["codesign", "-d", "--verbose=4", appPath], true);
+  run([
+    MACOS_PACKAGING_EXECUTABLES.codesign,
+    "--verify",
+    "--deep",
+    "--strict",
+    appPath,
+  ]);
+  const codeInventory = await inspectMacOSCodeInventory(
+    appPath,
+    "strict-all-architectures",
+  );
+  const codeSigning = inspectPackagedMacOSCodeSigning(appPath, codeInventory);
+  const rootMetadata = await inspectMacOSRootMetadata(appPath);
+  const signatureDetails = runText(
+    [MACOS_PACKAGING_EXECUTABLES.codesign, "-d", "--verbose=4", appPath],
+    true,
+  );
   const codeDirectoryHash = /^CDHash=(\S+)$/m.exec(signatureDetails)?.[1];
   if (!codeDirectoryHash) throw new Error("Packaged app signature has no CDHash");
 
@@ -138,8 +167,9 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   );
   const applicationTreeIdentity = await computeTreeIdentity(appPath);
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     appPath,
+    appBundleName: "Blackglass Bridge.app",
     bundleIdentifier: "com.blackglass.bridge",
     bundleName: "Obsidian",
     displayName: "Blackglass Bridge",
@@ -161,6 +191,8 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     applicationTreeIdentity,
     helperBundleIdentifiers,
     codeSigning,
+    codeInventory,
+    rootMetadata,
     profileDirectory: wrapperSafety.profileDirectory,
     profileMode: wrapperSafety.profileMode,
     profilePathCanonicalAtSetup: wrapperSafety.profilePathCanonicalAtSetup,
@@ -192,11 +224,19 @@ function sha256(value: Uint8Array): string {
 }
 
 function plistString(infoPlist: string, key: string): string {
-  return runText(["plutil", "-extract", key, "raw", "-o", "-", infoPlist]);
+  return runText([
+    MACOS_PACKAGING_EXECUTABLES.plutil,
+    "-extract",
+    key,
+    "raw",
+    "-o",
+    "-",
+    infoPlist,
+  ]);
 }
 
 function hasPlistKey(infoPlist: string, key: string): boolean {
-  return Bun.spawnSync(["plutil", "-type", key, infoPlist], {
+  return Bun.spawnSync([MACOS_PACKAGING_EXECUTABLES.plutil, "-type", key, infoPlist], {
     stdout: "ignore",
     stderr: "ignore",
   }).exitCode === 0;
@@ -204,7 +244,7 @@ function hasPlistKey(infoPlist: string, key: string): boolean {
 
 function electronAsarIntegrityHash(infoPlist: string): string {
   return runText([
-    "/usr/libexec/PlistBuddy",
+    MACOS_PACKAGING_EXECUTABLES.PlistBuddy,
     "-c",
     "Print :ElectronAsarIntegrity:Resources/app.asar:hash",
     infoPlist,

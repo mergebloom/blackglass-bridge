@@ -3,11 +3,13 @@ import { lstat, readFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 import { compareCodeUnitStrings } from "./stable-json";
+import { resolveReleaseGitExecutable } from "./packaging-toolchain";
 
 export const TOOLING_SOURCE_IDENTITY_FORMAT_VERSION = 2;
 export const TOOLING_SOURCE_SCOPE = "release-critical-v1" as const;
 
 export const TOOLING_SOURCE_FILES = [
+  ".bun-version",
   ".editorconfig",
   ".gitattributes",
   ".gitignore",
@@ -48,6 +50,13 @@ interface ToolingFileRecord {
   sha256: string;
 }
 
+interface GitTreeEntry {
+  mode: string;
+  type: string;
+  object: string;
+  path: string;
+}
+
 export async function computeToolingSourceIdentity(
   rootArgument = resolve(import.meta.dir, ".."),
 ): Promise<ToolingSourceIdentity> {
@@ -83,7 +92,7 @@ export function computeToolingSourceIdentityAtRevision(
   }
 
   const result = Bun.spawnSync([
-    "git",
+    resolveReleaseGitExecutable(),
     "-C",
     root,
     "ls-tree",
@@ -96,7 +105,10 @@ export function computeToolingSourceIdentityAtRevision(
   if (result.exitCode !== 0) {
     throw new Error(`Unable to read tooling source tree: ${stderrText(result)}`);
   }
-  const entries = Buffer.from(result.stdout).toString("utf8").split("\0").filter(Boolean);
+  const entries = Buffer.from(result.stdout)
+    .toString("utf8")
+    .split("\0")
+    .filter(Boolean);
   const paths: string[] = [];
   const records = new Map<string, ToolingFileRecord>();
   for (const entry of entries) {
@@ -116,7 +128,14 @@ export function computeToolingSourceIdentityAtRevision(
     if (records.has(path)) {
       throw new Error(`Duplicate normalized tooling source path: ${path}`);
     }
-    const blob = Bun.spawnSync(["git", "-C", root, "cat-file", "blob", object]);
+    const blob = Bun.spawnSync([
+      resolveReleaseGitExecutable(),
+      "-C",
+      root,
+      "cat-file",
+      "blob",
+      object,
+    ]);
     if (blob.exitCode !== 0) {
       throw new Error(`Unable to read tracked tooling source file ${path}: ${stderrText(blob)}`);
     }
@@ -139,12 +158,20 @@ export function assertValidationOnlyDescendant(
   rootArgument: string,
   sourceRevision: string,
   descendantRevision: string,
+  expectedRecordPath: string,
+  expectedRecordBytes: Uint8Array,
 ): void {
   assertGitRevision(sourceRevision, "Tooling source revision");
   assertGitRevision(descendantRevision, "Qualified tag revision");
   const root = resolve(rootArgument);
+  const recordPath = normalizedGitPath(expectedRecordPath);
+  if (!isGeneratedValidationRecordPath(recordPath)) {
+    throw new Error(
+      "Expected validation record path must name a generated Bridge qualification record",
+    );
+  }
   const ancestor = Bun.spawnSync([
-    "git",
+    resolveReleaseGitExecutable(),
     "-C",
     root,
     "merge-base",
@@ -165,33 +192,57 @@ export function assertValidationOnlyDescendant(
   if (history.length === 0) {
     throw new Error("Qualified tag must include a committed validation record");
   }
-  let expectedParent = sourceRevision;
-  for (const line of history) {
-    const [commit, ...parents] = line.split(" ");
-    if (!isGitRevision(commit) || parents.length !== 1 || parents[0] !== expectedParent) {
-      throw new Error("Qualified tag history must be a linear descendant of the tooling source");
-    }
-    const changed = gitPathList(root, [
-      "diff",
-      "--name-only",
-      "-z",
-      expectedParent,
-      commit,
-      "--",
-    ]);
-    if (
-      changed === null ||
-      changed.length === 0 ||
-      changed.some((path) => !isGeneratedValidationRecordPath(path))
-    ) {
-      throw new Error(
-        "Qualified tag history may change only generated Bridge validation records",
-      );
-    }
-    expectedParent = commit;
+  if (history.length !== 1) {
+    throw new Error(
+      "Qualified tag must be exactly one linear validation-record commit after the tooling source",
+    );
   }
-  if (expectedParent !== descendantRevision) {
-    throw new Error("Qualified tag history contains an unsupported side branch");
+
+  const [commit, ...parents] = history[0]!.split(" ");
+  if (
+    commit !== descendantRevision ||
+    parents.length !== 1 ||
+    parents[0] !== sourceRevision
+  ) {
+    throw new Error("Qualified tag history must be a linear descendant of the tooling source");
+  }
+
+  const changed = gitPathList(root, [
+    "diff",
+    "--name-only",
+    "-z",
+    sourceRevision,
+    descendantRevision,
+    "--",
+  ]);
+  if (changed === null || changed.length !== 1 || changed[0] !== recordPath) {
+    throw new Error(
+      "Qualified tag commit must create only the exact verified validation record",
+    );
+  }
+
+  if (gitTreeEntry(root, sourceRevision, recordPath) !== null) {
+    throw new Error(
+      "Qualified validation record path must not exist at the tooling source revision",
+    );
+  }
+  const recordEntry = gitTreeEntry(root, descendantRevision, recordPath);
+  if (recordEntry?.mode !== "100644" || recordEntry.type !== "blob") {
+    throw new Error("Qualified validation record must be a newly added regular file");
+  }
+  const committedBytes = Bun.spawnSync([
+    resolveReleaseGitExecutable(),
+    "-C",
+    root,
+    "cat-file",
+    "blob",
+    recordEntry.object,
+  ]);
+  if (committedBytes.exitCode !== 0) {
+    throw new Error(`Unable to read qualified validation record: ${stderrText(committedBytes)}`);
+  }
+  if (!Buffer.from(committedBytes.stdout).equals(Buffer.from(expectedRecordBytes))) {
+    throw new Error("Qualified validation record bytes differ from the verified record");
   }
 }
 
@@ -332,7 +383,7 @@ function normalizedGitPath(path: string): string {
 
 function gitIdentity(root: string): { revision: string | null; clean: boolean } {
   const revisionResult = Bun.spawnSync([
-    "git",
+    resolveReleaseGitExecutable(),
     "-C",
     root,
     "rev-parse",
@@ -359,7 +410,14 @@ function gitIdentity(root: string): { revision: string | null; clean: boolean } 
 }
 
 function gitTrackedPaths(root: string): string[] | null {
-  const result = Bun.spawnSync(["git", "-C", root, "ls-files", "-z", "--"]);
+  const result = Bun.spawnSync([
+    resolveReleaseGitExecutable(),
+    "-C",
+    root,
+    "ls-files",
+    "-z",
+    "--",
+  ]);
   if (result.exitCode !== 0) return null;
   return result.stdout.toString().split("\0").filter(Boolean);
 }
@@ -378,13 +436,61 @@ function assertRequiredScope(paths: string[]): void {
 }
 
 function gitPathList(root: string, arguments_: string[]): string[] | null {
-  const result = Bun.spawnSync(["git", "-C", root, ...arguments_]);
+  const result = Bun.spawnSync([
+    resolveReleaseGitExecutable(),
+    "-C",
+    root,
+    ...arguments_,
+  ]);
   if (result.exitCode !== 0) return null;
   return result.stdout.toString().split("\0").filter(Boolean);
 }
 
+function gitTreeEntry(
+  root: string,
+  revision: string,
+  path: string,
+): GitTreeEntry | null {
+  const result = Bun.spawnSync([
+    resolveReleaseGitExecutable(),
+    "-C",
+    root,
+    "ls-tree",
+    "-z",
+    "--full-tree",
+    revision,
+    "--",
+    path,
+  ]);
+  if (result.exitCode !== 0) {
+    throw new Error(`Unable to inspect validation record history: ${stderrText(result)}`);
+  }
+  const entries = Buffer.from(result.stdout).toString("utf8").split("\0").filter(Boolean);
+  if (entries.length === 0) return null;
+  if (entries.length !== 1) {
+    throw new Error("Git returned multiple entries for the validation record path");
+  }
+  const match = /^(\d{6}) ([a-z]+) ([a-f0-9]+)\t([\s\S]+)$/u.exec(entries[0]!);
+  if (!match) throw new Error("Git returned a malformed validation record tree entry");
+  const entry = {
+    mode: match[1]!,
+    type: match[2]!,
+    object: match[3]!,
+    path: normalizedGitPath(match[4]!),
+  };
+  if (entry.path !== path) {
+    throw new Error("Git returned the wrong validation record tree entry");
+  }
+  return entry;
+}
+
 function runGitText(root: string, arguments_: string[]): string {
-  const result = Bun.spawnSync(["git", "-C", root, ...arguments_]);
+  const result = Bun.spawnSync([
+    resolveReleaseGitExecutable(),
+    "-C",
+    root,
+    ...arguments_,
+  ]);
   if (result.exitCode !== 0) {
     throw new Error(`Git command failed: ${stderrText(result)}`);
   }

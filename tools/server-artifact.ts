@@ -55,7 +55,7 @@ export async function inspectServerArtifact(binaryArgument: string): Promise<Ser
     runText([binaryPath, "build-info"]),
     match[1],
   );
-  const description = runText(["file", "-b", binaryPath]);
+  const description = runText(["/usr/bin/file", "-b", binaryPath]);
   const bytes = Buffer.from(await Bun.file(binaryPath).arrayBuffer());
   return {
     schemaVersion: 2,

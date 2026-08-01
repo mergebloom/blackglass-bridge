@@ -1,33 +1,72 @@
 import { createHash, randomBytes } from "node:crypto";
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { AsarArchive } from "./asar";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import { parseStrictFlags } from "./cli-flags";
 import { deriveE2ENetworkPlan } from "./e2e-network";
 import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
+import { inspectMacOSPackagingToolchain } from "./packaging-toolchain";
 import {
   assertPathWithin,
   canonicalExistingPath,
   canonicalOutputPath,
 } from "./path-safety";
-import { readBridgeReleaseManifest } from "./release-manifest";
+import { parseBridgeReleaseManifest } from "./release-manifest";
 import {
   computeToolingSourceIdentity,
   toolingSourceTreeEqual,
 } from "./tooling-source";
 import { isSupportedStableSemver } from "./semver";
+import { stableJson } from "./stable-json";
+import {
+  assertMacOSReproducibilityEvidenceBinds,
+  parseMacOSReproducibilityEvidence,
+  verifyMacOSReproducibility,
+} from "./verify-macos-reproducibility";
 
 const [rootArgument, asarArgument, ...flags] = Bun.argv.slice(2);
 const parsedFlags = parseStrictFlags(flags, {
-  valueFlags: ["--app", "--release-manifest"],
+  valueFlags: [
+    "--app",
+    "--release-manifest",
+    "--package-receipt",
+    "--second-app",
+    "--second-release-manifest",
+    "--second-package-receipt",
+    "--reproducibility-evidence",
+  ],
 });
 const appArgument = parsedFlags.values.get("--app");
 const releaseManifestArgument = parsedFlags.values.get("--release-manifest");
-if (!rootArgument || !asarArgument || !appArgument || !releaseManifestArgument) {
+const packageReceiptArgument = parsedFlags.values.get("--package-receipt");
+const secondAppArgument = parsedFlags.values.get("--second-app");
+const secondReleaseManifestArgument = parsedFlags.values.get(
+  "--second-release-manifest",
+);
+const secondPackageReceiptArgument = parsedFlags.values.get(
+  "--second-package-receipt",
+);
+const reproducibilityArgument = parsedFlags.values.get("--reproducibility-evidence");
+if (
+  !rootArgument ||
+  !asarArgument ||
+  !appArgument ||
+  !releaseManifestArgument ||
+  !packageReceiptArgument ||
+  !secondAppArgument ||
+  !secondReleaseManifestArgument ||
+  !secondPackageReceiptArgument ||
+  !reproducibilityArgument
+) {
   console.error(
     "Usage: bun run tools/prepare-e2e.ts <run-directory> <patched.asar> " +
-      "--app <Blackglass Bridge.app> --release-manifest <release.json>",
+      "--app <Blackglass Bridge.app> --release-manifest <release.json> " +
+      "--package-receipt <receipt.json> " +
+      "--second-app <Blackglass Bridge.app> " +
+      "--second-release-manifest <release.json> " +
+      "--second-package-receipt <receipt.json> " +
+      "--reproducibility-evidence <reproducibility.json>",
   );
   process.exit(2);
 }
@@ -48,6 +87,31 @@ const releaseManifestPath = await canonicalExistingPath(
   "Release manifest",
   "file",
 );
+const packageReceiptPath = await canonicalExistingPath(
+  packageReceiptArgument,
+  "Package invocation receipt",
+  "file",
+);
+const secondApp = await canonicalExistingPath(
+  secondAppArgument,
+  "Second Blackglass app",
+  "directory",
+);
+const secondReleaseManifestPath = await canonicalExistingPath(
+  secondReleaseManifestArgument,
+  "Second release manifest",
+  "file",
+);
+const secondPackageReceiptPath = await canonicalExistingPath(
+  secondPackageReceiptArgument,
+  "Second package invocation receipt",
+  "file",
+);
+const reproducibilityPath = await canonicalExistingPath(
+  reproducibilityArgument,
+  "macOS reproducibility evidence",
+  "file",
+);
 const archive = await AsarArchive.open(asar);
 const packageMetadata = JSON.parse(archive.read("package.json").toString("utf8")) as {
   version?: string;
@@ -58,14 +122,41 @@ if (!isSupportedStableSemver(packageMetadata.version)) {
 const mainRenderer = archive.read("app.js");
 const starterRenderer = archive.read("starter.js");
 const adapterBytes = Buffer.from(await Bun.file(asar).arrayBuffer());
+const reproducibilityBytes = Buffer.from(
+  await Bun.file(reproducibilityPath).arrayBuffer(),
+);
+const reproducibilityEvidence = parseMacOSReproducibilityEvidence(
+  reproducibilityBytes,
+);
+const recomputedReproducibilityEvidence = await verifyMacOSReproducibility({
+  firstApp: app,
+  firstManifest: releaseManifestPath,
+  firstReceipt: packageReceiptPath,
+  secondApp,
+  secondManifest: secondReleaseManifestPath,
+  secondReceipt: secondPackageReceiptPath,
+});
+if (
+  stableJson(recomputedReproducibilityEvidence) !==
+  stableJson(reproducibilityEvidence)
+) {
+  throw new Error(
+    "Supplied macOS reproducibility evidence does not match the two inspected outputs",
+  );
+}
 const clientArtifact = await inspectMacOSArtifact(app);
-const releaseManifestBytes = Buffer.from(
-  await Bun.file(releaseManifestPath).arrayBuffer(),
-);
-const { manifest: releaseManifest } = await readBridgeReleaseManifest(
-  releaseManifestPath,
-);
+const releaseManifestBytes = await readFile(releaseManifestPath);
+const releaseManifest = parseBridgeReleaseManifest(releaseManifestBytes);
+const releaseManifestSha256 = createHash("sha256")
+  .update(releaseManifestBytes)
+  .digest("hex");
+assertMacOSReproducibilityEvidenceBinds(reproducibilityEvidence, {
+  manifest: releaseManifest,
+  releaseManifestSha256,
+  artifact: publicMacOSArtifact(clientArtifact),
+});
 const currentToolingSource = await computeToolingSourceIdentity();
+const currentPackagingToolchain = await inspectMacOSPackagingToolchain();
 if (
   releaseManifest.toolingSource.worktreeClean !== true ||
   currentToolingSource.worktreeClean !== true ||
@@ -74,6 +165,14 @@ if (
 ) {
   throw new Error(
     "Prepared E2E requires the exact clean release-critical tooling source used for packaging",
+  );
+}
+if (
+  stableJson(releaseManifest.packagingToolchain) !==
+  stableJson(currentPackagingToolchain)
+) {
+  throw new Error(
+    "Prepared E2E runtime dependencies or packaging tools differ from the packaged release",
   );
 }
 if (clientArtifact.version !== packageMetadata.version) {
@@ -124,15 +223,17 @@ if (
 }
 const adapterFileName = `obsidian-${packageMetadata.version}.asar`;
 const runManifest = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   createdAt: new Date().toISOString(),
   bridgeVersion: releaseManifest.bridgeVersion,
   rendererVersion: packageMetadata.version,
   adapterFileName,
   compatibilityAsarSha256: createHash("sha256").update(adapterBytes).digest("hex"),
   releaseManifestFileName: "bridge-release-manifest.json",
-  releaseManifestSha256: createHash("sha256")
-    .update(releaseManifestBytes)
+  releaseManifestSha256,
+  reproducibilityEvidenceFileName: "client-reproducibility.json",
+  reproducibilityEvidenceSha256: createHash("sha256")
+    .update(reproducibilityBytes)
     .digest("hex"),
   endpoints: releaseManifest.endpoints,
   network: deriveE2ENetworkPlan(releaseManifest.endpoints),
@@ -142,6 +243,11 @@ await mkdir(root, { recursive: false });
 await writeFile(
   resolve(root, "run-manifest.json"),
   `${JSON.stringify(runManifest, null, 2)}\n`,
+  { flag: "wx", mode: 0o600 },
+);
+await writeFile(
+  resolve(root, runManifest.reproducibilityEvidenceFileName),
+  reproducibilityBytes,
   { flag: "wx", mode: 0o600 },
 );
 await writeFile(

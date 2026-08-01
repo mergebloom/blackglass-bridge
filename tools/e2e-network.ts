@@ -38,13 +38,15 @@ export interface E2ENetworkPlan {
 }
 
 export interface PreparedE2ERunManifest {
-  schemaVersion: 2;
+  schemaVersion: 3;
   endpoints: AdapterOptions;
   network: E2ENetworkPlan;
   compatibilityAsarSha256: string;
   releaseManifestSha256: string;
   adapterFileName: string;
   releaseManifestFileName: string;
+  reproducibilityEvidenceFileName: string;
+  reproducibilityEvidenceSha256: string;
   [key: string]: unknown;
 }
 
@@ -141,7 +143,7 @@ export async function readPreparedE2ERun(
 export function assertPreparedE2ERunManifest(
   value: unknown,
 ): asserts value is PreparedE2ERunManifest {
-  if (!isRecord(value) || value.schemaVersion !== 2 || !isRecord(value.endpoints)) {
+  if (!isRecord(value) || value.schemaVersion !== 3 || !isRecord(value.endpoints)) {
     throw new Error("Unsupported prepared E2E run manifest schema");
   }
   const endpoints = canonicalAdapterOptions({
@@ -155,10 +157,18 @@ export function assertPreparedE2ERunManifest(
     throw new Error("Prepared E2E endpoints are not canonical");
   }
   assertE2ENetworkPlan(value.network, endpoints);
-  for (const field of ["compatibilityAsarSha256", "releaseManifestSha256"] as const) {
+  for (const field of [
+    "compatibilityAsarSha256",
+    "releaseManifestSha256",
+    "reproducibilityEvidenceSha256",
+  ] as const) {
     if (!isSha256(value[field])) throw new Error(`Prepared E2E ${field} is invalid`);
   }
-  for (const field of ["adapterFileName", "releaseManifestFileName"] as const) {
+  for (const field of [
+    "adapterFileName",
+    "releaseManifestFileName",
+    "reproducibilityEvidenceFileName",
+  ] as const) {
     if (
       typeof value[field] !== "string" ||
       !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(value[field] as string)

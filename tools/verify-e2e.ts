@@ -25,9 +25,13 @@ import {
   publicMacOSArtifact,
   type MacOSArtifact,
 } from "./macos-artifact";
-import { readBridgeReleaseManifest } from "./release-manifest";
+import { parseBridgeReleaseManifest } from "./release-manifest";
 import { isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
+import {
+  assertMacOSReproducibilityEvidenceBinds,
+  parseMacOSReproducibilityEvidence,
+} from "./verify-macos-reproducibility";
 
 const rootArgument = Bun.argv[2];
 if (!rootArgument) {
@@ -49,7 +53,7 @@ const runManifest = preparedRun.manifest as typeof preparedRun.manifest & {
   explicitUserDataDirHonored: boolean;
 };
 if (
-  runManifest.schemaVersion !== 2 ||
+  runManifest.schemaVersion !== 3 ||
   !isRendererAdapterFileName(runManifest.adapterFileName) ||
   runManifest.releaseManifestFileName !== "bridge-release-manifest.json" ||
   !/^[a-f0-9]{64}$/u.test(runManifest.releaseManifestSha256) ||
@@ -73,9 +77,7 @@ const releaseManifestBytes = Buffer.from(await Bun.file(releaseManifestPath).arr
 if (sha256(releaseManifestBytes) !== runManifest.releaseManifestSha256) {
   throw new Error("The bound Bridge release manifest changed after E2E preparation");
 }
-const { manifest: releaseManifest } = await readBridgeReleaseManifest(
-  releaseManifestPath,
-);
+const releaseManifest = parseBridgeReleaseManifest(releaseManifestBytes);
 if (
   releaseManifest.bridgeVersion !== runManifest.bridgeVersion ||
   releaseManifest.rendererVersion !== runManifest.rendererVersion ||
@@ -158,6 +160,22 @@ if (
 ) {
   throw new Error("The E2E client does not match the bound Bridge release manifest");
 }
+const reproducibilityPath = resolve(
+  root,
+  runManifest.reproducibilityEvidenceFileName,
+);
+const reproducibilityBytes = await readFile(reproducibilityPath);
+if (sha256(reproducibilityBytes) !== runManifest.reproducibilityEvidenceSha256) {
+  throw new Error("The macOS reproducibility evidence changed after E2E preparation");
+}
+assertMacOSReproducibilityEvidenceBinds(
+  parseMacOSReproducibilityEvidence(reproducibilityBytes),
+  {
+    manifest: releaseManifest,
+    releaseManifestSha256: runManifest.releaseManifestSha256,
+    artifact: publicMacOSArtifact(currentClient),
+  },
+);
 const clientLaunchIdentities = new Map<string, ClientLaunchIdentity>();
 const liveClientBindings = new Map<string, LiveClientLaunchBinding>();
 for (const client of ["client-a", "client-b"] as const) {

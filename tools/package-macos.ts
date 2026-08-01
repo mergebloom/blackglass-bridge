@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { copyFile, lstat, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
@@ -31,6 +31,19 @@ import {
   signMacOSAppAdHoc,
 } from "./macos-code-signing";
 import {
+  inspectMacOSCodeInventory,
+  macOSCodeInventoriesEqual,
+} from "./macos-code-inventory";
+import {
+  createMacOSPackageReceipt,
+  serializeMacOSPackageReceipt,
+} from "./macos-package-receipt";
+import { clearMacOSAppExtendedAttributes } from "./macos-root-metadata";
+import {
+  inspectMacOSPackagingToolchain,
+  MACOS_PACKAGING_EXECUTABLES,
+} from "./packaging-toolchain";
+import {
   discoverUnpackedJavaScriptFiles,
   qualifyRendererRelease,
 } from "./release-compatibility";
@@ -61,6 +74,7 @@ const parsedFlags = parseStrictFlags(flags, {
     "--control-origin",
     "--data-host",
     "--manifest",
+    "--receipt",
     "--baseline",
     "--official-dmg",
   ],
@@ -68,11 +82,14 @@ const parsedFlags = parseStrictFlags(flags, {
 const controlOrigin = parsedFlags.values.get("--control-origin");
 const dataHost = parsedFlags.values.get("--data-host");
 const manifestArgument = parsedFlags.values.get("--manifest");
+const receiptArgument = parsedFlags.values.get("--receipt");
 const baselineArgument = parsedFlags.values.get("--baseline");
 const officialDmgArgument = parsedFlags.values.get("--official-dmg");
 if (!controlOrigin || !dataHost || !manifestArgument || !officialDmgArgument) {
   usage();
 }
+const packageInvocationId = randomUUID();
+const packageStartedAt = new Date().toISOString();
 
 const sourceApp = await canonicalExistingPath(
   sourceArgument,
@@ -101,8 +118,19 @@ const manifestPath = await canonicalOutputPath(
   manifestArgument,
   "Release manifest",
 );
-if (!sourceApp.endsWith(".app") || !outputApp.endsWith(".app")) {
-  throw new Error("Source and output must be .app bundles");
+const receiptPath = await canonicalOutputPath(
+  receiptArgument ??
+    join(
+      dirname(manifestPath),
+      `${basename(manifestPath, ".json")}.package-receipt.json`,
+    ),
+  "Package invocation receipt",
+);
+if (!sourceApp.endsWith(".app")) {
+  throw new Error("Source must be an .app bundle");
+}
+if (basename(outputApp) !== "Blackglass Bridge.app") {
+  throw new Error('Output app basename must be exactly "Blackglass Bridge.app"');
 }
 if (!manifestPath.endsWith(".json")) {
   throw new Error("Release manifest output must be a .json file");
@@ -112,12 +140,18 @@ if (dirname(manifestPath) !== dirname(outputApp)) {
     "Output app and release manifest must use the same canonical directory",
   );
 }
+if (dirname(receiptPath) !== dirname(outputApp)) {
+  throw new Error(
+    "Output app, release manifest, and package receipt must use the same canonical directory",
+  );
+}
 assertNonOverlappingPaths([
   { label: "Source app", path: sourceApp },
   { label: "Patched ASAR", path: patchedAsar },
   { label: "Official release DMG", path: officialDmg },
   { label: "Output app", path: outputApp },
   { label: "Release manifest", path: manifestPath },
+  { label: "Package invocation receipt", path: receiptPath },
   ...(baselinePath
     ? [{ label: "Compatibility baseline", path: baselinePath }]
     : []),
@@ -134,6 +168,7 @@ const patchedAsarBytes = await readFile(patchedAsar);
 const sourceArchive = AsarArchive.fromBuffer(sourceAsarBytes);
 const patchedArchive = AsarArchive.fromBuffer(patchedAsarBytes);
 const toolingSource = await computeToolingSourceIdentity();
+const packagingToolchain = await inspectMacOSPackagingToolchain();
 const sourceVersion = readVersion(sourceArchive);
 const patchedVersion = readVersion(patchedArchive);
 patchedArchive.read("app.js");
@@ -165,6 +200,20 @@ if (
     "Source app tree does not match the reviewed official DMG baseline",
   );
 }
+const sourceMacOSCodeInventory = await inspectMacOSCodeInventory(
+  sourceApp,
+  "source-contract",
+);
+if (
+  !macOSCodeInventoriesEqual(
+    sourceMacOSCodeInventory,
+    qualification.loadedBaseline.baseline.sourceMacOSCodeInventory,
+  )
+) {
+  throw new Error(
+    "Source macOS code inventory does not match the reviewed compatibility baseline",
+  );
+}
 const reproducedRenderer = patchAsar(sourceAsarBytes, {
   controlOrigin,
   dataHost,
@@ -180,7 +229,7 @@ if (sourceAsarSha256 === patchedAsarSha256) {
   throw new Error("Adapter ASAR is byte-identical to the official renderer");
 }
 const bundleVersion = runText([
-  "plutil",
+  MACOS_PACKAGING_EXECUTABLES.plutil,
   "-extract",
   "CFBundleShortVersionString",
   "raw",
@@ -247,20 +296,40 @@ await validatePreservedElectronHelpers(
   sourceDisplayName,
   sourceBundleIdentifier,
 );
-const sourceCodeSigning = inspectSourceMacOSCodeSigning(sourceApp);
+const sourceCodeSigning = inspectSourceMacOSCodeSigning(
+  sourceApp,
+  sourceMacOSCodeInventory,
+);
 
 await withPackageStaging(outputApp, async (stagingRoot) => {
   const stagedApp = join(stagingRoot, basename(outputApp));
   const stagedManifest = join(stagingRoot, basename(manifestPath));
+  const stagedReceipt = join(stagingRoot, basename(receiptPath));
   const stagedEntitlements = join(stagingRoot, "blackglass-entitlements.plist");
   await writeFile(stagedEntitlements, approvedMacOSEntitlementsPlist(), {
     flag: "wx",
     mode: 0o600,
   });
-  run(["ditto", sourceApp, stagedApp]);
+  run([
+    MACOS_PACKAGING_EXECUTABLES.ditto,
+    "--norsrc",
+    "--noextattr",
+    "--noqtn",
+    "--noacl",
+    "--nopersistRootless",
+    sourceApp,
+    stagedApp,
+  ]);
   const stagedCopyTree = await computeTreeIdentity(stagedApp);
   if (!treeIdentityEqual(stagedCopyTree, sourceAppTree)) {
     throw new Error("Staged app copy does not match the reviewed source tree");
+  }
+  const stagedCodeInventory = await inspectMacOSCodeInventory(
+    stagedApp,
+    "source-contract",
+  );
+  if (!macOSCodeInventoriesEqual(stagedCodeInventory, sourceMacOSCodeInventory)) {
+    throw new Error("Staged macOS code inventory does not match the reviewed source");
   }
   const infoPlist = join(stagedApp, "Contents/Info.plist");
   const packagedAsar = join(stagedApp, "Contents/Resources/obsidian.asar");
@@ -298,7 +367,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     throw new Error("Packaged CLI does not match the deterministic socket patch");
   }
   run([
-    "plutil",
+    MACOS_PACKAGING_EXECUTABLES.plutil,
     "-replace",
     "CFBundleDisplayName",
     "-string",
@@ -306,7 +375,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     infoPlist,
   ]);
   run([
-    "plutil",
+    MACOS_PACKAGING_EXECUTABLES.plutil,
     "-replace",
     "CFBundleIdentifier",
     "-string",
@@ -318,9 +387,19 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     sourceDisplayName,
     sourceBundleIdentifier,
   );
-  run(["plutil", "-remove", "CFBundleURLTypes", infoPlist]);
+  run([
+    MACOS_PACKAGING_EXECUTABLES.plutil,
+    "-remove",
+    "CFBundleURLTypes",
+    infoPlist,
+  ]);
   if (hasPlistKey(infoPlist, "NSUbiquitousContainers")) {
-    run(["plutil", "-remove", "NSUbiquitousContainers", infoPlist]);
+    run([
+      MACOS_PACKAGING_EXECUTABLES.plutil,
+      "-remove",
+      "NSUbiquitousContainers",
+      infoPlist,
+    ]);
   }
   for (
     const key of [
@@ -335,7 +414,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     if (!hasPlistKey(infoPlist, key)) continue;
     const description = plistString(infoPlist, key);
     run([
-      "plutil",
+      MACOS_PACKAGING_EXECUTABLES.plutil,
       "-replace",
       key,
       "-string",
@@ -356,10 +435,16 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     stagedApp,
     stagedEntitlements,
     sourceCodeSigning,
+    stagedCodeInventory,
   );
+  await clearMacOSAppExtendedAttributes(stagedApp);
 
   const macOSArtifact = await inspectMacOSArtifact(stagedApp);
+  if (!macOSCodeInventoriesEqual(macOSArtifact.codeInventory, sourceMacOSCodeInventory)) {
+    throw new Error("Packaged macOS code inventory does not match the reviewed source");
+  }
   const bridgeVersion = await readBridgeVersion();
+  const publicArtifact = publicMacOSArtifact(macOSArtifact);
   const releaseManifest: BridgeReleaseManifest = {
     schemaVersion: BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION,
     bridgeVersion,
@@ -371,6 +456,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       rendererAsarSha256: sourceAsarSha256,
       wrapperAsarSha256: generatedWrapper.report.upstreamSha256,
       cliExecutableSha256: generatedCli.report.upstreamSha256,
+      macOSCodeInventory: sourceMacOSCodeInventory,
     },
     patcher: {
       renderer: {
@@ -390,11 +476,12 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       controlOrigin: reproducedRenderer.report.controlOrigin,
       dataHost: reproducedRenderer.report.dataHost,
     },
+    packagingToolchain,
     toolingSource,
     renderer: reproducedRenderer.report,
     wrapper: generatedWrapper.report,
     cli: generatedCli.report,
-    macOS: publicMacOSArtifact(macOSArtifact),
+    macOS: publicArtifact,
     reproduction: {
       officialDmgMatchedBaseline: true,
       sourceAppTreeMatchedBaseline: true,
@@ -406,18 +493,39 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       packagedWrapperIntegrityVerified: true,
       packagedCliSocketVerified: true,
       reviewedCodeSigningPreserved: true,
+      sourceCodeInventoryMatchedBaseline: true,
+      packagedCodeInventoryMatchedSource: true,
     },
   };
   assertBridgeReleaseManifest(releaseManifest);
-  await writeFile(
-    stagedManifest,
+  const releaseManifestBytes = Buffer.from(
     `${JSON.stringify(releaseManifest, null, 2)}\n`,
-    {
-      flag: "wx",
-      mode: 0o600,
-    },
+    "utf8",
   );
-  await publishAtomically(stagedApp, outputApp, stagedManifest, manifestPath);
+  await writeFile(stagedManifest, releaseManifestBytes, {
+    flag: "wx",
+    mode: 0o600,
+  });
+  const packageReceipt = createMacOSPackageReceipt({
+    invocationId: packageInvocationId,
+    startedAt: packageStartedAt,
+    completedAt: new Date().toISOString(),
+    manifest: releaseManifest,
+    releaseManifestSha256: generatedSha256(releaseManifestBytes),
+    artifact: publicArtifact,
+  });
+  await writeFile(stagedReceipt, serializeMacOSPackageReceipt(packageReceipt), {
+    flag: "wx",
+    mode: 0o600,
+  });
+  await publishAtomically(
+    stagedApp,
+    outputApp,
+    stagedManifest,
+    manifestPath,
+    stagedReceipt,
+    receiptPath,
+  );
 
   console.log(
     JSON.stringify(
@@ -459,6 +567,8 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
         registeredUrlSchemes: [],
         signature: "ad-hoc",
         manifestPath,
+        receiptPath,
+        packageReceipt,
         releaseManifest,
       },
       null,
@@ -500,11 +610,19 @@ function runText(arguments_: string[]): string {
 }
 
 function plistString(infoPlist: string, key: string): string {
-  return runText(["plutil", "-extract", key, "raw", "-o", "-", infoPlist]);
+  return runText([
+    MACOS_PACKAGING_EXECUTABLES.plutil,
+    "-extract",
+    key,
+    "raw",
+    "-o",
+    "-",
+    infoPlist,
+  ]);
 }
 
 function hasPlistKey(infoPlist: string, key: string): boolean {
-  return Bun.spawnSync(["plutil", "-type", key, infoPlist], {
+  return Bun.spawnSync([MACOS_PACKAGING_EXECUTABLES.plutil, "-type", key, infoPlist], {
     stdout: "ignore",
     stderr: "ignore",
   }).exitCode === 0;
@@ -523,7 +641,7 @@ function assertPlistString(
 
 function electronAsarIntegrityHash(infoPlist: string): string {
   return runText([
-    "/usr/libexec/PlistBuddy",
+    MACOS_PACKAGING_EXECUTABLES.PlistBuddy,
     "-c",
     "Print :ElectronAsarIntegrity:Resources/app.asar:hash",
     infoPlist,
@@ -532,7 +650,7 @@ function electronAsarIntegrityHash(infoPlist: string): string {
 
 function setElectronAsarIntegrityHash(infoPlist: string, hash: string): void {
   run([
-    "/usr/libexec/PlistBuddy",
+    MACOS_PACKAGING_EXECUTABLES.PlistBuddy,
     "-c",
     `Set :ElectronAsarIntegrity:Resources/app.asar:hash ${hash}`,
     infoPlist,
@@ -565,6 +683,8 @@ async function publishAtomically(
   outputApp: string,
   stagedManifest: string,
   manifestPath: string,
+  stagedReceipt: string,
+  receiptPath: string,
 ): Promise<void> {
   await rename(stagedApp, outputApp);
   try {
@@ -581,6 +701,29 @@ async function publishAtomically(
     }
     throw error;
   }
+  try {
+    await rename(stagedReceipt, receiptPath);
+  } catch (error) {
+    const rollbackErrors: string[] = [];
+    try {
+      await rename(manifestPath, stagedManifest);
+    } catch (rollbackError) {
+      rollbackErrors.push(`manifest: ${String(rollbackError)}`);
+    }
+    try {
+      await rename(outputApp, stagedApp);
+    } catch (rollbackError) {
+      rollbackErrors.push(`app: ${String(rollbackError)}`);
+    }
+    if (rollbackErrors.length > 0) {
+      throw new Error(
+        `Package receipt publication failed and rollback was incomplete: ${
+          String(error)
+        }; ${rollbackErrors.join("; ")}`,
+      );
+    }
+    throw error;
+  }
 }
 
 function treeIdentityEqual(left: unknown, right: unknown): boolean {
@@ -592,6 +735,7 @@ function usage(): never {
     "Usage: bun run tools/package-macos.ts <official-Obsidian.app> " +
       "<patched.asar> <output.app> --control-origin <origin> " +
       "--data-host <host[:port]> --manifest <release-manifest.json> " +
+      "[--receipt <package-receipt.json>] " +
       "--official-dmg <official-release.dmg> " +
       "[--baseline <reviewed-baseline.json>]",
   );

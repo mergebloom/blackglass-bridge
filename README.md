@@ -46,8 +46,10 @@ findings are accepted only when backed by deterministic tooling and tests.
    Sync-operation, and message-shape inventories.
 3. Generate a deterministic compatibility ASAR for the chosen server URLs.
 4. Patch the copied wrapper to isolate state, disable updates, and pin the embedded renderer.
-5. Package and sign a separate `Blackglass Bridge.app`.
-6. Qualify that exact client and server artifact pair with multipart Sync and recovery E2E.
+5. Package and sign two independent `Blackglass Bridge.app` outputs, then require
+   distinct invocation receipts plus matching manifests and artifact identities.
+6. Bind that reproducibility proof while qualifying the exact client and server
+   artifact pair with multipart Sync and recovery E2E.
 
 The client adapter is release-specific. The Sync protocol and durable data live
 in the separate Blackglass Server project, normally checked out beside this one
@@ -68,10 +70,11 @@ with later Obsidian releases are not qualified yet.
 
 ## Quick start
 
-Requirements: Bun 1.3 or newer and an authorized official Obsidian DMG.
+Requirements: Bun 1.3.8 (pinned in `.bun-version`), npm for the lockfile-verified
+dependency install, and an authorized official Obsidian DMG.
 
 ```sh
-bun install
+npm ci
 bun run analyze:release -- \
   '/Volumes/Obsidian/Obsidian.app/Contents/Resources/obsidian.asar' \
   --resources '/Volumes/Obsidian/Obsidian.app/Contents/Resources'
@@ -88,9 +91,15 @@ bun run package:macos -- \
   --control-origin http://127.0.0.1:3000 \
   --data-host 127.0.0.1:3003 \
   --official-dmg /path/to/Obsidian.dmg \
-  --manifest /path/to/blackglass-bridge-release.json
+  --manifest /path/to/blackglass-bridge-release.json \
+  --receipt /path/to/blackglass-bridge-package-receipt.json
 bun run check
 ```
+
+Before E2E qualification, repeat the package command into a different output
+directory and run `package:macos:verify-reproducibility` with both invocation
+receipts as shown in the E2E guide. Preparation refuses an app without that
+bound two-build evidence.
 
 For a real deployment, use HTTPS/WSS endpoints and follow the
 [deployment guide](docs/deployment.md). Run the packaged-client qualification in
@@ -104,6 +113,12 @@ then pass Sync and source-loss recovery E2E against the intended server binary.
 Any new, removed, or changed packed or unpacked JavaScript file, anchor, route,
 Sync operation, or message shape stops the build. The stable self-hosted server
 URLs do not need to change.
+
+`bun run baseline:candidate -- <official.dmg> <Obsidian.app> --predecessor
+<reviewed-baseline.json>` creates a deterministic, untrusted predecessor-diff
+packet under ignored `.data/compatibility-candidates/`. It never updates the
+tracked baseline; follow the review and manual-promotion process in
+[`compatibility/README.md`](compatibility/README.md).
 
 ## Safety and distribution
 

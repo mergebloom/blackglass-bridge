@@ -1,4 +1,4 @@
-import { chromium } from "playwright-core";
+import { chromium } from "#release-playwright-core";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";

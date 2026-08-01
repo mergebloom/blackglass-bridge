@@ -1,6 +1,14 @@
+import { createHash } from "node:crypto";
 import { join } from "node:path";
+import {
+  assertMacOSCodeInventory,
+  type MacOSCodeInventory,
+  verifyMacOSCodeInventorySignatures,
+} from "./macos-code-inventory";
+import { MACOS_PACKAGING_EXECUTABLES } from "./packaging-toolchain";
+import { stableJson } from "./stable-json";
 
-export const MACOS_CODE_SIGNING_FORMAT_VERSION = 1;
+export const MACOS_CODE_SIGNING_FORMAT_VERSION = 2;
 
 export const APPROVED_MACOS_ENTITLEMENTS = [
   "com.apple.security.cs.allow-jit",
@@ -24,6 +32,11 @@ export interface MacOSCodeSigningEvidence {
   formatVersion: typeof MACOS_CODE_SIGNING_FORMAT_VERSION;
   signature: "ad-hoc";
   allReviewedTargetsHardenedRuntime: true;
+  allInventoryTargetsStrictlyVerified: true;
+  allArchitecturesStrictlyVerified: true;
+  strictInventoryTargets: number;
+  strictMachOTargets: number;
+  inventorySigningSha256: string;
   approvedEntitlements: string[];
   targets: MacOSCodeSigningTarget[];
 }
@@ -46,10 +59,20 @@ interface InspectedCodeSignature extends MacOSCodeSigningTarget {
 
 export interface SourceMacOSCodeSigningContract {
   targets: InspectedCodeSignature[];
+  inventoryMachOTargets: InventoryMachOSigningTarget[];
+}
+
+interface InventoryMachOSigningTarget {
+  path: string;
+  architectures: string[];
+  identifier: string;
+  runtimeVersion: string;
+  entitlementPolicy: "approved" | "none";
 }
 
 export function inspectSourceMacOSCodeSigning(
   appPath: string,
+  inventory: MacOSCodeInventory,
 ): SourceMacOSCodeSigningContract {
   // The exact DMG digest and extracted tree are checked by the caller before
   // this metadata is trusted. Some mounted official bundles do not satisfy a
@@ -58,17 +81,41 @@ export function inspectSourceMacOSCodeSigning(
   const targets = targetPaths(appPath, "md.obsidian").map((target) =>
     inspectApprovedCodeSignature(target, false)
   );
-  return { targets };
+  return {
+    targets,
+    inventoryMachOTargets: inspectInventoryMachOSigningTargets(
+      appPath,
+      inventory,
+      false,
+    ),
+  };
 }
 
 export function signMacOSAppAdHoc(
   appPath: string,
   entitlementsPath: string,
   source: SourceMacOSCodeSigningContract,
+  inventory: MacOSCodeInventory,
 ): MacOSCodeSigningEvidence {
+  assertMacOSCodeInventory(inventory);
   const packagedTargets = targetPaths(appPath, "com.blackglass.bridge");
   if (source.targets.length !== packagedTargets.length) {
     throw new Error("Source macOS code-signing target inventory is incomplete");
+  }
+
+  const inventoryEntries = inventory.entries.filter((entry) => entry.kind === "mach-o");
+  if (
+    source.inventoryMachOTargets.length !== inventoryEntries.length ||
+    source.inventoryMachOTargets.some(
+      (target, index) =>
+        target.path !== inventoryEntries[index]!.path ||
+        !same(target.architectures, inventoryEntries[index]!.architectures),
+    )
+  ) {
+    throw new Error("Source Mach-O signing contract does not match the code inventory");
+  }
+  for (const target of source.inventoryMachOTargets) {
+    signInventoryMachOTarget(appPath, target, entitlementsPath);
   }
 
   const signingTargets = packagedTargets
@@ -80,9 +127,17 @@ export function signMacOSAppAdHoc(
   for (const { target, runtimeVersion } of signingTargets) {
     signTarget(target, entitlementsPath, runtimeVersion);
   }
-  run(["codesign", "--verify", "--deep", "--strict", appPath]);
+  run([
+    MACOS_PACKAGING_EXECUTABLES.codesign,
+    "--verify",
+    "--deep",
+    "--strict",
+    "--all-architectures",
+    appPath,
+  ]);
+  verifyMacOSCodeInventorySignatures(appPath, inventory);
 
-  const inspected = inspectPackagedMacOSCodeSigning(appPath);
+  const inspected = inspectPackagedMacOSCodeSigning(appPath, inventory);
   for (let index = 0; index < inspected.targets.length; index += 1) {
     if (
       inspected.targets[index]!.runtimeVersion !==
@@ -94,19 +149,43 @@ export function signMacOSAppAdHoc(
       );
     }
   }
+  const expectedInventoryTargets = source.inventoryMachOTargets.map((target) => ({
+    ...target,
+    identifier:
+      target.path === "Contents/MacOS/Obsidian"
+        ? "com.blackglass.bridge"
+        : target.identifier,
+  }));
+  if (
+    inspected.inventorySigningSha256 !== sha256(stableJson(expectedInventoryTargets))
+  ) {
+    throw new Error("Packaged Mach-O signing contract differs from the reviewed source");
+  }
   return inspected;
 }
 
 export function inspectPackagedMacOSCodeSigning(
   appPath: string,
+  inventory: MacOSCodeInventory,
 ): MacOSCodeSigningEvidence {
+  verifyMacOSCodeInventorySignatures(appPath, inventory);
   const signatures = targetPaths(appPath, "com.blackglass.bridge").map(
     (target) => inspectApprovedCodeSignature(target, true),
+  );
+  const inventoryMachOTargets = inspectInventoryMachOSigningTargets(
+    appPath,
+    inventory,
+    true,
   );
   const evidence: MacOSCodeSigningEvidence = {
     formatVersion: MACOS_CODE_SIGNING_FORMAT_VERSION,
     signature: "ad-hoc",
     allReviewedTargetsHardenedRuntime: true,
+    allInventoryTargetsStrictlyVerified: true,
+    allArchitecturesStrictlyVerified: true,
+    strictInventoryTargets: inventory.entries.length,
+    strictMachOTargets: inventoryMachOTargets.length,
+    inventorySigningSha256: sha256(stableJson(inventoryMachOTargets)),
     approvedEntitlements: [...APPROVED_MACOS_ENTITLEMENTS],
     targets: signatures.map(
       ({ role, identifier, runtimeVersion, entitlementPolicy }) => ({
@@ -129,6 +208,14 @@ export function assertMacOSCodeSigningEvidence(
     value.formatVersion !== MACOS_CODE_SIGNING_FORMAT_VERSION ||
     value.signature !== "ad-hoc" ||
     value.allReviewedTargetsHardenedRuntime !== true ||
+    value.allInventoryTargetsStrictlyVerified !== true ||
+    value.allArchitecturesStrictlyVerified !== true ||
+    !Number.isSafeInteger(value.strictInventoryTargets) ||
+    (value.strictInventoryTargets as number) < 1 ||
+    !Number.isSafeInteger(value.strictMachOTargets) ||
+    (value.strictMachOTargets as number) < 1 ||
+    (value.strictMachOTargets as number) > (value.strictInventoryTargets as number) ||
+    !isSha256(value.inventorySigningSha256) ||
     !same(value.approvedEntitlements, APPROVED_MACOS_ENTITLEMENTS) ||
     !Array.isArray(value.targets)
   ) {
@@ -171,10 +258,16 @@ function inspectApprovedCodeSignature(
   requireAdHoc: boolean,
 ): InspectedCodeSignature {
   if (requireAdHoc) {
-    run(["codesign", "--verify", "--strict", target.path]);
+    run([
+      MACOS_PACKAGING_EXECUTABLES.codesign,
+      "--verify",
+      "--strict",
+      "--all-architectures",
+      target.path,
+    ]);
   }
   const details = runText([
-    "codesign",
+    MACOS_PACKAGING_EXECUTABLES.codesign,
     "--display",
     "--verbose=4",
     target.path,
@@ -218,7 +311,7 @@ function inspectApprovedCodeSignature(
   }
 
   const entitlementDetails = runText([
-    "codesign",
+    MACOS_PACKAGING_EXECUTABLES.codesign,
     "--display",
     "--entitlements",
     "-",
@@ -260,13 +353,144 @@ function parseAbstractEntitlements(output: string): string[] {
   return keys.sort();
 }
 
+function inspectInventoryMachOSigningTargets(
+  appPath: string,
+  inventory: MacOSCodeInventory,
+  requireAdHoc: boolean,
+): InventoryMachOSigningTarget[] {
+  assertMacOSCodeInventory(inventory);
+  return inventory.entries
+    .filter((entry) => entry.kind === "mach-o")
+    .map((entry) => {
+      const path = join(appPath, entry.path);
+      const slices = entry.architectures.map((architecture) =>
+        inspectMachOSliceCodeSignature(
+          path,
+          entry.path,
+          architecture,
+          requireAdHoc,
+        )
+      );
+      const first = slices[0];
+      if (
+        !first ||
+        slices.some(
+          (slice) =>
+            slice.identifier !== first.identifier ||
+            slice.runtimeVersion !== first.runtimeVersion ||
+            slice.entitlementPolicy !== first.entitlementPolicy,
+        )
+      ) {
+        throw new Error(
+          `Mach-O signing metadata differs across architectures: ${entry.path}`,
+        );
+      }
+      return {
+        path: entry.path,
+        architectures: [...entry.architectures],
+        identifier: first.identifier,
+        runtimeVersion: first.runtimeVersion,
+        entitlementPolicy: first.entitlementPolicy,
+      };
+    });
+}
+
+function inspectMachOSliceCodeSignature(
+  path: string,
+  label: string,
+  architecture: string,
+  requireAdHoc: boolean,
+): Omit<InventoryMachOSigningTarget, "path" | "architectures"> {
+  const details = runText([
+    MACOS_PACKAGING_EXECUTABLES.codesign,
+    "--display",
+    "--verbose=4",
+    "--arch",
+    architecture,
+    path,
+  ]);
+  const identifier = /^Identifier=(.+)$/mu.exec(details)?.[1];
+  const codeDirectory = /^CodeDirectory .+ flags=0x([a-f\d]+)\(([^)]*)\)/mu.exec(
+    details,
+  );
+  const runtimeVersion = /^Runtime Version=(\S+)$/mu.exec(details)?.[1];
+  const signatureAdHoc = /^Signature=adhoc$/mu.test(details);
+  if (!identifier || !codeDirectory || !runtimeVersion) {
+    throw new Error(`Incomplete Mach-O signing metadata: ${label} (${architecture})`);
+  }
+  const flags = Number.parseInt(codeDirectory[1]!, 16);
+  const adHoc = (flags & CODE_DIRECTORY_ADHOC_FLAG) !== 0;
+  const expectedFlags = CODE_DIRECTORY_RUNTIME_FLAG |
+    (adHoc ? CODE_DIRECTORY_ADHOC_FLAG : 0);
+  if (
+    flags !== expectedFlags ||
+    !codeDirectory[2]!.split(",").includes("runtime") ||
+    (requireAdHoc && (!adHoc || !signatureAdHoc)) ||
+    (!requireAdHoc && signatureAdHoc !== adHoc) ||
+    !/^\d+(?:\.\d+){1,3}$/u.test(runtimeVersion)
+  ) {
+    throw new Error(`Unexpected Mach-O signing policy: ${label} (${architecture})`);
+  }
+  const entitlementDetails = runText([
+    MACOS_PACKAGING_EXECUTABLES.codesign,
+    "--display",
+    "--entitlements",
+    "-",
+    "--arch",
+    architecture,
+    path,
+  ]);
+  const entitlements = parseAbstractEntitlements(entitlementDetails);
+  const entitlementPolicy = same(entitlements, APPROVED_MACOS_ENTITLEMENTS)
+    ? "approved"
+    : entitlements.length === 0
+      ? "none"
+      : undefined;
+  if (!entitlementPolicy) {
+    throw new Error(
+      `Unapproved Mach-O entitlements: ${label} (${architecture}): ` +
+        JSON.stringify(entitlements),
+    );
+  }
+  return { identifier, runtimeVersion, entitlementPolicy };
+}
+
+function signInventoryMachOTarget(
+  appPath: string,
+  target: InventoryMachOSigningTarget,
+  entitlementsPath: string,
+): void {
+  const arguments_ = [
+    MACOS_PACKAGING_EXECUTABLES.codesign,
+    "--force",
+    "--sign",
+    "-",
+    "--identifier",
+    target.identifier,
+    "--options",
+    "runtime",
+    "--runtime-version",
+    target.runtimeVersion,
+    "--timestamp=none",
+  ];
+  if (target.entitlementPolicy === "approved") {
+    arguments_.push(
+      "--entitlements",
+      entitlementsPath,
+      "--generate-entitlement-der",
+    );
+  }
+  arguments_.push(join(appPath, target.path));
+  run(arguments_);
+}
+
 function signTarget(
   target: TargetPath,
   entitlementsPath: string,
   runtimeVersion: string,
 ): void {
   const arguments_ = [
-    "codesign",
+    MACOS_PACKAGING_EXECUTABLES.codesign,
     "--force",
     "--sign",
     "-",
@@ -413,4 +637,12 @@ function same(left: unknown, right: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 }

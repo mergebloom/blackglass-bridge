@@ -48,6 +48,7 @@ rm -f "$archive" "$checksum"
 # This allowlist is the release boundary. Do not replace it with `git archive <ref>`:
 # unrelated tracked files could include proprietary upstream/generated artifacts.
 release_paths=(
+  .bun-version
   .editorconfig
   .gitattributes
   .gitignore

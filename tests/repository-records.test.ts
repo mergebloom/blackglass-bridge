@@ -106,6 +106,9 @@ describe("committed release records", () => {
     expect(loaded.baseline.sourceWrapperAsarSha256).toBe(
       validation.source.wrapperAsarSha256,
     );
+    expect(validation.source.macOSCodeInventory).toEqual(
+      loaded.baseline.sourceMacOSCodeInventory,
+    );
     expect(validation.compatibilityBaseline).toEqual({
       id: loaded.baseline.id,
       schemaVersion: loaded.baseline.schemaVersion,
@@ -178,7 +181,7 @@ describe("committed release records", () => {
     const bytes = await readFile(path);
     expect(bytes.at(-1)).toBe(10);
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(
-      "98c8d596acc011c4595e69cb81ded93e8fb9221370bd0da743206ebd515fe59a",
+      "5cb05ed9959ca19f3d0cd229993e09c162de14a8ea1289ab748e0a03eaefd810",
     );
   });
 });

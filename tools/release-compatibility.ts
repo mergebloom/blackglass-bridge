@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import ts from "typescript";
+import ts from "#release-typescript";
 import { AsarArchive } from "./asar";
+import {
+  assertMacOSCodeInventory,
+  type MacOSCodeInventory,
+} from "./macos-code-inventory";
 import {
   TREE_IDENTITY_FORMAT_VERSION,
   type TreeIdentity,
@@ -10,7 +14,7 @@ import {
 import { isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
 
-export const COMPATIBILITY_BASELINE_SCHEMA_VERSION = 4;
+export const COMPATIBILITY_BASELINE_SCHEMA_VERSION = 5;
 export const RELEASE_ANALYSIS_FORMAT_VERSION = 5;
 
 export type FileIdentity = { bytes: number; sha256: string };
@@ -29,6 +33,7 @@ export interface CompatibilityBaseline {
   rendererVersion: string;
   officialDmgSha256: string;
   sourceAppTree: TreeIdentity;
+  sourceMacOSCodeInventory: MacOSCodeInventory;
   sourceAsarSha256: string;
   sourceWrapperAsarSha256: string;
   keyFiles: Record<"app.js" | "main.js" | "index.html" | "package.json", FileIdentity>;
@@ -1534,6 +1539,7 @@ function assertCompatibilityBaseline(value: unknown): asserts value is Compatibi
     }
   }
   assertTreeIdentity(value.sourceAppTree, "sourceAppTree");
+  assertMacOSCodeInventory(value.sourceMacOSCodeInventory);
   if (!isRecord(value.keyFiles)) throw new Error("Compatibility baseline keyFiles is invalid");
   for (const filename of ["app.js", "main.js", "index.html", "package.json"] as const) {
     const identity = value.keyFiles[filename];
@@ -1609,7 +1615,7 @@ function assertCompatibilityBaseline(value: unknown): asserts value is Compatibi
     "syncInboundOperations",
   ] as const) {
     const inventory = value[field];
-    if (!isRecord(inventory)) {
+    if (!isRecord(inventory) || Object.keys(inventory).length === 0) {
       throw new Error(`Compatibility baseline ${field} is invalid`);
     }
     for (const [name, count] of Object.entries(inventory)) {

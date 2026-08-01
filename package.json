@@ -3,17 +3,24 @@
   "version": "0.1.1",
   "private": true,
   "license": "MIT",
+  "packageManager": "bun@1.3.8",
   "engines": {
-    "bun": ">=1.3.0"
+    "bun": "1.3.8"
   },
   "type": "module",
+  "imports": {
+    "#release-playwright-core": "playwright-core",
+    "#release-typescript": "typescript"
+  },
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
     "analyze:release": "bun run tools/analyze-release.ts",
+    "baseline:candidate": "bun run tools/create-baseline-candidate.ts",
     "patch:client": "bun run tools/patch-client.ts",
     "package:macos": "bun run tools/package-macos.ts",
+    "package:macos:verify-reproducibility": "bun run tools/verify-macos-reproducibility.ts",
     "client:launch": "bun run tools/launch-macos.ts",
     "client:inspect": "bun run tools/inspect-macos-app.ts",
     "e2e:prepare": "bun run tools/prepare-e2e.ts",
@@ -31,7 +38,8 @@
     "release:verify-eligibility": "bun run tools/verify-release-eligibility.ts",
     "tooling:verify-qualified": "bun run tools/verify-qualified-tooling.ts",
     "recovery:drill": "bun run tools/recovery-drill.ts",
-    "check": "bun run typecheck && bun test",
+    "runtime:verify": "bun run tools/verify-runtime.ts",
+    "check": "bun run runtime:verify && bun run typecheck && bun test",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
