@@ -20,13 +20,13 @@ const endpoints = {
   dataHost: "blackglass-data.example.com",
 };
 const run: PreparedE2ERunManifest = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   endpoints,
   network: deriveE2ENetworkPlan(endpoints),
   compatibilityAsarSha256: "a".repeat(64),
   releaseManifestSha256: "b".repeat(64),
   adapterFileName: "obsidian-1.12.7.asar",
-  releaseManifestFileName: "bridge-release-manifest.json",
+  releaseManifestFileName: "blackglass-release-manifest.json",
   reproducibilityEvidenceFileName: "client-reproducibility.json",
   reproducibilityEvidenceSha256: "c".repeat(64),
 };

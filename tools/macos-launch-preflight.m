@@ -15,11 +15,11 @@ int main(int argc, const char *argv[]) {
   @autoreleasepool {
     if (argc != 3) return EX_USAGE;
 
-    NSString *bridgeBundleIdentifier = [NSString stringWithUTF8String:argv[1]];
+    NSString *blackglassBundleIdentifier = [NSString stringWithUTF8String:argv[1]];
     NSString *obsidianBundleIdentifier = [NSString stringWithUTF8String:argv[2]];
-    if (bridgeBundleIdentifier.length == 0 ||
+    if (blackglassBundleIdentifier.length == 0 ||
         obsidianBundleIdentifier.length == 0 ||
-        [bridgeBundleIdentifier isEqualToString:obsidianBundleIdentifier]) {
+        [blackglassBundleIdentifier isEqualToString:obsidianBundleIdentifier]) {
       return EX_USAGE;
     }
     CFDictionaryRef sessionRef = CGSessionCopyCurrentDictionary();
@@ -60,7 +60,7 @@ int main(int argc, const char *argv[]) {
          NSWorkspace.sharedWorkspace.runningApplications) {
       if (application.isTerminated) continue;
       NSString *bundleIdentifier = application.bundleIdentifier;
-      if (![bundleIdentifier isEqualToString:bridgeBundleIdentifier] &&
+      if (![bundleIdentifier isEqualToString:blackglassBundleIdentifier] &&
           ![bundleIdentifier isEqualToString:obsidianBundleIdentifier]) {
         continue;
       }

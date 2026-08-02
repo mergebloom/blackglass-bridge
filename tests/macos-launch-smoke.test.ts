@@ -27,8 +27,8 @@ import {
 import { APPROVED_MACOS_ENTITLEMENTS } from "../tools/macos-code-signing";
 
 const digest = (character: string): string => character.repeat(64);
-const root = "/workspace/blackglass-bridge/.data/e2e/release";
-const appPath = "/workspace/blackglass-bridge/.data/build/Blackglass.app";
+const root = "/workspace/blackglass/.data/e2e/release";
+const appPath = "/workspace/blackglass/.data/build/Blackglass.app";
 const controlOrigin = "https://blackglass.example.com";
 const chromiumHostResolverRules = "MAP blackglass.example.com 127.0.0.1:8443";
 const tlsSpkiSha256Base64 = `${"A".repeat(43)}=`;
@@ -238,7 +238,7 @@ function evidence(): FinderLaunchSmokeEvidence {
     debugListenerPid: 100,
     debugListenerEndpoints: [`${FINDER_LAUNCH_DEBUG_ADDRESS}:${FINDER_LAUNCH_DEBUG_PORT}`],
     debugTargetId: "starter-target",
-    debugTargetUrl: "file:///Applications/Blackglass%20Bridge.app/Contents/Resources/starter.html",
+    debugTargetUrl: "file:///Applications/Blackglass.app/Contents/Resources/starter.html",
     startedAt: "2026-07-28T12:00:00.000Z",
     healthStartedAt: "2026-07-28T12:00:01.000Z",
     healthyAt: "2026-07-28T12:00:09.000Z",
@@ -364,7 +364,7 @@ describe("packaged macOS LaunchServices smoke", () => {
       )
     ).toThrow("console is locked");
 
-    const installedBridge = {
+    const installedBlackglass = {
       pid: 11,
       bundleIdentifier: BLACKGLASS_BUNDLE_IDENTIFIER,
       bundlePath: "/Applications/Blackglass.app",
@@ -372,7 +372,7 @@ describe("packaged macOS LaunchServices smoke", () => {
     };
     expect(() =>
       assertMacOSLaunchPreflight(
-        { screenLocked: false, applications: [officialObsidian, installedBridge] },
+        { screenLocked: false, applications: [officialObsidian, installedBlackglass] },
         appPath,
       )
     ).toThrow("another Blackglass app");
@@ -381,7 +381,7 @@ describe("packaged macOS LaunchServices smoke", () => {
       assertMacOSLaunchPreflight(
         {
           screenLocked: false,
-          applications: [{ ...installedBridge, bundlePath: appPath }],
+          applications: [{ ...installedBlackglass, bundlePath: appPath }],
         },
         appPath,
       )

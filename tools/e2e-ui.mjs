@@ -515,8 +515,12 @@ try {
     const credentialsPath = resolve(required(arguments_[0], "credentials path"));
     assertE2EEvidencePath(credentialsPath, "credentials");
     const credentials = JSON.parse(await readFile(credentialsPath, "utf8"));
-    await page.locator('input[placeholder="Your email..."]').fill(credentials.email);
-    await page.locator('input[placeholder="Your password..."]').fill(credentials.password);
+    const account = arguments_[1] === "secondary" ? credentials.secondary : credentials;
+    if (!account?.email || !account?.password) {
+      throw new Error(`Credentials do not contain the requested ${arguments_[1] ?? "primary"} account`);
+    }
+    await page.locator('input[placeholder="Your email..."]').fill(account.email);
+    await page.locator('input[placeholder="Your password..."]').fill(account.password);
     await page.getByText("Login", { exact: true }).last().click();
     console.log(JSON.stringify({ loginSubmitted: true, url: page.url() }));
   } else if (action === "create-vault") {

@@ -39,8 +39,8 @@ bun run package:macos -- \
   --control-origin https://sync-control.example.com \
   --data-host sync-data.example.com \
   --official-dmg /path/to/official-Obsidian.dmg \
-  --manifest /path/to/blackglass-bridge-release.json \
-  --receipt /path/to/blackglass-bridge-package-receipt.json
+  --manifest /path/to/blackglass-release.json \
+  --receipt /path/to/blackglass-package-receipt.json
 ```
 
 The packager verifies the DMG digest and complete extracted application tree

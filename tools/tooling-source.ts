@@ -167,7 +167,7 @@ export function assertValidationOnlyDescendant(
   const recordPath = normalizedGitPath(expectedRecordPath);
   if (!isGeneratedValidationRecordPath(recordPath)) {
     throw new Error(
-      "Expected validation record path must name a generated Bridge qualification record",
+      "Expected validation record path must name a generated Blackglass qualification record",
     );
   }
   const ancestor = Bun.spawnSync([
@@ -297,7 +297,7 @@ export function assertGitRevision(value: string, label: string): void {
 
 export function isGeneratedValidationRecordPath(path: string): boolean {
   const match =
-    /^docs\/validation\/blackglass-bridge-([0-9A-Za-z.-]+)-obsidian-([0-9A-Za-z.-]+)-qualification\.json$/u.exec(
+    /^docs\/validation\/blackglass-([0-9A-Za-z.-]+)-obsidian-([0-9A-Za-z.-]+)-qualification\.json$/u.exec(
       normalizedGitPath(path),
     );
   return Boolean(

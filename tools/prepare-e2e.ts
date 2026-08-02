@@ -12,7 +12,7 @@ import {
   canonicalExistingPath,
   canonicalOutputPath,
 } from "./path-safety";
-import { parseBridgeReleaseManifest } from "./release-manifest";
+import { parseBlackglassReleaseManifest } from "./release-manifest";
 import {
   computeToolingSourceIdentity,
   toolingSourceTreeEqual,
@@ -146,7 +146,7 @@ if (
 }
 const clientArtifact = await inspectMacOSArtifact(app);
 const releaseManifestBytes = await readFile(releaseManifestPath);
-const releaseManifest = parseBridgeReleaseManifest(releaseManifestBytes);
+const releaseManifest = parseBlackglassReleaseManifest(releaseManifestBytes);
 const releaseManifestSha256 = createHash("sha256")
   .update(releaseManifestBytes)
   .digest("hex");
@@ -223,13 +223,13 @@ if (
 }
 const adapterFileName = `obsidian-${packageMetadata.version}.asar`;
 const runManifest = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   createdAt: new Date().toISOString(),
-  bridgeVersion: releaseManifest.bridgeVersion,
+  blackglassVersion: releaseManifest.blackglassVersion,
   rendererVersion: packageMetadata.version,
   adapterFileName,
   compatibilityAsarSha256: createHash("sha256").update(adapterBytes).digest("hex"),
-  releaseManifestFileName: "bridge-release-manifest.json",
+  releaseManifestFileName: "blackglass-release-manifest.json",
   releaseManifestSha256,
   reproducibilityEvidenceFileName: "client-reproducibility.json",
   reproducibilityEvidenceSha256: createHash("sha256")

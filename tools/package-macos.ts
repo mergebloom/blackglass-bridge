@@ -53,9 +53,9 @@ import {
   canonicalOutputPath,
 } from "./path-safety";
 import {
-  assertBridgeReleaseManifest,
-  BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION,
-  type BridgeReleaseManifest,
+  assertBlackglassReleaseManifest,
+  BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION,
+  type BlackglassReleaseManifest,
 } from "./release-manifest";
 import { computeTreeIdentity } from "./tree-identity";
 import { computeToolingSourceIdentity } from "./tooling-source";
@@ -444,11 +444,11 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   if (!macOSCodeInventoriesEqual(macOSArtifact.codeInventory, sourceMacOSCodeInventory)) {
     throw new Error("Packaged macOS code inventory does not match the reviewed source");
   }
-  const bridgeVersion = await readBridgeVersion();
+  const blackglassVersion = await readBlackglassVersion();
   const publicArtifact = publicMacOSArtifact(macOSArtifact);
-  const releaseManifest: BridgeReleaseManifest = {
-    schemaVersion: BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION,
-    bridgeVersion,
+  const releaseManifest: BlackglassReleaseManifest = {
+    schemaVersion: BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION,
+    blackglassVersion,
     rendererVersion: sourceVersion,
     compatibilityBaseline: qualification.report.baseline,
     source: {
@@ -498,7 +498,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       packagedCodeInventoryMatchedSource: true,
     },
   };
-  assertBridgeReleaseManifest(releaseManifest);
+  assertBlackglassReleaseManifest(releaseManifest);
   const releaseManifestBytes = Buffer.from(
     `${JSON.stringify(releaseManifest, null, 2)}\n`,
     "utf8",
@@ -668,14 +668,14 @@ function generatedSha256(value: Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-async function readBridgeVersion(): Promise<string> {
+async function readBlackglassVersion(): Promise<string> {
   const metadata = JSON.parse(
     await readFile(join(import.meta.dir, "../package.json"), "utf8"),
   ) as { version?: unknown };
   if (
     !isSupportedSemver(metadata.version)
   ) {
-    throw new Error("Bridge package has no semantic version");
+    throw new Error("Blackglass package has no semantic version");
   }
   return metadata.version;
 }

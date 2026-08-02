@@ -68,14 +68,14 @@ describe("supported semantic versions", () => {
   test("recognizes generated validation paths only for canonical versions", () => {
     expect(
       isGeneratedValidationRecordPath(
-        "docs/validation/blackglass-bridge-1.2.3-alpha.1-" +
+        "docs/validation/blackglass-1.2.3-alpha.1-" +
           "obsidian-1.12.7-qualification.json",
       ),
     ).toBe(true);
     for (const version of unsupported) {
       expect(
         isGeneratedValidationRecordPath(
-          `docs/validation/blackglass-bridge-${version}-` +
+          `docs/validation/blackglass-${version}-` +
             "obsidian-1.12.7-qualification.json",
         ),
         version,

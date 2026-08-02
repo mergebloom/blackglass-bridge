@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import type { MacOSArtifact } from "./macos-artifact";
-import type { BridgeReleaseManifest } from "./release-manifest";
+import type { BlackglassReleaseManifest } from "./release-manifest";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
 
-export const MACOS_PACKAGE_RECEIPT_SCHEMA_VERSION = 1;
+export const MACOS_PACKAGE_RECEIPT_SCHEMA_VERSION = 2;
 
 type PublicMacOSArtifact = Omit<MacOSArtifact, "appPath">;
 
@@ -14,7 +14,7 @@ export interface MacOSPackageReceipt {
   invocationId: string;
   startedAt: string;
   completedAt: string;
-  bridgeVersion: string;
+  blackglassVersion: string;
   rendererVersion: string;
   releaseManifestSha256: string;
   macOSArtifactSha256: string;
@@ -26,7 +26,7 @@ export interface MacOSPackageReceipt {
 }
 
 export interface MacOSPackageReleaseIdentity {
-  bridgeVersion: string;
+  blackglassVersion: string;
   rendererVersion: string;
   releaseManifestSha256: string;
   artifact: PublicMacOSArtifact;
@@ -38,7 +38,7 @@ export function createMacOSPackageReceipt(input: {
   invocationId: string;
   startedAt: string;
   completedAt: string;
-  manifest: BridgeReleaseManifest;
+  manifest: BlackglassReleaseManifest;
   releaseManifestSha256: string;
   artifact: PublicMacOSArtifact;
 }): MacOSPackageReceipt {
@@ -48,7 +48,7 @@ export function createMacOSPackageReceipt(input: {
     invocationId: input.invocationId,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
-    bridgeVersion: input.manifest.bridgeVersion,
+    blackglassVersion: input.manifest.blackglassVersion,
     rendererVersion: input.manifest.rendererVersion,
     releaseManifestSha256: input.releaseManifestSha256,
     macOSArtifactSha256: sha256(stableJson(input.artifact)),
@@ -80,8 +80,8 @@ export function assertMacOSPackageReceipt(
     !Number.isFinite(Date.parse(value.startedAt)) ||
     !Number.isFinite(Date.parse(value.completedAt)) ||
     Date.parse(value.completedAt) < Date.parse(value.startedAt) ||
-    typeof value.bridgeVersion !== "string" ||
-    !isSupportedSemver(value.bridgeVersion) ||
+    typeof value.blackglassVersion !== "string" ||
+    !isSupportedSemver(value.blackglassVersion) ||
     typeof value.rendererVersion !== "string" ||
     !isSupportedStableSemver(value.rendererVersion)
   ) {
@@ -108,7 +108,7 @@ export function assertMacOSPackageReceiptBinds(
 ): void {
   assertMacOSPackageReceipt(receipt);
   if (
-    receipt.bridgeVersion !== identity.bridgeVersion ||
+    receipt.blackglassVersion !== identity.blackglassVersion ||
     receipt.rendererVersion !== identity.rendererVersion ||
     receipt.releaseManifestSha256 !== identity.releaseManifestSha256 ||
     receipt.macOSArtifactSha256 !== sha256(stableJson(identity.artifact)) ||

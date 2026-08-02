@@ -98,7 +98,7 @@ describe("committed release records", () => {
         computeToolingSourceIdentityAtRevision(root, gitRevision()),
       ),
     ).toBe(true);
-    expect(validation.bridgeVersion).toBe(packageMetadata.version);
+    expect(validation.blackglassVersion).toBe(packageMetadata.version);
     expect(validation.rendererVersion).toBe(loaded.baseline.rendererVersion);
     expect(loaded.baseline.officialDmgSha256).toBe(validation.source.officialDmgSha256);
     expect(loaded.baseline.sourceAppTree).toEqual(validation.source.appTree);

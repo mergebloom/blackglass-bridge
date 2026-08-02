@@ -4,8 +4,8 @@ import { mkdtemp, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  assertBridgeReleaseManifest,
-  type BridgeReleaseManifest,
+  assertBlackglassReleaseManifest,
+  type BlackglassReleaseManifest,
 } from "../tools/release-manifest";
 import { canonicalOutputPath } from "../tools/path-safety";
 import { APPROVED_MACOS_ENTITLEMENTS } from "../tools/macos-code-signing";
@@ -257,10 +257,10 @@ const macOS = {
   upstreamICloudContainerRegistered: false as const,
 };
 
-function manifest(): BridgeReleaseManifest {
+function manifest(): BlackglassReleaseManifest {
   return {
-    schemaVersion: 8,
-    bridgeVersion: "0.1.1",
+    schemaVersion: 9,
+    blackglassVersion: "0.1.1",
     rendererVersion: "1.12.7",
     compatibilityBaseline: {
       id: "obsidian-macos-1.12.7",
@@ -355,12 +355,12 @@ function qualification(): ReleaseQualification {
     startedAt: string,
     completedAt: string,
   ): MacOSPackageReceipt => ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedBy: "tools/package-macos.ts",
     invocationId,
     startedAt,
     completedAt,
-    bridgeVersion: "0.1.1",
+    blackglassVersion: "0.1.1",
     rendererVersion: "1.12.7",
     releaseManifestSha256: digest("a"),
     macOSArtifactSha256: createHash("sha256")
@@ -387,12 +387,12 @@ function qualification(): ReleaseQualification {
     "2026-07-28T11:03:00.000Z",
   );
   const clientReproducibility: MacOSReproducibilityEvidence = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     generatedBy: "tools/verify-macos-reproducibility.ts",
     passed: true,
     separateOutputs: true,
     independentPackageInvocations: true,
-    bridgeVersion: "0.1.1",
+    blackglassVersion: "0.1.1",
     rendererVersion: "1.12.7",
     releaseManifestSha256: digest("a"),
     macOSArtifactSha256: firstReceipt.macOSArtifactSha256,
@@ -417,11 +417,11 @@ function qualification(): ReleaseQualification {
     ],
   };
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     qualifiedAt: "2026-07-28T12:00:00.000Z",
     passed: true,
     platform: "macOS Apple Silicon",
-    bridgeVersion: "0.1.1",
+    blackglassVersion: "0.1.1",
     rendererVersion: "1.12.7",
     endpoints: {
       controlOrigin: "https://blackglass.example.com",
@@ -558,14 +558,14 @@ describe("generated release validation records", () => {
       (value: any) =>
         (value.packagingToolchain.runtimeDependencies[0].tree.sha256 =
           "changed"),
-      (value: any) => (value.macOS.appBundleName = "Renamed Bridge.app"),
+      (value: any) => (value.macOS.appBundleName = "Renamed Blackglass.app"),
       (value: any) =>
         (value.macOS.cliExecutableSha256 = value.cli.upstreamSha256),
       (value: any) => (value.cli.patchedSha256 = value.cli.upstreamSha256),
     ]) {
       const candidate = structuredClone(manifest()) as any;
       mutate(candidate);
-      expect(() => assertBridgeReleaseManifest(candidate)).toThrow();
+      expect(() => assertBlackglassReleaseManifest(candidate)).toThrow();
     }
   });
 
@@ -574,10 +574,10 @@ describe("generated release validation records", () => {
     expect(candidate.cli.patchedSha256).not.toBe(
       candidate.macOS.cliExecutableSha256,
     );
-    expect(() => assertBridgeReleaseManifest(candidate)).not.toThrow();
+    expect(() => assertBlackglassReleaseManifest(candidate)).not.toThrow();
 
     candidate.macOS.cliExecutableSha256 = candidate.cli.upstreamSha256;
-    expect(() => assertBridgeReleaseManifest(candidate)).toThrow(
+    expect(() => assertBlackglassReleaseManifest(candidate)).toThrow(
       "artifact bindings",
     );
   });
@@ -614,7 +614,7 @@ describe("generated release validation records", () => {
   test("rejects unsafe names and negative tree counts", () => {
     expect(() => releaseValidationRecordFileName("next", "1.12.7")).toThrow();
     expect(releaseValidationRecordFileName("0.1.1", "1.12.7")).toBe(
-      "blackglass-bridge-0.1.1-obsidian-1.12.7-qualification.json",
+      "blackglass-0.1.1-obsidian-1.12.7-qualification.json",
     );
 
     const record = buildReleaseValidationRecord({
@@ -633,7 +633,7 @@ describe("generated release validation records", () => {
   });
 
   test("rejects noncanonical semantic versions in manifests and records", () => {
-    const invalidBridgeVersions = [
+    const invalidBlackglassVersions = [
       "01.2.3",
       "1.02.3",
       "1.2.03",
@@ -643,24 +643,24 @@ describe("generated release validation records", () => {
       "1.2.3-alpha.01",
       "1.2.3+build",
     ];
-    for (const version of invalidBridgeVersions) {
+    for (const version of invalidBlackglassVersions) {
       const candidateManifest = structuredClone(manifest()) as any;
-      candidateManifest.bridgeVersion = version;
-      expect(() => assertBridgeReleaseManifest(candidateManifest), version).toThrow();
+      candidateManifest.blackglassVersion = version;
+      expect(() => assertBlackglassReleaseManifest(candidateManifest), version).toThrow();
 
       const candidateRecord = buildReleaseValidationRecord({
         manifest: manifest(),
         qualification: qualification(),
         qualificationSha256: digest("f"),
       }) as any;
-      candidateRecord.bridgeVersion = version;
+      candidateRecord.blackglassVersion = version;
       expect(() => assertReleaseValidationRecord(candidateRecord), version).toThrow();
     }
 
     for (const version of ["01.12.7", "1.12.07", "1.12.7-alpha"]) {
       const candidateManifest = structuredClone(manifest()) as any;
       candidateManifest.rendererVersion = version;
-      expect(() => assertBridgeReleaseManifest(candidateManifest), version).toThrow();
+      expect(() => assertBlackglassReleaseManifest(candidateManifest), version).toThrow();
 
       const candidateRecord = buildReleaseValidationRecord({
         manifest: manifest(),
@@ -679,7 +679,7 @@ describe("generated release validation records", () => {
       releaseValidationRecordFileName("0.1.1", "1.12.7"),
     );
     expect(await canonicalOutputPath(output, "Validation record")).toEndWith(
-      `/blackglass-bridge-0.1.1-obsidian-1.12.7-qualification.json`,
+      `/blackglass-0.1.1-obsidian-1.12.7-qualification.json`,
     );
     await writeFile(output, "existing");
     await expect(canonicalOutputPath(output, "Validation record")).rejects.toThrow(

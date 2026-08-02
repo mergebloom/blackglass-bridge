@@ -24,13 +24,13 @@ The long-term target is the existing app experience with no loss of
 functionality while its services are self-hosted. The supported table below
 states what has been implemented and requalified so far.
 
-Bridge uses six fixed-length client-ASAR incisions: three adapt the control and
+Blackglass uses six fixed-length client-ASAR incisions: three adapt the control and
 Sync endpoints, while three isolate the macOS CLI runtime root, socket, and
 registration name. Two fixed-length incisions apply the same socket name to the
 universal CLI binary. Three fail-closed wrapper incisions isolate Blackglass
 state with mode-`0700` enforcement, disable the upstream package updater, and
 force the embedded qualified renderer. The GUI keeps the native `HOME` needed
-by macOS secure storage; a private `BLACKGLASS_HOME` selects Bridge state. The
+by macOS secure storage; a private `BLACKGLASS_HOME` selects Blackglass state. The
 exact artifacts are requalified with end-to-end tests so future Obsidian
 updates remain a small, repeatable maintenance task.
 
@@ -81,19 +81,19 @@ bun run analyze:release -- \
   --resources '/Volumes/Obsidian/Obsidian.app/Contents/Resources'
 bun run patch:client -- \
   '/Volumes/Obsidian/Obsidian.app/Contents/Resources/obsidian.asar' \
-  /tmp/blackglass-bridge.asar \
+  /tmp/blackglass.asar \
   --resources '/Volumes/Obsidian/Obsidian.app/Contents/Resources' \
   --control-origin http://127.0.0.1:3000 \
   --data-host 127.0.0.1:3003
 bun run package:macos -- \
   '/Volumes/Obsidian/Obsidian.app' \
-  /tmp/blackglass-bridge.asar \
+  /tmp/blackglass.asar \
   '/path/to/Blackglass.app' \
   --control-origin http://127.0.0.1:3000 \
   --data-host 127.0.0.1:3003 \
   --official-dmg /path/to/Obsidian.dmg \
-  --manifest /path/to/blackglass-bridge-release.json \
-  --receipt /path/to/blackglass-bridge-package-receipt.json
+  --manifest /path/to/blackglass-release.json \
+  --receipt /path/to/blackglass-package-receipt.json
 bun run check
 ```
 

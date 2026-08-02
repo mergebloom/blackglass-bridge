@@ -42,7 +42,7 @@ import {
   pathExists,
   pathsEqual,
 } from "./path-safety";
-import { readBridgeReleaseManifest } from "./release-manifest";
+import { readBlackglassReleaseManifest } from "./release-manifest";
 import { isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
 
@@ -155,9 +155,9 @@ if (appArtifact && appArtifact.embeddedAsarSha256 !== adapterSha256) {
 }
 assertProfileNotInUse(appBundle, profile);
 if (!e2eRequested && !blackglassHomeArgument) {
-  assertNoSharedHomeBridgeProcess(appBundle);
+  assertNoSharedHomeBlackglassProcess(appBundle);
   if (await pathExists(join(homedir(), appArtifact?.cliSocketName ?? ".blackglass-b.sock"))) {
-    throw new Error("The login-home Bridge CLI socket is already owned or stale");
+    throw new Error("The login-home Blackglass CLI socket is already owned or stale");
   }
 }
 
@@ -186,7 +186,7 @@ if (blackglassHomeArgument) {
     { label: "Compatibility ASAR", path: asar },
   ]);
   if (await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-b.sock"))) {
-    throw new Error("BLACKGLASS_HOME already contains a Bridge CLI socket");
+    throw new Error("BLACKGLASS_HOME already contains a Blackglass CLI socket");
   }
 }
 let launchBinding:
@@ -249,7 +249,7 @@ if (e2eRequested) {
   if ((await fileSha256(releaseManifestPath)) !== run.manifest.releaseManifestSha256) {
     throw new Error("Prepared release manifest no longer matches the run manifest");
   }
-  const { manifest: releaseManifest } = await readBridgeReleaseManifest(releaseManifestPath);
+  const { manifest: releaseManifest } = await readBlackglassReleaseManifest(releaseManifestPath);
   if (
     stableJson(releaseManifest.macOS) !== stableJson(publicMacOSArtifact(appArtifact)) ||
     releaseManifest.renderer.patchedSha256 !== adapterSha256 ||
@@ -340,9 +340,9 @@ if (prepareOnly) {
 
 assertProfileNotInUse(appBundle, profile);
 if (!launchBinding && !blackglassHomeArgument) {
-  assertNoSharedHomeBridgeProcess(appBundle);
+  assertNoSharedHomeBlackglassProcess(appBundle);
   if (await pathExists(join(homedir(), appArtifact?.cliSocketName ?? ".blackglass-b.sock"))) {
-    throw new Error("The login-home Bridge CLI socket became occupied before launch");
+    throw new Error("The login-home Blackglass CLI socket became occupied before launch");
   }
 }
 if (launchBinding && await pathExists(launchBinding.resetLockPath)) {
@@ -352,7 +352,7 @@ if (
   blackglassHomeArgument &&
   await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-b.sock"))
 ) {
-  throw new Error("BLACKGLASS_HOME gained a Bridge CLI socket before launch");
+  throw new Error("BLACKGLASS_HOME gained a Blackglass CLI socket before launch");
 }
 
 let shortHomeRoot: string | undefined;
@@ -695,9 +695,9 @@ function assertProfileNotInUse(appBundle: string, profile: string): void {
   }
 }
 
-function assertNoSharedHomeBridgeProcess(appBundle: string): void {
+function assertNoSharedHomeBlackglassProcess(appBundle: string): void {
   const result = Bun.spawnSync(["/bin/ps", "-ww", "-axo", "pid=", "-o", "command="]);
-  if (result.exitCode !== 0) throw new Error("Unable to inspect Bridge process isolation");
+  if (result.exitCode !== 0) throw new Error("Unable to inspect Blackglass process isolation");
   const existing = result.stdout.toString("utf8").split("\n").flatMap((line) => {
     const match = /^\s*(\d+)\s+(.+)$/u.exec(line);
     return match && match[2]!.startsWith(`${appBundle}/Contents/`)
@@ -706,7 +706,7 @@ function assertNoSharedHomeBridgeProcess(appBundle: string): void {
   });
   if (existing.length !== 0) {
     throw new Error(
-      "Another Bridge process already owns the login-home CLI socket; " +
+      "Another Blackglass process already owns the login-home CLI socket; " +
         "use a distinct --blackglass-home: " + existing.join("; "),
     );
   }

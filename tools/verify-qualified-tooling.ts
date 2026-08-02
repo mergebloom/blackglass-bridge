@@ -46,7 +46,7 @@ export async function verifyQualifiedTooling(
   const record = JSON.parse(recordBytes.toString("utf8")) as unknown;
   assertReleaseValidationRecord(record);
   const expectedName = releaseValidationRecordFileName(
-    record.bridgeVersion,
+    record.blackglassVersion,
     record.rendererVersion,
   );
   if (basename(recordPath) !== expectedName) {

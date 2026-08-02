@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
-import { BRIDGE_CLI_SOCKET_NAME } from "./cli-binary";
+import { BLACKGLASS_CLI_SOCKET_NAME } from "./cli-binary";
 import {
   inspectMacOSArtifact,
   publicMacOSArtifact,
@@ -174,7 +174,7 @@ export function assertClientLaunchIdentity(
     value.blackglassHomeMode !== 0o700 ||
     value.blackglassHomeCanonical !== true ||
     value.cliSocketPath !==
-      join(value.blackglassHomePath as string, BRIDGE_CLI_SOCKET_NAME) ||
+      join(value.blackglassHomePath as string, BLACKGLASS_CLI_SOCKET_NAME) ||
     value.nativeHomeEnvironmentPreserved !== true ||
     !/^\/private\/tmp\/blackglass-client-[A-Za-z0-9]{6}\/h$/u.test(
       value.blackglassHomePath as string,

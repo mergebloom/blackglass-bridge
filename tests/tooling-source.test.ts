@@ -269,20 +269,20 @@ async function createRepository(): Promise<string> {
 
 async function commitValidationRecord(
   root: string,
-  bridgeVersion: string,
+  blackglassVersion: string,
   contents: string,
 ): Promise<{ path: string; bytes: Buffer }> {
-  const path = validationRecordPath(bridgeVersion);
+  const path = validationRecordPath(blackglassVersion);
   const bytes = Buffer.from(contents);
   await writeFile(join(root, path), bytes);
   git(root, "add", path);
-  git(root, "commit", "--quiet", "-m", `record ${bridgeVersion}`);
+  git(root, "commit", "--quiet", "-m", `record ${blackglassVersion}`);
   return { path, bytes };
 }
 
-function validationRecordPath(bridgeVersion: string): string {
+function validationRecordPath(blackglassVersion: string): string {
   return (
-    `docs/validation/blackglass-bridge-${bridgeVersion}-` +
+    `docs/validation/blackglass-${blackglassVersion}-` +
     "obsidian-1.12.7-qualification.json"
   );
 }

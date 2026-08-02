@@ -322,7 +322,7 @@ export function assertMacOSLaunchPreflight(
     const officialRunning = conflicts.some(
       (application) => application.bundleIdentifier === OBSIDIAN_BUNDLE_IDENTIFIER,
     );
-    const otherBridgeRunning = conflicts.some(
+    const otherBlackglassRunning = conflicts.some(
       (application) =>
         application.bundleIdentifier === BLACKGLASS_BUNDLE_IDENTIFIER &&
         !pathsEqual(application.bundlePath, expectedAppPath),
@@ -335,7 +335,7 @@ export function assertMacOSLaunchPreflight(
     throw new Error(
       `Refusing LaunchServices smoke while ${[
         ...(exactRunning ? ["the exact generated Blackglass app"] : []),
-        ...(otherBridgeRunning ? ["another Blackglass app"] : []),
+        ...(otherBlackglassRunning ? ["another Blackglass app"] : []),
         ...(officialRunning ? ["Obsidian"] : []),
       ].join(" and ")} is running; quit every Obsidian and Blackglass app: ` +
         summary,

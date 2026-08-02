@@ -1,6 +1,6 @@
 # Obsidian 1.12.7 client protocol notes
 
-This file records only Bridge-specific client findings. The authoritative
+This file records only Blackglass-specific client findings. The authoritative
 request, response, migration, history, purge, and recovery contracts live in
 the companion [Blackglass Server protocol document](https://github.com/mergebloom/blackglass-server/blob/main/docs/protocol/obsidian-1.12.7.md).
 Keeping server semantics in one repository avoids a second copy drifting across
@@ -11,7 +11,7 @@ releases.
 The authorized 1.12.7 artifact constructs `https://api.obsidian.md` in both the
 main `app.js` renderer and the independent no-vault `starter.js` renderer. Sync
 persists a control-plane-provided data host and opens `ws://` only for exact
-loopback development hosts or `wss://` otherwise. The Bridge patcher therefore
+loopback development hosts or `wss://` otherwise. The Blackglass patcher therefore
 uses six fixed-length, fail-closed client-ASAR incisions:
 
 - control origin in `app.js`;

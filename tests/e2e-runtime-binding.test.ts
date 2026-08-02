@@ -82,13 +82,13 @@ describe("E2E runtime binding", () => {
       await writeFile(
         join(runRoot, "run-manifest.json"),
         `${JSON.stringify({
-          schemaVersion: 3,
+          schemaVersion: 4,
           endpoints,
           network: deriveE2ENetworkPlan(endpoints),
           compatibilityAsarSha256: "a".repeat(64),
           releaseManifestSha256: "b".repeat(64),
           adapterFileName: "obsidian-1.12.7.asar",
-          releaseManifestFileName: "bridge-release-manifest.json",
+          releaseManifestFileName: "blackglass-release-manifest.json",
           reproducibilityEvidenceFileName: "client-reproducibility.json",
           reproducibilityEvidenceSha256: "c".repeat(64),
         }, null, 2)}\n`,

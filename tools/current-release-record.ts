@@ -41,7 +41,7 @@ export async function readCurrentReleaseValidationRecord(
     throw new Error("docs/validation must be a real directory");
   }
 
-  const prefix = `blackglass-bridge-${version}-obsidian-`;
+  const prefix = `blackglass-${version}-obsidian-`;
   const suffix = "-qualification.json";
   const names = (await readdir(validationDirectory))
     .filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
@@ -66,11 +66,11 @@ export async function readCurrentReleaseValidationRecord(
   }
   const value = parseJson(bytes, `Current release qualification record ${name}`);
   assertReleaseValidationRecord(value);
-  if (value.bridgeVersion !== version) {
-    throw new Error("Current release qualification record has the wrong Bridge version");
+  if (value.blackglassVersion !== version) {
+    throw new Error("Current release qualification record has the wrong Blackglass version");
   }
   const expectedName = releaseValidationRecordFileName(
-    value.bridgeVersion,
+    value.blackglassVersion,
     value.rendererVersion,
   );
   if (name !== expectedName) {

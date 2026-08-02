@@ -28,13 +28,13 @@ or production operations. Those belong to Blackglass Server.
 
 ## Stable boundary with Blackglass Server
 
-Bridge expects two endpoints:
+Blackglass expects two endpoints:
 
 - an HTTP control origin, such as `http://127.0.0.1:3000`; and
 - a Sync WebSocket host, such as `127.0.0.1:3003`.
 
 The protocol contract is documented in
-[`protocol/obsidian-1.12.7.md`](protocol/obsidian-1.12.7.md). Bridge treats the
+[`protocol/obsidian-1.12.7.md`](protocol/obsidian-1.12.7.md). Blackglass treats the
 server as an external dependency and the E2E runner accepts its binary through
 `BLACKGLASS_SERVER_BINARY`. The default is the release artifact in the sibling
 `blackglass-server` project.

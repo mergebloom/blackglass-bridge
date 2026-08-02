@@ -13,7 +13,7 @@ import {
   canonicalExistingPath,
   canonicalOutputPath,
 } from "./path-safety";
-import { parseBridgeReleaseManifest } from "./release-manifest";
+import { parseBlackglassReleaseManifest } from "./release-manifest";
 import {
   loadCompatibilityBaseline,
 } from "./release-compatibility";
@@ -51,7 +51,7 @@ const releaseManifestSha256 = sha256(releaseManifestBytes);
 if (releaseManifestSha256 !== run.manifest.releaseManifestSha256) {
   throw new Error("Prepared release manifest changed after the E2E run was created");
 }
-const manifest = parseBridgeReleaseManifest(releaseManifestBytes);
+const manifest = parseBlackglassReleaseManifest(releaseManifestBytes);
 const repositoryRoot = resolve(import.meta.dir, "..");
 const loadedBaseline = await loadCompatibilityBaseline(
   resolve(
@@ -122,7 +122,7 @@ for (const role of ["client-a", "client-b", "client-b-recovery"] as E2EClientRol
 }
 
 const expectedName = releaseValidationRecordFileName(
-  manifest.bridgeVersion,
+  manifest.blackglassVersion,
   manifest.rendererVersion,
 );
 if (basename(output) !== expectedName) {
@@ -146,7 +146,7 @@ function sha256(bytes: Uint8Array): string {
 function usage(): never {
   console.error(
     "Usage: bun run tools/write-validation-record.ts <qualified-E2E-run> " +
-      "<docs/validation/blackglass-bridge-VERSION-obsidian-VERSION-qualification.json>",
+      "<docs/validation/blackglass-VERSION-obsidian-VERSION-qualification.json>",
   );
   process.exit(2);
 }

@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
 
 export const UPSTREAM_CLI_SOCKET_NAME = ".obsidian-cli.sock";
-export const BRIDGE_CLI_SOCKET_NAME = ".blackglass-b.sock";
+export const BLACKGLASS_CLI_SOCKET_NAME = ".blackglass-b.sock";
 export const CLI_BINARY_PATCH_FORMAT_VERSION = 1;
 export const CLI_BINARY_INCISION_COUNT = 2;
 
 export interface CliBinaryPatchReport {
   patchFormatVersion: typeof CLI_BINARY_PATCH_FORMAT_VERSION;
   incisionCount: typeof CLI_BINARY_INCISION_COUNT;
-  socketName: typeof BRIDGE_CLI_SOCKET_NAME;
+  socketName: typeof BLACKGLASS_CLI_SOCKET_NAME;
   upstreamSha256: string;
   patchedSha256: string;
 }
@@ -16,14 +16,14 @@ export interface CliBinaryPatchReport {
 export function patchCliBinary(
   upstream: Buffer,
 ): { buffer: Buffer; report: CliBinaryPatchReport } {
-  if (UPSTREAM_CLI_SOCKET_NAME.length !== BRIDGE_CLI_SOCKET_NAME.length) {
+  if (UPSTREAM_CLI_SOCKET_NAME.length !== BLACKGLASS_CLI_SOCKET_NAME.length) {
     throw new Error("CLI socket replacement must preserve byte length");
   }
-  if (countOccurrences(upstream, Buffer.from(BRIDGE_CLI_SOCKET_NAME)) !== 0) {
+  if (countOccurrences(upstream, Buffer.from(BLACKGLASS_CLI_SOCKET_NAME)) !== 0) {
     throw new Error("Upstream CLI already contains the Blackglass socket name");
   }
   const needle = Buffer.from(UPSTREAM_CLI_SOCKET_NAME);
-  const replacement = Buffer.from(BRIDGE_CLI_SOCKET_NAME);
+  const replacement = Buffer.from(BLACKGLASS_CLI_SOCKET_NAME);
   const offsets = occurrenceOffsets(upstream, needle);
   if (offsets.length !== CLI_BINARY_INCISION_COUNT) {
     throw new Error(
@@ -38,7 +38,7 @@ export function patchCliBinary(
     report: {
       patchFormatVersion: CLI_BINARY_PATCH_FORMAT_VERSION,
       incisionCount: CLI_BINARY_INCISION_COUNT,
-      socketName: BRIDGE_CLI_SOCKET_NAME,
+      socketName: BLACKGLASS_CLI_SOCKET_NAME,
       upstreamSha256: sha256(upstream),
       patchedSha256: sha256(output),
     },
@@ -46,7 +46,7 @@ export function patchCliBinary(
 }
 
 export function inspectPatchedCliBinary(binary: Buffer): {
-  socketName: typeof BRIDGE_CLI_SOCKET_NAME;
+  socketName: typeof BLACKGLASS_CLI_SOCKET_NAME;
   socketOccurrences: typeof CLI_BINARY_INCISION_COUNT;
   sha256: string;
 } {
@@ -54,20 +54,20 @@ export function inspectPatchedCliBinary(binary: Buffer): {
     binary,
     Buffer.from(UPSTREAM_CLI_SOCKET_NAME),
   );
-  const bridgeOccurrences = countOccurrences(
+  const blackglassOccurrences = countOccurrences(
     binary,
-    Buffer.from(BRIDGE_CLI_SOCKET_NAME),
+    Buffer.from(BLACKGLASS_CLI_SOCKET_NAME),
   );
   if (
     upstreamOccurrences !== 0 ||
-    bridgeOccurrences !== CLI_BINARY_INCISION_COUNT
+    blackglassOccurrences !== CLI_BINARY_INCISION_COUNT
   ) {
     throw new Error(
-      `Patched CLI socket inventory is invalid: upstream=${upstreamOccurrences}, bridge=${bridgeOccurrences}`,
+      `Patched CLI socket inventory is invalid: upstream=${upstreamOccurrences}, blackglass=${blackglassOccurrences}`,
     );
   }
   return {
-    socketName: BRIDGE_CLI_SOCKET_NAME,
+    socketName: BLACKGLASS_CLI_SOCKET_NAME,
     socketOccurrences: CLI_BINARY_INCISION_COUNT,
     sha256: sha256(binary),
   };

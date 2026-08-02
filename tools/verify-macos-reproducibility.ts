@@ -11,8 +11,8 @@ import {
   canonicalOutputPath,
 } from "./path-safety";
 import {
-  parseBridgeReleaseManifest,
-  type BridgeReleaseManifest,
+  parseBlackglassReleaseManifest,
+  type BlackglassReleaseManifest,
 } from "./release-manifest";
 import {
   assertMacOSPackageReceiptBinds,
@@ -23,7 +23,7 @@ import {
 } from "./macos-package-receipt";
 import { stableJson } from "./stable-json";
 
-export const MACOS_REPRODUCIBILITY_EVIDENCE_SCHEMA_VERSION = 3;
+export const MACOS_REPRODUCIBILITY_EVIDENCE_SCHEMA_VERSION = 4;
 
 type PublicMacOSArtifact = Omit<MacOSArtifact, "appPath">;
 
@@ -33,7 +33,7 @@ export interface MacOSReproducibilityEvidence {
   passed: true;
   separateOutputs: true;
   independentPackageInvocations: true;
-  bridgeVersion: string;
+  blackglassVersion: string;
   rendererVersion: string;
   releaseManifestSha256: string;
   macOSArtifactSha256: string;
@@ -95,8 +95,8 @@ export async function verifyMacOSReproducibility(input: {
     readFile(firstReceipt),
     readFile(secondReceipt),
   ]);
-  const firstRelease = parseBridgeReleaseManifest(firstManifestBytes);
-  const secondRelease = parseBridgeReleaseManifest(secondManifestBytes);
+  const firstRelease = parseBlackglassReleaseManifest(firstManifestBytes);
+  const secondRelease = parseBlackglassReleaseManifest(secondManifestBytes);
   const firstPackageReceipt = parseMacOSPackageReceipt(firstReceiptBytes);
   const secondPackageReceipt = parseMacOSPackageReceipt(secondReceiptBytes);
   if (
@@ -140,7 +140,7 @@ export async function verifyMacOSReproducibility(input: {
     passed: true,
     separateOutputs: true,
     independentPackageInvocations: true,
-    bridgeVersion: firstRelease.bridgeVersion,
+    blackglassVersion: firstRelease.blackglassVersion,
     rendererVersion: firstRelease.rendererVersion,
     releaseManifestSha256,
     macOSArtifactSha256: sha256(stableJson(firstPublic)),
@@ -170,7 +170,7 @@ export function assertMacOSReproducibilityEvidence(
     value.passed !== true ||
     value.separateOutputs !== true ||
     value.independentPackageInvocations !== true ||
-    typeof value.bridgeVersion !== "string" ||
+    typeof value.blackglassVersion !== "string" ||
     typeof value.rendererVersion !== "string" ||
     !Array.isArray(value.packageReceipts) ||
     value.packageReceipts.length !== 2
@@ -228,13 +228,13 @@ export function parseMacOSReproducibilityEvidence(
 export function assertMacOSReproducibilityEvidenceBinds(
   evidence: MacOSReproducibilityEvidence,
   input: {
-    manifest: BridgeReleaseManifest;
+    manifest: BlackglassReleaseManifest;
     releaseManifestSha256: string;
     artifact: PublicMacOSArtifact;
   },
 ): void {
   assertMacOSReproducibilityEvidenceBindsRelease(evidence, {
-    bridgeVersion: input.manifest.bridgeVersion,
+    blackglassVersion: input.manifest.blackglassVersion,
     rendererVersion: input.manifest.rendererVersion,
     releaseManifestSha256: input.releaseManifestSha256,
     artifact: input.artifact,
@@ -251,7 +251,7 @@ export function assertMacOSReproducibilityEvidenceBindsRelease(
 ): void {
   assertMacOSReproducibilityEvidence(evidence);
   if (
-    evidence.bridgeVersion !== input.bridgeVersion ||
+    evidence.blackglassVersion !== input.blackglassVersion ||
     evidence.rendererVersion !== input.rendererVersion ||
     evidence.releaseManifestSha256 !== input.releaseManifestSha256 ||
     evidence.macOSArtifactSha256 !== sha256(stableJson(input.artifact)) ||
@@ -279,12 +279,12 @@ function assertManifestBindsArtifact(
 }
 
 function packageReleaseIdentity(
-  manifest: BridgeReleaseManifest,
+  manifest: BlackglassReleaseManifest,
   releaseManifestSha256: string,
   artifact: PublicMacOSArtifact,
 ): MacOSPackageReleaseIdentity {
   return {
-    bridgeVersion: manifest.bridgeVersion,
+    blackglassVersion: manifest.blackglassVersion,
     rendererVersion: manifest.rendererVersion,
     releaseManifestSha256,
     artifact,

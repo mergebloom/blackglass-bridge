@@ -6,7 +6,7 @@ import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runt
 import { inspectPatchedMainProcess } from "../packages/client-adapter/src/patch";
 import { AsarArchive, asarHeaderSha256 } from "./asar";
 import {
-  BRIDGE_CLI_SOCKET_NAME,
+  BLACKGLASS_CLI_SOCKET_NAME,
   CLI_BINARY_INCISION_COUNT,
   inspectPatchedCliBinary,
 } from "./cli-binary";
@@ -46,7 +46,7 @@ export interface MacOSArtifact {
   executableSha256: string;
   cliExecutableName: "obsidian-cli";
   cliExecutableSha256: string;
-  cliSocketName: typeof BRIDGE_CLI_SOCKET_NAME;
+  cliSocketName: typeof BLACKGLASS_CLI_SOCKET_NAME;
   cliSocketOccurrences: typeof CLI_BINARY_INCISION_COUNT;
   embeddedAsarSha256: string;
   rendererRuntimeHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
@@ -91,7 +91,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     displayName !== "Blackglass"
   ) {
     throw new Error(
-      `Unexpected Bridge identity: ${bundleIdentifier}, ${bundleName}, ${displayName}`,
+      `Unexpected Blackglass identity: ${bundleIdentifier}, ${bundleName}, ${displayName}`,
     );
   }
   if (hasPlistKey(infoPlist, "CFBundleURLTypes")) {
@@ -122,11 +122,11 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
 
   const executableName = plistString(infoPlist, "CFBundleExecutable");
   if (executableName !== "Obsidian") {
-    throw new Error(`Unexpected Bridge runtime executable: ${executableName}`);
+    throw new Error(`Unexpected Blackglass runtime executable: ${executableName}`);
   }
   const version = plistString(infoPlist, "CFBundleShortVersionString");
   if (!isSupportedStableSemver(version)) {
-    throw new Error(`Unexpected Bridge renderer version: ${version}`);
+    throw new Error(`Unexpected Blackglass renderer version: ${version}`);
   }
   const helperBundleIdentifiers: string[] = [];
   for (const helper of ELECTRON_HELPER_VARIANTS) {
@@ -138,13 +138,13 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     );
     const helperIdentifier = `md.obsidian.helper${helper.identifierSuffix}`;
     if (plistString(helperPlist, "CFBundleIdentifier") !== helperIdentifier) {
-      throw new Error(`Unexpected Bridge helper identifier: ${helperName}`);
+      throw new Error(`Unexpected Blackglass helper identifier: ${helperName}`);
     }
     if (plistString(helperPlist, "CFBundleDisplayName") !== helperName) {
-      throw new Error(`Unexpected Bridge helper display name: ${helperName}`);
+      throw new Error(`Unexpected Blackglass helper display name: ${helperName}`);
     }
     if (plistString(helperPlist, "CFBundleExecutable") !== helperName) {
-      throw new Error(`Unexpected Bridge helper executable: ${helperName}`);
+      throw new Error(`Unexpected Blackglass helper executable: ${helperName}`);
     }
     helperBundleIdentifiers.push(helperIdentifier);
   }

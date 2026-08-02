@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { AsarArchive, replacePackedAsarEntry } from "../../../tools/asar";
 import {
-  BRIDGE_CLI_SOCKET_NAME,
+  BLACKGLASS_CLI_SOCKET_NAME,
   UPSTREAM_CLI_SOCKET_NAME,
 } from "../../../tools/cli-binary";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "./runtime-home";
@@ -32,9 +32,9 @@ const CLI_VARIANTS = [
       'let g=d+"/obsidian-cli";if(m.existsSync(g)){let S="/usr/local/bin/blackglass";',
   },
 ] as const;
-export { BRIDGE_CLI_SOCKET_NAME } from "../../../tools/cli-binary";
-export const BRIDGE_CLI_COMMAND_NAME = "blackglass";
-export const BRIDGE_CLI_COMMAND_PATH = "/usr/local/bin/blackglass";
+export { BLACKGLASS_CLI_SOCKET_NAME } from "../../../tools/cli-binary";
+export const BLACKGLASS_CLI_COMMAND_NAME = "blackglass";
+export const BLACKGLASS_CLI_COMMAND_PATH = "/usr/local/bin/blackglass";
 
 export const RENDERER_PATCH_FORMAT_VERSION = 6;
 export const RENDERER_INCISION_COUNT = 6;
@@ -49,9 +49,9 @@ export interface AdapterReport {
   incisionCount: typeof RENDERER_INCISION_COUNT;
   controlOrigin: string;
   dataHost: string;
-  cliSocketName: typeof BRIDGE_CLI_SOCKET_NAME;
-  cliCommandName: typeof BRIDGE_CLI_COMMAND_NAME;
-  cliCommandPath: typeof BRIDGE_CLI_COMMAND_PATH;
+  cliSocketName: typeof BLACKGLASS_CLI_SOCKET_NAME;
+  cliCommandName: typeof BLACKGLASS_CLI_COMMAND_NAME;
+  cliCommandPath: typeof BLACKGLASS_CLI_COMMAND_PATH;
   runtimeHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
   upstreamSha256: string;
   patchedSha256: string;
@@ -131,27 +131,27 @@ export function patchStarterRenderer(
 }
 
 export function patchMainProcess(main: Buffer): Buffer {
-  if (UPSTREAM_CLI_SOCKET_NAME.length !== BRIDGE_CLI_SOCKET_NAME.length) {
+  if (UPSTREAM_CLI_SOCKET_NAME.length !== BLACKGLASS_CLI_SOCKET_NAME.length) {
     throw new Error("CLI socket replacement must preserve byte length");
   }
   const source = main.toString("utf8");
   const variant = selectExactlyOneCliVariant(source);
-  const bridgeRuntimeRoot =
+  const blackglassRuntimeRoot =
     `process.env.${BLACKGLASS_HOME_ENVIRONMENT}||${variant.homeCall}`;
-  const bridgeSocketConstruction =
-    `${variant.pathBinding}.join(${bridgeRuntimeRoot.padEnd(variant.runtimeRoot.length, " ")},` +
-    `"${BRIDGE_CLI_SOCKET_NAME}")`;
+  const blackglassSocketConstruction =
+    `${variant.pathBinding}.join(${blackglassRuntimeRoot.padEnd(variant.runtimeRoot.length, " ")},` +
+    `"${BLACKGLASS_CLI_SOCKET_NAME}")`;
   let patched = replaceExactlyOnce(
     source,
     UPSTREAM_CLI_SOCKET_NAME,
-    BRIDGE_CLI_SOCKET_NAME,
+    BLACKGLASS_CLI_SOCKET_NAME,
     "CLI socket name",
   );
   patched = replaceExactlyOnce(
     patched,
     variant.runtimeRoot,
     paddedSource(
-      bridgeRuntimeRoot,
+      blackglassRuntimeRoot,
       variant.runtimeRoot.length,
       "CLI runtime home",
     ),
@@ -172,8 +172,8 @@ export function patchMainProcess(main: Buffer): Buffer {
     throw new Error("Main-process patch unexpectedly changed the byte length");
   }
   inspectPatchedMainProcess(output, {
-    bridgeRuntimeRoot,
-    bridgeSocketConstruction,
+    blackglassRuntimeRoot,
+    blackglassSocketConstruction,
     upstreamRuntimeRoot: variant.runtimeRoot,
     upstreamRegistration: variant.registration,
   });
@@ -183,15 +183,15 @@ export function patchMainProcess(main: Buffer): Buffer {
 export function inspectPatchedMainProcess(
   main: Buffer,
   expected?: {
-    bridgeRuntimeRoot: string;
-    bridgeSocketConstruction: string;
+    blackglassRuntimeRoot: string;
+    blackglassSocketConstruction: string;
     upstreamRuntimeRoot: string;
     upstreamRegistration: string;
   },
 ): {
-  cliSocketName: typeof BRIDGE_CLI_SOCKET_NAME;
+  cliSocketName: typeof BLACKGLASS_CLI_SOCKET_NAME;
   runtimeHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
-  cliCommandName: typeof BRIDGE_CLI_COMMAND_NAME;
+  cliCommandName: typeof BLACKGLASS_CLI_COMMAND_NAME;
   runtimeRootValidated: true;
 } {
   const source = main.toString("utf8");
@@ -201,18 +201,18 @@ export function inspectPatchedMainProcess(
   } catch (error) {
     throw new Error(`Patched renderer main.js is not valid JavaScript: ${String(error)}`);
   }
-  requireExactlyOnce(source, BRIDGE_CLI_SOCKET_NAME, "patched CLI socket name");
-  requireExactlyOnce(source, contract.bridgeRuntimeRoot, "patched CLI runtime root");
+  requireExactlyOnce(source, BLACKGLASS_CLI_SOCKET_NAME, "patched CLI socket name");
+  requireExactlyOnce(source, contract.blackglassRuntimeRoot, "patched CLI runtime root");
   requireExactlyOnce(
     source,
-    contract.bridgeSocketConstruction,
+    contract.blackglassSocketConstruction,
     "patched CLI socket construction",
   );
-  const bridgeRegistration = CLI_VARIANTS.find(
+  const blackglassRegistration = CLI_VARIANTS.find(
     (variant) => variant.runtimeRoot === contract.upstreamRuntimeRoot,
   )?.registrationReplacement;
-  if (!bridgeRegistration) throw new Error("Unknown patched CLI variant");
-  requireExactlyOnce(source, bridgeRegistration, "patched CLI registration");
+  if (!blackglassRegistration) throw new Error("Unknown patched CLI variant");
+  requireExactlyOnce(source, blackglassRegistration, "patched CLI registration");
   if (
     source.includes(UPSTREAM_CLI_SOCKET_NAME) ||
     source.includes(contract.upstreamRuntimeRoot) ||
@@ -221,9 +221,9 @@ export function inspectPatchedMainProcess(
     throw new Error("Patched renderer main.js retains an upstream CLI anchor");
   }
   return {
-    cliSocketName: BRIDGE_CLI_SOCKET_NAME,
+    cliSocketName: BLACKGLASS_CLI_SOCKET_NAME,
     runtimeHomeEnvironment: BLACKGLASS_HOME_ENVIRONMENT,
-    cliCommandName: BRIDGE_CLI_COMMAND_NAME,
+    cliCommandName: BLACKGLASS_CLI_COMMAND_NAME,
     runtimeRootValidated: true,
   };
 }
@@ -237,21 +237,21 @@ function selectExactlyOneCliVariant(source: string): (typeof CLI_VARIANTS)[numbe
 }
 
 function selectExactlyOnePatchedCliVariant(source: string): {
-  bridgeRuntimeRoot: string;
-  bridgeSocketConstruction: string;
+  blackglassRuntimeRoot: string;
+  blackglassSocketConstruction: string;
   upstreamRuntimeRoot: string;
   upstreamRegistration: string;
 } {
   const matches = CLI_VARIANTS.flatMap((variant) => {
-    const bridgeRuntimeRoot =
+    const blackglassRuntimeRoot =
       `process.env.${BLACKGLASS_HOME_ENVIRONMENT}||${variant.homeCall}`;
-    const bridgeSocketConstruction =
-      `${variant.pathBinding}.join(${bridgeRuntimeRoot.padEnd(variant.runtimeRoot.length, " ")},` +
-      `"${BRIDGE_CLI_SOCKET_NAME}")`;
-    return source.includes(bridgeSocketConstruction)
+    const blackglassSocketConstruction =
+      `${variant.pathBinding}.join(${blackglassRuntimeRoot.padEnd(variant.runtimeRoot.length, " ")},` +
+      `"${BLACKGLASS_CLI_SOCKET_NAME}")`;
+    return source.includes(blackglassSocketConstruction)
       ? [{
-          bridgeRuntimeRoot,
-          bridgeSocketConstruction,
+          blackglassRuntimeRoot,
+          blackglassSocketConstruction,
           upstreamRuntimeRoot: variant.runtimeRoot,
           upstreamRegistration: variant.registration,
         }]
@@ -311,9 +311,9 @@ export function patchAsar(
       incisionCount: RENDERER_INCISION_COUNT,
       controlOrigin: canonical.controlOrigin,
       dataHost: canonical.dataHost,
-      cliSocketName: BRIDGE_CLI_SOCKET_NAME,
-      cliCommandName: BRIDGE_CLI_COMMAND_NAME,
-      cliCommandPath: BRIDGE_CLI_COMMAND_PATH,
+      cliSocketName: BLACKGLASS_CLI_SOCKET_NAME,
+      cliCommandName: BLACKGLASS_CLI_COMMAND_NAME,
+      cliCommandPath: BLACKGLASS_CLI_COMMAND_PATH,
       runtimeHomeEnvironment: BLACKGLASS_HOME_ENVIRONMENT,
       upstreamSha256: sha256(upstream),
       patchedSha256: sha256(output),

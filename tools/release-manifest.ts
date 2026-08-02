@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   canonicalAdapterOptions,
-  BRIDGE_CLI_COMMAND_NAME,
-  BRIDGE_CLI_COMMAND_PATH,
+  BLACKGLASS_CLI_COMMAND_NAME,
+  BLACKGLASS_CLI_COMMAND_PATH,
   RENDERER_INCISION_COUNT,
   RENDERER_PATCH_FORMAT_VERSION,
   type AdapterOptions,
@@ -16,7 +16,7 @@ import {
 } from "../packages/client-adapter/src/wrapper";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import {
-  BRIDGE_CLI_SOCKET_NAME,
+  BLACKGLASS_CLI_SOCKET_NAME,
   CLI_BINARY_INCISION_COUNT,
   CLI_BINARY_PATCH_FORMAT_VERSION,
   type CliBinaryPatchReport,
@@ -43,11 +43,11 @@ import {
 } from "./tree-identity";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 
-export const BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION = 8;
+export const BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION = 9;
 
-export interface BridgeReleaseManifest {
-  schemaVersion: typeof BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION;
-  bridgeVersion: string;
+export interface BlackglassReleaseManifest {
+  schemaVersion: typeof BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION;
+  blackglassVersion: string;
   rendererVersion: string;
   compatibilityBaseline: {
     id: string;
@@ -99,37 +99,37 @@ export interface BridgeReleaseManifest {
   };
 }
 
-export async function readBridgeReleaseManifest(
+export async function readBlackglassReleaseManifest(
   path: string,
-): Promise<{ path: string; manifest: BridgeReleaseManifest }> {
+): Promise<{ path: string; manifest: BlackglassReleaseManifest }> {
   const resolvedPath = resolve(path);
   return {
     path: resolvedPath,
-    manifest: parseBridgeReleaseManifest(await readFile(resolvedPath)),
+    manifest: parseBlackglassReleaseManifest(await readFile(resolvedPath)),
   };
 }
 
-export function parseBridgeReleaseManifest(
+export function parseBlackglassReleaseManifest(
   bytes: Uint8Array,
-): BridgeReleaseManifest {
+): BlackglassReleaseManifest {
   const value = JSON.parse(Buffer.from(bytes).toString("utf8")) as unknown;
-  assertBridgeReleaseManifest(value);
+  assertBlackglassReleaseManifest(value);
   return value;
 }
 
-export function assertBridgeReleaseManifest(
+export function assertBlackglassReleaseManifest(
   value: unknown,
-): asserts value is BridgeReleaseManifest {
-  if (!isRecord(value) || value.schemaVersion !== BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION) {
-    throw new Error("Unsupported Bridge release manifest schema");
+): asserts value is BlackglassReleaseManifest {
+  if (!isRecord(value) || value.schemaVersion !== BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION) {
+    throw new Error("Unsupported Blackglass release manifest schema");
   }
   if (
-    typeof value.bridgeVersion !== "string" ||
-    !isSupportedSemver(value.bridgeVersion) ||
+    typeof value.blackglassVersion !== "string" ||
+    !isSupportedSemver(value.blackglassVersion) ||
     typeof value.rendererVersion !== "string" ||
     !isSupportedStableSemver(value.rendererVersion)
   ) {
-    throw new Error("Bridge release manifest has invalid versions");
+    throw new Error("Blackglass release manifest has invalid versions");
   }
   if (
     !isRecord(value.compatibilityBaseline) ||
@@ -137,7 +137,7 @@ export function assertBridgeReleaseManifest(
     value.compatibilityBaseline.schemaVersion !== 5 ||
     !isSha256(value.compatibilityBaseline.sha256)
   ) {
-    throw new Error("Bridge release manifest has an invalid compatibility baseline");
+    throw new Error("Blackglass release manifest has an invalid compatibility baseline");
   }
   if (
     !isRecord(value.source) ||
@@ -146,7 +146,7 @@ export function assertBridgeReleaseManifest(
     !isSha256(value.source.wrapperAsarSha256) ||
     !isSha256(value.source.cliExecutableSha256)
   ) {
-    throw new Error("Bridge release manifest has invalid source provenance");
+    throw new Error("Blackglass release manifest has invalid source provenance");
   }
   assertTreeIdentity(value.source.appTree);
   assertMacOSCodeInventory(value.source.macOSCodeInventory);
@@ -162,10 +162,10 @@ export function assertBridgeReleaseManifest(
     value.patcher.cli.formatVersion !== CLI_BINARY_PATCH_FORMAT_VERSION ||
     value.patcher.cli.incisions !== CLI_BINARY_INCISION_COUNT
   ) {
-    throw new Error("Bridge release manifest has an unsupported patcher version");
+    throw new Error("Blackglass release manifest has an unsupported patcher version");
   }
   if (!isRecord(value.endpoints)) {
-    throw new Error("Bridge release manifest has no endpoints");
+    throw new Error("Blackglass release manifest has no endpoints");
   }
   assertToolingSourceIdentity(value.toolingSource);
   assertMacOSPackagingToolchain(value.packagingToolchain);
@@ -177,7 +177,7 @@ export function assertBridgeReleaseManifest(
     endpoints.controlOrigin !== value.endpoints.controlOrigin ||
     endpoints.dataHost !== value.endpoints.dataHost
   ) {
-    throw new Error("Bridge release manifest endpoints are not canonical");
+    throw new Error("Blackglass release manifest endpoints are not canonical");
   }
   if (
     !isRecord(value.renderer) ||
@@ -185,7 +185,7 @@ export function assertBridgeReleaseManifest(
     !isRecord(value.cli) ||
     !isRecord(value.macOS)
   ) {
-    throw new Error("Bridge release manifest is missing artifact identities");
+    throw new Error("Blackglass release manifest is missing artifact identities");
   }
   assertMacOSCodeSigningEvidence(value.macOS.codeSigning);
   assertMacOSCodeInventory(value.macOS.codeInventory);
@@ -217,7 +217,7 @@ export function assertBridgeReleaseManifest(
     value.macOS.codeInventory.sha256,
     value.macOS.rootMetadata.sha256,
   ]) {
-    if (!isSha256(hash)) throw new Error("Bridge release manifest contains an invalid SHA-256");
+    if (!isSha256(hash)) throw new Error("Blackglass release manifest contains an invalid SHA-256");
   }
   assertTreeIdentity(value.macOS.applicationTreeIdentity, "packaged app tree");
   if (
@@ -225,9 +225,9 @@ export function assertBridgeReleaseManifest(
     value.renderer.incisionCount !== RENDERER_INCISION_COUNT ||
     value.renderer.controlOrigin !== endpoints.controlOrigin ||
     value.renderer.dataHost !== endpoints.dataHost ||
-    value.renderer.cliSocketName !== BRIDGE_CLI_SOCKET_NAME ||
-    value.renderer.cliCommandName !== BRIDGE_CLI_COMMAND_NAME ||
-    value.renderer.cliCommandPath !== BRIDGE_CLI_COMMAND_PATH ||
+    value.renderer.cliSocketName !== BLACKGLASS_CLI_SOCKET_NAME ||
+    value.renderer.cliCommandName !== BLACKGLASS_CLI_COMMAND_NAME ||
+    value.renderer.cliCommandPath !== BLACKGLASS_CLI_COMMAND_PATH ||
     value.renderer.runtimeHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
     value.wrapper.patchFormatVersion !== WRAPPER_PATCH_FORMAT_VERSION ||
     value.wrapper.incisionCount !== WRAPPER_INCISION_COUNT ||
@@ -236,7 +236,7 @@ export function assertBridgeReleaseManifest(
     value.wrapper.nativeHomeFallbackPreserved !== true ||
     value.cli.patchFormatVersion !== CLI_BINARY_PATCH_FORMAT_VERSION ||
     value.cli.incisionCount !== CLI_BINARY_INCISION_COUNT ||
-    value.cli.socketName !== BRIDGE_CLI_SOCKET_NAME ||
+    value.cli.socketName !== BLACKGLASS_CLI_SOCKET_NAME ||
     value.renderer.upstreamSha256 === value.renderer.patchedSha256 ||
     value.wrapper.upstreamSha256 === value.wrapper.patchedSha256 ||
     value.cli.upstreamSha256 === value.cli.patchedSha256 ||
@@ -264,7 +264,7 @@ export function assertBridgeReleaseManifest(
       value.source.macOSCodeInventory,
     )
   ) {
-    throw new Error("Bridge release manifest artifact bindings are inconsistent");
+    throw new Error("Blackglass release manifest artifact bindings are inconsistent");
   }
   if (
     value.macOS.bundleIdentifier !== "com.blackglass.app" ||
@@ -273,7 +273,7 @@ export function assertBridgeReleaseManifest(
     value.macOS.displayName !== "Blackglass" ||
     value.macOS.executableName !== "Obsidian" ||
     value.macOS.cliExecutableName !== "obsidian-cli" ||
-    value.macOS.cliSocketName !== BRIDGE_CLI_SOCKET_NAME ||
+    value.macOS.cliSocketName !== BLACKGLASS_CLI_SOCKET_NAME ||
     value.macOS.cliSocketOccurrences !== CLI_BINARY_INCISION_COUNT ||
     value.macOS.rendererRuntimeHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
     value.macOS.rendererCliRuntimeRootValidated !== true ||
@@ -302,7 +302,7 @@ export function assertBridgeReleaseManifest(
     value.macOS.registeredUrlSchemes.length !== 0 ||
     value.macOS.upstreamICloudContainerRegistered !== false
   ) {
-    throw new Error("Bridge release manifest contains an unsafe macOS identity");
+    throw new Error("Blackglass release manifest contains an unsafe macOS identity");
   }
   if (
     !isRecord(value.reproduction) ||
@@ -319,7 +319,7 @@ export function assertBridgeReleaseManifest(
     value.reproduction.sourceCodeInventoryMatchedBaseline !== true ||
     value.reproduction.packagedCodeInventoryMatchedSource !== true
   ) {
-    throw new Error("Bridge release manifest does not attest deterministic reproduction");
+    throw new Error("Blackglass release manifest does not attest deterministic reproduction");
   }
 }
 
@@ -332,7 +332,7 @@ function assertTreeIdentity(
     value.formatVersion !== TREE_IDENTITY_FORMAT_VERSION ||
     !isSha256(value.sha256)
   ) {
-    throw new Error(`Bridge release manifest has an invalid ${label} identity`);
+    throw new Error(`Blackglass release manifest has an invalid ${label} identity`);
   }
   for (const field of [
     "entries",
@@ -342,14 +342,14 @@ function assertTreeIdentity(
     "fileBytes",
   ] as const) {
     if (!Number.isSafeInteger(value[field]) || (value[field] as number) < 0) {
-      throw new Error(`Bridge release manifest ${label} has invalid ${field}`);
+      throw new Error(`Blackglass release manifest ${label} has invalid ${field}`);
     }
   }
   if (
     (value.entries as number) !==
     (value.files as number) + (value.directories as number) + (value.symlinks as number)
   ) {
-    throw new Error(`Bridge release manifest ${label} counts are inconsistent`);
+    throw new Error(`Blackglass release manifest ${label} counts are inconsistent`);
   }
 }
 

@@ -141,7 +141,7 @@ export async function createBaselineCandidate(
 ): Promise<CompatibilityCandidateResult> {
   const projectRoot = await canonicalExistingPath(
     rootArgument,
-    "Bridge project root",
+    "Blackglass project root",
     "directory",
   );
   const officialDmg = await canonicalExistingPath(

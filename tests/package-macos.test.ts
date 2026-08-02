@@ -21,7 +21,7 @@ import {
   inspectSourceMacOSCodeSigning,
 } from "../tools/macos-code-signing";
 import { asarHeaderSha256 } from "../tools/asar";
-import { assertBridgeReleaseManifest } from "../tools/release-manifest";
+import { assertBlackglassReleaseManifest } from "../tools/release-manifest";
 import {
   discoverRendererRelease,
   discoverUnpackedJavaScriptFiles,
@@ -139,7 +139,7 @@ test("macOS packaging gives Blackglass an independent identity", async () => {
 
     const wrongNameResult = Bun.spawnSync([
       "bun", "run", "tools/package-macos.ts", sourceApp, patchedPath,
-      join(directory, "Renamed Bridge.app"), "--control-origin", endpoints.controlOrigin,
+      join(directory, "Renamed Blackglass.app"), "--control-origin", endpoints.controlOrigin,
       "--data-host", endpoints.dataHost, "--manifest", join(directory, "wrong-name.json"),
       "--official-dmg", officialDmgPath, "--baseline", baselinePath,
     ], { cwd: root, stdout: "pipe", stderr: "pipe" });
@@ -212,7 +212,7 @@ test("macOS packaging gives Blackglass an independent identity", async () => {
       signature: "ad-hoc",
     });
     expect(report.releaseManifest).toMatchObject({
-      schemaVersion: 8,
+      schemaVersion: 9,
       rendererVersion: "1.12.7",
       endpoints,
       patcher: {
@@ -241,7 +241,7 @@ test("macOS packaging gives Blackglass an independent identity", async () => {
     expect(JSON.parse(await Bun.file(receiptPath).text())).toEqual(
       report.packageReceipt,
     );
-    expect(() => assertBridgeReleaseManifest(report.releaseManifest)).not.toThrow();
+    expect(() => assertBlackglassReleaseManifest(report.releaseManifest)).not.toThrow();
     const secondDirectory = join(directory, "independent-build");
     await mkdir(secondDirectory);
     const secondApp = join(secondDirectory, "Blackglass.app");
@@ -263,11 +263,11 @@ test("macOS packaging gives Blackglass an independent identity", async () => {
     expect(reproducibilityResult.exitCode, reproducibilityResult.stderr.toString()).toBe(0);
     const reproducibility = JSON.parse(await Bun.file(reproducibilityPath).text());
     expect(reproducibility).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       passed: true,
       separateOutputs: true,
       independentPackageInvocations: true,
-      bridgeVersion: "0.1.1",
+      blackglassVersion: "0.2.0",
       rendererVersion: "1.12.7",
       applicationTreeSha256: report.releaseManifest.macOS.applicationTreeSha256,
       codeInventorySha256: report.releaseManifest.macOS.codeInventory.sha256,
@@ -302,12 +302,12 @@ test("macOS packaging gives Blackglass an independent identity", async () => {
     ).toThrow("does not bind");
     const tamperedSource = structuredClone(report.releaseManifest);
     tamperedSource.source.rendererAsarSha256 = "0".repeat(64);
-    expect(() => assertBridgeReleaseManifest(tamperedSource)).toThrow(
+    expect(() => assertBlackglassReleaseManifest(tamperedSource)).toThrow(
       "artifact bindings",
     );
     const tamperedTree = structuredClone(report.releaseManifest);
     tamperedTree.macOS.applicationTreeIdentity.files += 1;
-    expect(() => assertBridgeReleaseManifest(tamperedTree)).toThrow(
+    expect(() => assertBlackglassReleaseManifest(tamperedTree)).toThrow(
       "counts are inconsistent",
     );
 

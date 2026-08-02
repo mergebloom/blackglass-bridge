@@ -1582,8 +1582,8 @@ async function newDiagnosticReports(
     if (
       body.includes(appPath) ||
       body.includes("com.blackglass.app") ||
-      name.includes("blackglass bridge") ||
-      name.includes("blackglass_bridge")
+      name.includes("blackglass blackglass") ||
+      name.includes("blackglass_blackglass")
     ) {
       candidates.push(path);
     }

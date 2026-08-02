@@ -74,12 +74,12 @@ jobs:
           mkdir -p dist/reproducibility-check
           bash scripts/build-release-artifacts.sh "$GITHUB_SHA" dist/reproducibility-check
           cmp \
-            "dist/release/blackglass-bridge-${GITHUB_REF_NAME}-tooling.zip" \
-            "dist/reproducibility-check/blackglass-bridge-${GITHUB_REF_NAME}-tooling.zip"
+            "dist/release/blackglass-${GITHUB_REF_NAME}-tooling.zip" \
+            "dist/reproducibility-check/blackglass-${GITHUB_REF_NAME}-tooling.zip"
           (
             cd dist/release
             sha256sum --check \
-              "blackglass-bridge-${GITHUB_REF_NAME}-tooling.zip.sha256"
+              "blackglass-${GITHUB_REF_NAME}-tooling.zip.sha256"
           )
       - name: Create or resume verified GitHub release
         env:
@@ -88,5 +88,5 @@ jobs:
           bash scripts/publish-tooling-release.sh \
             "$GITHUB_REF_NAME" \
             "Blackglass $GITHUB_REF_NAME" \
-            "dist/release/blackglass-bridge-${GITHUB_REF_NAME}-tooling.zip" \
-            "dist/release/blackglass-bridge-${GITHUB_REF_NAME}-tooling.zip.sha256"
+            "dist/release/blackglass-${GITHUB_REF_NAME}-tooling.zip" \
+            "dist/release/blackglass-${GITHUB_REF_NAME}-tooling.zip.sha256"

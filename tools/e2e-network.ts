@@ -38,7 +38,7 @@ export interface E2ENetworkPlan {
 }
 
 export interface PreparedE2ERunManifest {
-  schemaVersion: 3;
+  schemaVersion: 4;
   endpoints: AdapterOptions;
   network: E2ENetworkPlan;
   compatibilityAsarSha256: string;
@@ -143,7 +143,7 @@ export async function readPreparedE2ERun(
 export function assertPreparedE2ERunManifest(
   value: unknown,
 ): asserts value is PreparedE2ERunManifest {
-  if (!isRecord(value) || value.schemaVersion !== 3 || !isRecord(value.endpoints)) {
+  if (!isRecord(value) || value.schemaVersion !== 4 || !isRecord(value.endpoints)) {
     throw new Error("Unsupported prepared E2E run manifest schema");
   }
   const endpoints = canonicalAdapterOptions({
