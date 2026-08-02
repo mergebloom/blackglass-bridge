@@ -84,6 +84,9 @@ it; the tooling tree at the tag must remain byte-identical.
   `HOME` is never overridden, so Electron continues to use the user's login
   Keychain. The wrapper rejects a non-canonical path at setup and enforces
   directory mode `0700` for both forms.
+- The wrapper sets Electron's application name to `Blackglass` before profile
+  initialization. Electron therefore uses `Blackglass Safe Storage`; it never
+  requests Obsidian's Safe Storage item or migrates the Obsidian login.
 - The embedded main process uses `.blackglass-b.sock` instead of Obsidian's
   global CLI socket, so the two applications cannot unlink each other's CLI
   endpoint. On macOS, a sixth renderer incision makes `BLACKGLASS_HOME` the

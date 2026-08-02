@@ -140,6 +140,12 @@ display name are Blackglass, while the upstream `Obsidian` bundle name,
 main executable, and Electron helper topology remain unchanged for runtime
 compatibility.
 
+Blackglass sets its Electron application name before profile initialization,
+so macOS stores its encryption key as `Blackglass Safe Storage` instead of
+requesting access to Obsidian's keychain item. It does not migrate an existing
+Obsidian profile or login: the first Blackglass launch starts clean and requires
+sign-in, while the Obsidian profile remains untouched.
+
 ## Validation
 
 Sanitized evidence lives in [docs/validation](docs/validation/README.md).

@@ -225,6 +225,9 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
   }
   requireExactlyOnce(main, PROFILE_MARKER, "patched wrapper profile marker");
   requireExactlyOnce(main, APPLICATION_NAME_MARKER, "patched application name marker");
+  if (main.indexOf(APPLICATION_NAME_MARKER) > main.indexOf(PROFILE_MARKER)) {
+    throw new Error("Blackglass application name must be set before profile initialization");
+  }
   requireExactlyOnce(main, SESSION_MARKER, "patched wrapper session marker");
   requireExactlyOnce(
     main,

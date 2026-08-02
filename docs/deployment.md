@@ -106,6 +106,10 @@ also uses a dedicated `.blackglass-b.sock` under `BLACKGLASS_HOME`, so it can
 coexist with normal Obsidian without unlinking Obsidian's endpoint. Only the
 packaged CLI subprocess receives that path as `HOME`, which is the interface
 the upstream CLI binary expects.
+
+Blackglass uses its own `Blackglass Safe Storage` keychain item and does not
+migrate Obsidian credentials. Users sign in once after installing Blackglass;
+ordinary upgrades keep using the Blackglass profile and keychain namespace.
 If `--blackglass-home` is omitted, the launcher uses the login-home socket and
 therefore refuses to start while any other instance of the same generated app
 is running. Supplying distinct validated runtime homes permits isolated

@@ -193,6 +193,19 @@ test("wrapper inspection rejects disabled home checks and changed native fallbac
   }
 });
 
+test("wrapper inspection requires the Blackglass identity before profile initialization", () => {
+  const patched = patchMacOSWrapperMain(Buffer.from(wrapperMain())).toString("utf8");
+  const applicationName = "app.setName('Blackglass');";
+  const profileMarker = "app.setPath('userData',dataPath);";
+  const reordered = patched
+    .replace(applicationName, " ".repeat(applicationName.length))
+    .replace(profileMarker, `${profileMarker}${applicationName}`);
+
+  expect(() =>
+    inspectPatchedMacOSWrapperAsar(makeArchive("main.js", Buffer.from(reordered))),
+  ).toThrow("before profile initialization");
+});
+
 test("macOS wrapper rejects missing boundaries and altered reviewed spans", () => {
   expect(() =>
     patchMacOSWrapperMain(
