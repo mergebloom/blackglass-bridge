@@ -738,6 +738,8 @@ async function waitForDebugBinding(
   blackglassHomePath: string;
 }> {
   const deadline = Date.now() + 30_000;
+  let lastError: Error | undefined;
+  const failureCounts = new Map<string, number>();
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       throw new Error(`Blackglass exited before DevTools became ready: ${child.exitCode}`);
@@ -788,10 +790,21 @@ async function waitForDebugBinding(
         nativeHomePath: runtimeHome.nativeHomePath,
         blackglassHomePath: runtimeHome.blackglassHomePath,
       };
-    } catch {}
+    } catch (error) {
+      lastError = asError(error);
+      failureCounts.set(lastError.message, (failureCounts.get(lastError.message) ?? 0) + 1);
+    }
     await Bun.sleep(100);
   }
-  throw new Error("Timed out binding DevTools to the launched Blackglass process");
+  throw new Error(
+    "Timed out binding DevTools to the launched Blackglass process" +
+      (failureCounts.size > 0
+        ? ": " + [...failureCounts.entries()]
+          .map(([message, count]) => `${message} (${count})`)
+          .join("; ")
+        : ""),
+    { cause: lastError },
+  );
 }
 
 async function readRendererRuntimeHome(webSocketDebuggerUrl: string): Promise<{
