@@ -29,3 +29,8 @@ update the protocol and server for intentional changes, add regression tests,
 then manually convert its unpacked-file marker to `status: "reviewed"` with the
 reviewed paths, and promote only the reviewed `proposedBaseline` here with
 `apply_patch` or an equivalent manual edit.
+
+The repository currently preserves 1.12.7 as the compatibility floor and
+tracks the reviewed 1.13.4 static baseline as the current E2E candidate. See
+[`docs/protocol/obsidian-1.13.4.md`](../docs/protocol/obsidian-1.13.4.md) for its
+intentional protocol delta.
