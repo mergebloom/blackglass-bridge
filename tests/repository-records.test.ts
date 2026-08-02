@@ -129,8 +129,8 @@ describe("committed release records", () => {
       },
     });
     expect(canonicalAdapterOptions(validation.endpoints)).toEqual({
-      controlOrigin: "https://blackglass.example.com",
-      dataHost: "blackglass-data.example.com",
+      controlOrigin: "https://sync-control.example.com",
+      dataHost: "sync-data.example.com",
     });
     for (const hash of [
       validation.artifacts.compatibilityAsarSha256,
