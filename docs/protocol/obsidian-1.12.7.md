@@ -17,13 +17,13 @@ uses six fixed-length, fail-closed client-ASAR incisions:
 - control origin in `app.js`;
 - exact Sync data-host authorization in `app.js`;
 - control origin in `starter.js`;
-- `.obsidian-cli.sock` to `.blackglass-b.sock` in `main.js`;
+- `.obsidian-cli.sock` to `.blackglass-c.sock` in `main.js`;
 - the `main.js` CLI runtime root to prefer `BLACKGLASS_HOME`; and
 - `/usr/local/bin/obsidian` registration to `/usr/local/bin/blackglass` in
   `main.js`.
 
 The packaged universal `obsidian-cli` binary contains one socket literal per
-architecture. Both are patched to `.blackglass-b.sock` before the app is
+architecture. Both are patched to `.blackglass-c.sock` before the app is
 re-signed. Prepared E2E clients receive separate mode-`0700`
 `BLACKGLASS_HOME` directories so their CLI sockets cannot collide. The GUI
 keeps its native `HOME` for macOS login Keychain access; only a packaged CLI

@@ -102,7 +102,7 @@ upstream package updater and refuses downloaded renderer overrides, including
 Finder launches. An explicit `--user-data-dir` remains available for disposable
 isolated test clients. The launcher requires existing profile and vault
 directories and refuses Obsidian's normal profile. The embedded main process
-also uses a dedicated `.blackglass-b.sock` under `BLACKGLASS_HOME`, so it can
+also uses a dedicated `.blackglass-c.sock` under `BLACKGLASS_HOME`, so it can
 coexist with normal Obsidian without unlinking Obsidian's endpoint. Only the
 packaged CLI subprocess receives that path as `HOME`, which is the interface
 the upstream CLI binary expects.

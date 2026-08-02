@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 
 export const UPSTREAM_CLI_SOCKET_NAME = ".obsidian-cli.sock";
-export const BLACKGLASS_CLI_SOCKET_NAME = ".blackglass-b.sock";
-export const CLI_BINARY_PATCH_FORMAT_VERSION = 1;
+export const BLACKGLASS_CLI_SOCKET_NAME = ".blackglass-c.sock";
+export const CLI_BINARY_PATCH_FORMAT_VERSION = 2;
 export const CLI_BINARY_INCISION_COUNT = 2;
 
 export interface CliBinaryPatchReport {

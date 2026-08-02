@@ -36,7 +36,7 @@ export { BLACKGLASS_CLI_SOCKET_NAME } from "../../../tools/cli-binary";
 export const BLACKGLASS_CLI_COMMAND_NAME = "blackglass";
 export const BLACKGLASS_CLI_COMMAND_PATH = "/usr/local/bin/blackglass";
 
-export const RENDERER_PATCH_FORMAT_VERSION = 6;
+export const RENDERER_PATCH_FORMAT_VERSION = 7;
 export const RENDERER_INCISION_COUNT = 6;
 
 export interface AdapterOptions {

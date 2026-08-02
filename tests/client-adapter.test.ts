@@ -71,7 +71,7 @@ describe("client adapter", () => {
     const patched = patchMainProcess(upstream);
     const source = patched.toString("utf8");
     expect(patched.length).toBe(upstream.length);
-    expect(source).toContain('D.join(process.env.BLACKGLASS_HOME||ce.homedir()    ,".blackglass-b.sock")');
+    expect(source).toContain('D.join(process.env.BLACKGLASS_HOME||ce.homedir()    ,".blackglass-c.sock")');
     expect(source).toContain("process.env.BLACKGLASS_HOME||ce.homedir()");
     expect(source).toContain('let w="/usr/local/bin/blackglass";');
     expect(source).not.toContain("process.env.XDG_RUNTIME_DIR");
@@ -93,7 +93,7 @@ describe("client adapter", () => {
     const patched = patchMainProcess(upstream);
     const source = patched.toString("utf8");
     expect(source).toContain(
-      'C.join(process.env.BLACKGLASS_HOME||de.homedir()    ,".blackglass-b.sock")',
+      'C.join(process.env.BLACKGLASS_HOME||de.homedir()    ,".blackglass-c.sock")',
     );
     expect(source).toContain('let S="/usr/local/bin/blackglass";');
     expect(source).not.toContain("process.env.XDG_RUNTIME_DIR");
@@ -155,7 +155,7 @@ describe("client adapter", () => {
     expect(patchedStarter.toString("utf8")).toContain(
       'var sa="https://sync-control.example.test"',
     );
-    expect(patchedMain.toString("utf8")).toContain(".blackglass-b.sock");
+    expect(patchedMain.toString("utf8")).toContain(".blackglass-c.sock");
     expect(patchedMain.toString("utf8")).toContain(
       "process.env.BLACKGLASS_HOME||ce.homedir()",
     );
@@ -164,11 +164,11 @@ describe("client adapter", () => {
       generated.report.patchedSha256,
     );
     expect(generated.report).toMatchObject({
-      patchFormatVersion: 6,
+      patchFormatVersion: 7,
       incisionCount: 6,
       controlOrigin: "https://sync-control.example.test",
       dataHost: "sync-data.example.test:8443",
-      cliSocketName: ".blackglass-b.sock",
+      cliSocketName: ".blackglass-c.sock",
       cliCommandName: "blackglass",
       cliCommandPath: "/usr/local/bin/blackglass",
       runtimeHomeEnvironment: "BLACKGLASS_HOME",

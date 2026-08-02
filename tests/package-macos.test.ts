@@ -216,9 +216,9 @@ test("macOS packaging gives Blackglass an independent identity", async () => {
       rendererVersion: "1.12.7",
       endpoints,
       patcher: {
-        renderer: { formatVersion: 6, incisions: 6 },
+        renderer: { formatVersion: 7, incisions: 6 },
         wrapper: { formatVersion: 5, incisions: 3 },
-        cli: { formatVersion: 1, incisions: 2 },
+        cli: { formatVersion: 2, incisions: 2 },
       },
       reproduction: {
         officialDmgMatchedBaseline: true,
@@ -346,7 +346,7 @@ test("macOS packaging gives Blackglass an independent identity", async () => {
       displayName: "Blackglass",
       executableName: "Obsidian",
       cliExecutableName: "obsidian-cli",
-      cliSocketName: ".blackglass-b.sock",
+      cliSocketName: ".blackglass-c.sock",
       cliSocketOccurrences: 2,
       rendererRuntimeHomeEnvironment: "BLACKGLASS_HOME",
       rendererCliRuntimeRootValidated: true,

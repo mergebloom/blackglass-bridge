@@ -87,7 +87,7 @@ it; the tooling tree at the tag must remain byte-identical.
 - The wrapper sets Electron's application name to `Blackglass` before profile
   initialization. Electron therefore uses `Blackglass Safe Storage`; it never
   requests Obsidian's Safe Storage item or migrates the Obsidian login.
-- The embedded main process uses `.blackglass-b.sock` instead of Obsidian's
+- The embedded main process uses `.blackglass-c.sock` instead of Obsidian's
   global CLI socket, so the two applications cannot unlink each other's CLI
   endpoint. On macOS, a sixth renderer incision makes `BLACKGLASS_HOME` the
   socket runtime root. Its registration action installs

@@ -31,7 +31,7 @@ Six fixed-length client-ASAR incisions implement two endpoint changes: the
 control-plane origin is replaced in both `app.js` and the independent no-vault
 `starter.js`, and the data-host authorization condition is replaced in
 `app.js`. The main process CLI socket is replaced with the same-length dedicated
-`.blackglass-b.sock` name, its registration target becomes the distinct
+`.blackglass-c.sock` name, its registration target becomes the distinct
 `/usr/local/bin/blackglass` command, and its macOS runtime root prefers
 `BLACKGLASS_HOME`. That sixth incision is qualified only for the current macOS
 target. The copied desktop wrapper receives three safety incisions:

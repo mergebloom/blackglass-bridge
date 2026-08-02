@@ -141,7 +141,7 @@ const macOS = {
   cliExecutableName: "obsidian-cli" as const,
   // macOS codesigning changes the whole-file identity after the raw CLI patch.
   cliExecutableSha256: digest("a"),
-  cliSocketName: ".blackglass-b.sock" as const,
+  cliSocketName: ".blackglass-c.sock" as const,
   cliSocketOccurrences: 2 as const,
   embeddedAsarSha256: digest("3"),
   rendererRuntimeHomeEnvironment: "BLACKGLASS_HOME" as const,
@@ -276,9 +276,9 @@ function manifest(): BlackglassReleaseManifest {
       macOSCodeInventory: codeInventory,
     },
     patcher: {
-      renderer: { formatVersion: 6, incisions: 6 },
+      renderer: { formatVersion: 7, incisions: 6 },
       wrapper: { formatVersion: 5, incisions: 3 },
-      cli: { formatVersion: 1, incisions: 2 },
+      cli: { formatVersion: 2, incisions: 2 },
     },
     endpoints: {
       controlOrigin: "https://blackglass.example.com",
@@ -287,11 +287,11 @@ function manifest(): BlackglassReleaseManifest {
     packagingToolchain,
     toolingSource,
     renderer: {
-      patchFormatVersion: 6,
+      patchFormatVersion: 7,
       incisionCount: 6,
       controlOrigin: "https://blackglass.example.com",
       dataHost: "blackglass-data.example.com",
-      cliSocketName: ".blackglass-b.sock",
+      cliSocketName: ".blackglass-c.sock",
       cliCommandName: "blackglass",
       cliCommandPath: "/usr/local/bin/blackglass",
       runtimeHomeEnvironment: "BLACKGLASS_HOME",
@@ -325,9 +325,9 @@ function manifest(): BlackglassReleaseManifest {
       mainAfterSha256: digest("f"),
     },
     cli: {
-      patchFormatVersion: 1,
+      patchFormatVersion: 2,
       incisionCount: 2,
-      socketName: ".blackglass-b.sock",
+      socketName: ".blackglass-c.sock",
       upstreamSha256: digest("d"),
       patchedSha256: digest("e"),
     },

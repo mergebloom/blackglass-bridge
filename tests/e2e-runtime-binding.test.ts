@@ -37,7 +37,7 @@ describe("E2E runtime binding", () => {
       blackglassHomeEnvironment: "BLACKGLASS_HOME",
       blackglassHomeMode: 0o700,
       blackglassHomeCanonical: true,
-      cliSocketPath: "/private/tmp/blackglass-client-ABC123/h/.blackglass-b.sock",
+      cliSocketPath: "/private/tmp/blackglass-client-ABC123/h/.blackglass-c.sock",
       nativeHomePath: "/Users/example",
       nativeHomeEnvironmentPreserved: true,
       vaultPath: "/tmp/client-a/vault",

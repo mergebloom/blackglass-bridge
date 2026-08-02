@@ -180,7 +180,7 @@ export function assertClientLaunchIdentity(
       value.blackglassHomePath as string,
     ) ||
     Buffer.byteLength(
-      join(value.blackglassHomePath as string, ".blackglass-b.sock"),
+      join(value.blackglassHomePath as string, ".blackglass-c.sock"),
       "utf8",
     ) > 103 ||
     value.nativeHomePath === value.blackglassHomePath ||

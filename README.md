@@ -60,7 +60,7 @@ as `../blackglass-server`.
 | Area | Current support |
 | --- | --- |
 | Platform | macOS on Apple Silicon |
-| Renderer | Obsidian 1.12.7 |
+| Renderer | Obsidian 1.12.7 and 1.13.4 |
 | Client behavior | Built-in sign-in; remote-vault create/list/access; E2EE Sync including multipart attachments; source-loss recovery UI |
 | Packaging | Separate app identity, ad-hoc local signing, updates disabled |
 | Server | Blackglass Server over loopback or HTTPS/WSS |

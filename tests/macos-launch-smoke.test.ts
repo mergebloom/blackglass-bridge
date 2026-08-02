@@ -46,7 +46,7 @@ const artifact = {
   executableSha256: digest("2"),
   cliExecutableName: "obsidian-cli" as const,
   cliExecutableSha256: digest("6"),
-  cliSocketName: ".blackglass-b.sock" as const,
+  cliSocketName: ".blackglass-c.sock" as const,
   cliSocketOccurrences: 2 as const,
   embeddedAsarSha256: digest("3"),
   rendererRuntimeHomeEnvironment: "BLACKGLASS_HOME" as const,

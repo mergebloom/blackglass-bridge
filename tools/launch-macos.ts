@@ -156,7 +156,7 @@ if (appArtifact && appArtifact.embeddedAsarSha256 !== adapterSha256) {
 assertProfileNotInUse(appBundle, profile);
 if (!e2eRequested && !blackglassHomeArgument) {
   assertNoSharedHomeBlackglassProcess(appBundle);
-  if (await pathExists(join(homedir(), appArtifact?.cliSocketName ?? ".blackglass-b.sock"))) {
+  if (await pathExists(join(homedir(), appArtifact?.cliSocketName ?? ".blackglass-c.sock"))) {
     throw new Error("The login-home Blackglass CLI socket is already owned or stale");
   }
 }
@@ -173,7 +173,7 @@ if (!e2eRequested && process.env[BLACKGLASS_HOME_ENVIRONMENT] && !blackglassHome
 if (blackglassHomeArgument) {
   launchHome = await validateBlackglassHome(
     blackglassHomeArgument,
-    appArtifact?.cliSocketName ?? ".blackglass-b.sock",
+    appArtifact?.cliSocketName ?? ".blackglass-c.sock",
   );
   if (pathsEqual(launchHome, homedir())) {
     throw new Error("--blackglass-home must be distinct from the native login home");
@@ -185,7 +185,7 @@ if (blackglassHomeArgument) {
     { label: "macOS app bundle", path: appBundle },
     { label: "Compatibility ASAR", path: asar },
   ]);
-  if (await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-b.sock"))) {
+  if (await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-c.sock"))) {
     throw new Error("BLACKGLASS_HOME already contains a Blackglass CLI socket");
   }
 }
@@ -341,7 +341,7 @@ if (prepareOnly) {
 assertProfileNotInUse(appBundle, profile);
 if (!launchBinding && !blackglassHomeArgument) {
   assertNoSharedHomeBlackglassProcess(appBundle);
-  if (await pathExists(join(homedir(), appArtifact?.cliSocketName ?? ".blackglass-b.sock"))) {
+  if (await pathExists(join(homedir(), appArtifact?.cliSocketName ?? ".blackglass-c.sock"))) {
     throw new Error("The login-home Blackglass CLI socket became occupied before launch");
   }
 }
@@ -350,7 +350,7 @@ if (launchBinding && await pathExists(launchBinding.resetLockPath)) {
 }
 if (
   blackglassHomeArgument &&
-  await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-b.sock"))
+  await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-c.sock"))
 ) {
   throw new Error("BLACKGLASS_HOME gained a Blackglass CLI socket before launch");
 }
@@ -470,7 +470,7 @@ if (shortHomeRoot) {
   if (!await waitForClientProcessesExit(appBundle, profile, 5_000)) {
     throw new Error("Client helpers survived after the launched main process exited");
   }
-  if (await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-b.sock"))) {
+  if (await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-c.sock"))) {
     throw new Error("Client retained its dedicated CLI socket after shutdown");
   }
 }
@@ -520,7 +520,7 @@ async function createShortBlackglassHome(): Promise<{ root: string; home: string
   ) {
     throw new Error("Short BLACKGLASS_HOME is not a private real directory");
   }
-  if (Buffer.byteLength(join(home, ".blackglass-b.sock"), "utf8") > 103) {
+  if (Buffer.byteLength(join(home, ".blackglass-c.sock"), "utf8") > 103) {
     throw new Error("Short BLACKGLASS_HOME still exceeds the macOS socket limit");
   }
   return { root, home };
