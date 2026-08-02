@@ -247,7 +247,13 @@ if (parsed.booleans.has("--prepare-client")) {
         "--reproducibility-evidence", reproducibility,
       ],
       cwd: clientRoot,
-      outputs: [join(runRoot, "run.json")],
+      outputs: [
+        join(runRoot, "run-manifest.json"),
+        join(runRoot, "blackglass-release-manifest.json"),
+        join(runRoot, "client-artifact.json"),
+        join(runRoot, "client-reproducibility.json"),
+        join(runRoot, "credentials.json"),
+      ],
     },
     {
       name: `client-${rendererVersion}-e2e-tls`,

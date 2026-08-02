@@ -31,6 +31,8 @@ describe("immutable release runner", () => {
     expect(source).toContain("tools/verify-macos-reproducibility.ts");
     expect(source).toContain("tools/prepare-e2e.ts");
     expect(source).toContain("tools/prepare-e2e-tls.ts");
+    expect(source).toContain('join(runRoot, "run-manifest.json")');
+    expect(source).not.toContain('join(runRoot, "run.json")');
   });
 
   test("treats an old native binary as rebuildable cache state", async () => {
