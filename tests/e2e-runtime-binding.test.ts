@@ -94,7 +94,7 @@ describe("E2E runtime binding", () => {
         }, null, 2)}\n`,
         { mode: 0o600 },
       );
-      for (const client of ["client-a", "client-b"]) {
+      for (const client of ["client-a", "client-b", "client-c"]) {
         await mkdir(join(runRoot, client, "user-data"), { recursive: true });
         await mkdir(join(runRoot, client, "vault"), { recursive: true });
       }
@@ -104,6 +104,11 @@ describe("E2E runtime binding", () => {
       );
       expect(layout.clientName).toBe("client-a");
       expect(layout.clientRoot).toBe(join(runRoot, "client-a"));
+      const outsiderLayout = await resolvePreparedClientLayout(
+        join(runRoot, "client-c/user-data"),
+        join(runRoot, "client-c/vault"),
+      );
+      expect(outsiderLayout.clientName).toBe("client-c");
       const adapterPath = join(runRoot, "client-a/user-data/obsidian-1.12.7.asar");
       expect(
         assertPreparedClientAdapterPath(

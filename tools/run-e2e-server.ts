@@ -45,6 +45,7 @@ const credentials = JSON.parse(
   email: string;
   password: string;
   secondary?: { email: string; password: string; name: string };
+  outsider?: { email: string; password: string; name: string };
 };
 const binary = resolve(
   process.env.BLACKGLASS_SERVER_BINARY ??
@@ -75,6 +76,15 @@ if (!(await Bun.file(databasePath).exists())) {
       credentials.secondary.password,
     );
   }
+  if (credentials.outsider) {
+    provisionUser(
+      binary,
+      databasePath,
+      credentials.outsider.email,
+      credentials.outsider.name,
+      credentials.outsider.password,
+    );
+  }
 }
 
 const child = Bun.spawn([binary, "serve"], {
@@ -100,6 +110,7 @@ const child = Bun.spawn([binary, "serve"], {
     // drill. Keep its session valid for a full working day while remaining far
     // below the server's production maximum.
     SELFHOST_SESSION_TTL_SECONDS: String(24 * 60 * 60),
+    SELFHOST_SHARING_ENABLED: "true",
     SELFHOST_LOG_FORMAT: "pretty",
   },
 });

@@ -18,6 +18,7 @@ import {
   pathsEqual,
 } from "./path-safety";
 import { stableJson } from "./stable-json";
+import type { PreparedClientName } from "./e2e-run-lock";
 
 export interface ClientLaunchIdentity {
   schemaVersion: 4;
@@ -73,7 +74,7 @@ export async function resolvePreparedClientLayout(
 ): Promise<{
   run: Awaited<ReturnType<typeof readPreparedE2ERun>>;
   clientRoot: string;
-  clientName: "client-a" | "client-b";
+  clientName: PreparedClientName;
 }> {
   if (basename(profile) !== "user-data" || basename(vault) !== "vault") {
     throw new Error("Prepared E2E client paths must end in user-data and vault");
@@ -83,8 +84,8 @@ export async function resolvePreparedClientLayout(
     throw new Error("Prepared E2E profile and vault must belong to the same client");
   }
   const clientName = basename(clientRoot);
-  if (clientName !== "client-a" && clientName !== "client-b") {
-    throw new Error("Prepared E2E client must be client-a or client-b");
+  if (!["client-a", "client-b", "client-c"].includes(clientName)) {
+    throw new Error("Prepared E2E client must be client-a, client-b, or client-c");
   }
   const run = await readPreparedE2ERun(dirname(clientRoot));
   const expectedProfile = join(run.root, clientName, "user-data");
@@ -94,7 +95,7 @@ export async function resolvePreparedClientLayout(
   }
   await assertNoSymlinkSegments(run.root, profile, "Prepared E2E profile");
   await assertNoSymlinkSegments(run.root, vault, "Prepared E2E vault");
-  return { run, clientRoot, clientName };
+  return { run, clientRoot, clientName: clientName as PreparedClientName };
 }
 
 export function assertPreparedClientAdapterPath(

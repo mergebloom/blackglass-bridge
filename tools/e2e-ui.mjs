@@ -516,7 +516,12 @@ try {
     const credentialsPath = resolve(required(arguments_[0], "credentials path"));
     assertE2EEvidencePath(credentialsPath, "credentials");
     const credentials = JSON.parse(await readFile(credentialsPath, "utf8"));
-    const account = arguments_[1] === "secondary" ? credentials.secondary : credentials;
+    const account =
+      arguments_[1] === "secondary"
+        ? credentials.secondary
+        : arguments_[1] === "outsider"
+          ? credentials.outsider
+          : credentials;
     if (!account?.email || !account?.password) {
       throw new Error(`Credentials do not contain the requested ${arguments_[1] ?? "primary"} account`);
     }

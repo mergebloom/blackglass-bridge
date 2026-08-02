@@ -261,7 +261,7 @@ await writeFile(
   { flag: "wx", mode: 0o600 },
 );
 
-const clients = ["client-a", "client-b"] as const;
+const clients = ["client-a", "client-b", "client-c"] as const;
 for (const client of clients) {
   const userData = resolve(root, client, "user-data");
   const vault = resolve(root, client, "vault");
@@ -302,6 +302,11 @@ const environment = {
     password: `pw-${randomBytes(18).toString("base64url")}`,
     name: "E2E secondary user",
   },
+  outsider: {
+    email: "e2e-outsider@example.test",
+    password: `pw-${randomBytes(18).toString("base64url")}`,
+    name: "E2E unrelated user",
+  },
 };
 await writeFile(
   resolve(root, "credentials.json"),
@@ -323,6 +328,10 @@ console.log(
       clientB: {
         userData: resolve(root, "client-b/user-data"),
         vault: resolve(root, "client-b/vault"),
+      },
+      clientC: {
+        userData: resolve(root, "client-c/user-data"),
+        vault: resolve(root, "client-c/vault"),
       },
     },
     null,
