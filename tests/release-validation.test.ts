@@ -130,10 +130,10 @@ const packagingToolchain: MacOSPackagingToolchain = {
 
 const macOS = {
   schemaVersion: 8 as const,
-  appBundleName: "Blackglass Bridge.app" as const,
-  bundleIdentifier: "com.blackglass.bridge" as const,
+  appBundleName: "Blackglass.app" as const,
+  bundleIdentifier: "com.blackglass.app" as const,
   bundleName: "Obsidian" as const,
-  displayName: "Blackglass Bridge" as const,
+  displayName: "Blackglass" as const,
   version: "1.12.7",
   executableName: "Obsidian" as const,
   infoPlistSha256: digest("1"),
@@ -170,7 +170,7 @@ const macOS = {
     targets: [
       {
         role: "application" as const,
-        identifier: "com.blackglass.bridge",
+        identifier: "com.blackglass.app",
         runtimeVersion: "26.0.0",
         entitlementPolicy: "approved" as const,
       },
@@ -244,7 +244,7 @@ const macOS = {
   },
   codeInventory,
   rootMetadata,
-  profileDirectory: "Blackglass Bridge" as const,
+  profileDirectory: "Blackglass" as const,
   profileMode: 448 as const,
   profilePathCanonicalAtSetup: true as const,
   explicitUserDataDirHonored: true as const,
@@ -277,7 +277,7 @@ function manifest(): BridgeReleaseManifest {
     },
     patcher: {
       renderer: { formatVersion: 6, incisions: 6 },
-      wrapper: { formatVersion: 4, incisions: 3 },
+      wrapper: { formatVersion: 5, incisions: 3 },
       cli: { formatVersion: 1, incisions: 2 },
     },
     endpoints: {
@@ -305,9 +305,10 @@ function manifest(): BridgeReleaseManifest {
       mainAfterSha256: digest("5"),
     },
     wrapper: {
-      patchFormatVersion: 4,
+      patchFormatVersion: 5,
       incisionCount: 3,
-      profileDirectory: "Blackglass Bridge",
+      profileDirectory: "Blackglass",
+      applicationName: "Blackglass",
       profileMode: 448,
       profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,

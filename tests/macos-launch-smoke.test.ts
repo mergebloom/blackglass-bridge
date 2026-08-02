@@ -28,7 +28,7 @@ import { APPROVED_MACOS_ENTITLEMENTS } from "../tools/macos-code-signing";
 
 const digest = (character: string): string => character.repeat(64);
 const root = "/workspace/blackglass-bridge/.data/e2e/release";
-const appPath = "/workspace/blackglass-bridge/.data/build/Blackglass Bridge.app";
+const appPath = "/workspace/blackglass-bridge/.data/build/Blackglass.app";
 const controlOrigin = "https://blackglass.example.com";
 const chromiumHostResolverRules = "MAP blackglass.example.com 127.0.0.1:8443";
 const tlsSpkiSha256Base64 = `${"A".repeat(43)}=`;
@@ -36,10 +36,10 @@ const launchHomePath = "/private/tmp/blackglass-launch-ABC123/h";
 const nativeHomePath = "/Users/example";
 const artifact = {
   schemaVersion: 8 as const,
-  appBundleName: "Blackglass Bridge.app" as const,
-  bundleIdentifier: "com.blackglass.bridge" as const,
+  appBundleName: "Blackglass.app" as const,
+  bundleIdentifier: "com.blackglass.app" as const,
   bundleName: "Obsidian" as const,
-  displayName: "Blackglass Bridge" as const,
+  displayName: "Blackglass" as const,
   version: "1.12.7",
   executableName: "Obsidian" as const,
   infoPlistSha256: digest("1"),
@@ -83,7 +83,7 @@ const artifact = {
     targets: [
       {
         role: "application" as const,
-        identifier: "com.blackglass.bridge",
+        identifier: "com.blackglass.app",
         runtimeVersion: "26.0.0",
         entitlementPolicy: "approved" as const,
       },
@@ -182,7 +182,7 @@ const artifact = {
       sha256: digest("b"),
     },
   },
-  profileDirectory: "Blackglass Bridge" as const,
+  profileDirectory: "Blackglass" as const,
   profileMode: 448 as const,
   profilePathCanonicalAtSetup: true as const,
   explicitUserDataDirHonored: true as const,
@@ -367,15 +367,15 @@ describe("packaged macOS LaunchServices smoke", () => {
     const installedBridge = {
       pid: 11,
       bundleIdentifier: BLACKGLASS_BUNDLE_IDENTIFIER,
-      bundlePath: "/Applications/Blackglass Bridge.app",
-      executablePath: "/Applications/Blackglass Bridge.app/Contents/MacOS/Obsidian",
+      bundlePath: "/Applications/Blackglass.app",
+      executablePath: "/Applications/Blackglass.app/Contents/MacOS/Obsidian",
     };
     expect(() =>
       assertMacOSLaunchPreflight(
         { screenLocked: false, applications: [officialObsidian, installedBridge] },
         appPath,
       )
-    ).toThrow("another Blackglass Bridge app");
+    ).toThrow("another Blackglass app");
 
     expect(() =>
       assertMacOSLaunchPreflight(
@@ -385,7 +385,7 @@ describe("packaged macOS LaunchServices smoke", () => {
         },
         appPath,
       )
-    ).toThrow("exact generated Blackglass Bridge app");
+    ).toThrow("exact generated Blackglass app");
   });
 
   test("counts starter control POSTs without treating CORS preflights as duplicates", () => {
@@ -575,7 +575,7 @@ describe("packaged macOS LaunchServices smoke", () => {
       (value: any) => (value.launchPreflight.screenLocked = true),
       (value: any) => (value.launchPreflight.matchingApplications = 1),
       (value: any) => value.launchPreflight.requiredAbsentBundleIdentifiers.pop(),
-      (value: any) => (value.profilePath = "/Users/example/Library/Application Support/Blackglass Bridge"),
+      (value: any) => (value.profilePath = "/Users/example/Library/Application Support/Blackglass"),
       (value: any) => (value.explicitUserDataDirUsed = true),
       (value: any) => (value.profileMode = 0o755),
       (value: any) => (value.profileRealDirectoryObserved = false),

@@ -83,7 +83,7 @@ const asar = await canonicalExistingPath(asarArgument, "Compatibility ASAR", "fi
 const profile = await canonicalExistingPath(profileArgument, "Client profile", "directory");
 const vault = await canonicalExistingPath(vaultArgument, "Client vault", "directory");
 const appBundle = await canonicalExistingPath(
-  flags.values.get("--app") ?? "/Applications/Blackglass Bridge.app",
+  flags.values.get("--app") ?? "/Applications/Blackglass.app",
   "macOS app bundle",
   "directory",
 );
@@ -108,8 +108,8 @@ assertNonOverlappingPaths([
     path: resolve(homedir(), "Library/Application Support/obsidian"),
   },
   {
-    label: "Blackglass Bridge normal profile",
-    path: resolve(homedir(), "Library/Application Support/Blackglass Bridge"),
+    label: "Blackglass normal profile",
+    path: resolve(homedir(), "Library/Application Support/Blackglass"),
   },
 ]);
 
@@ -127,15 +127,15 @@ const adapterSha256 = await fileSha256(asar);
 const infoPlist = join(appBundle, "Contents/Info.plist");
 const bundleIdentifier = plistString(infoPlist, "CFBundleIdentifier");
 if (
-  bundleIdentifier !== "com.blackglass.bridge" &&
+  bundleIdentifier !== "com.blackglass.app" &&
   !flags.booleans.has("--allow-upstream-wrapper")
 ) {
   throw new Error(
     `Refusing non-Blackglass app ${bundleIdentifier}; pass --allow-upstream-wrapper only for isolated compatibility testing`,
   );
 }
-if (e2eRequested && bundleIdentifier !== "com.blackglass.bridge") {
-  throw new Error("Prepared E2E launches require the Blackglass Bridge bundle identity");
+if (e2eRequested && bundleIdentifier !== "com.blackglass.app") {
+  throw new Error("Prepared E2E launches require the Blackglass bundle identity");
 }
 const executableName = plistString(infoPlist, "CFBundleExecutable");
 const executable = await canonicalExistingPath(
@@ -145,12 +145,12 @@ const executable = await canonicalExistingPath(
 );
 const executableSha256 = await fileSha256(executable);
 const appArtifact =
-  bundleIdentifier === "com.blackglass.bridge"
+  bundleIdentifier === "com.blackglass.app"
     ? await inspectMacOSArtifact(appBundle)
     : undefined;
 if (appArtifact && appArtifact.embeddedAsarSha256 !== adapterSha256) {
   throw new Error(
-    "Blackglass Bridge always loads its embedded renderer; the supplied ASAR must match it",
+    "Blackglass always loads its embedded renderer; the supplied ASAR must match it",
   );
 }
 assertProfileNotInUse(appBundle, profile);
@@ -557,7 +557,7 @@ async function waitForCliSocket(
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
-      throw new Error("Blackglass Bridge exited before creating its CLI socket");
+      throw new Error("Blackglass exited before creating its CLI socket");
     }
     const socketStat = await lstat(socketPath).catch(() => undefined);
     if (socketStat?.isSocket()) {
@@ -740,7 +740,7 @@ async function waitForDebugBinding(
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
-      throw new Error(`Blackglass Bridge exited before DevTools became ready: ${child.exitCode}`);
+      throw new Error(`Blackglass exited before DevTools became ready: ${child.exitCode}`);
     }
     try {
       const targets = await fetch(`http://127.0.0.1:${port}/json/list`, {
@@ -917,7 +917,7 @@ function plistString(infoPlist: string, key: string): string {
 function usage(): never {
   console.error(
     "Usage: bun run tools/launch-macos.ts <patched.asar> <existing-profile> <existing-vault> " +
-      "[--app <Blackglass Bridge.app>] [--replace-adapter] [--prepare-only] " +
+      "[--app <Blackglass.app>] [--replace-adapter] [--prepare-only] " +
       "[--allow-upstream-wrapper] [--debug-port <port> --e2e-tls-metadata <metadata.json> " +
       "--identity-out <identity.json>]",
   );

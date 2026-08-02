@@ -1,6 +1,6 @@
-# Blackglass Bridge
+# Blackglass
 
-Blackglass Bridge is desktop compatibility tooling for using the built-in
+Blackglass is desktop compatibility tooling for using the built-in
 Obsidian Sync experience with a self-hosted Blackglass Server.
 
 It analyzes an authorized desktop release, changes the control and data
@@ -46,7 +46,7 @@ findings are accepted only when backed by deterministic tooling and tests.
    Sync-operation, and message-shape inventories.
 3. Generate a deterministic compatibility ASAR for the chosen server URLs.
 4. Patch the copied wrapper to isolate state, disable updates, and pin the embedded renderer.
-5. Package and sign two independent `Blackglass Bridge.app` outputs, then require
+5. Package and sign two independent `Blackglass.app` outputs, then require
    distinct invocation receipts plus matching manifests and artifact identities.
 6. Bind that reproducibility proof while qualifying the exact client and server
    artifact pair with multipart Sync and recovery E2E.
@@ -88,7 +88,7 @@ bun run patch:client -- \
 bun run package:macos -- \
   '/Volumes/Obsidian/Obsidian.app' \
   /tmp/blackglass-bridge.asar \
-  '/path/to/Blackglass Bridge.app' \
+  '/path/to/Blackglass.app' \
   --control-origin http://127.0.0.1:3000 \
   --data-host 127.0.0.1:3003 \
   --official-dmg /path/to/Obsidian.dmg \
@@ -133,10 +133,10 @@ Blackglass redirects the built-in account and Sync traffic; it is not a general
 network sandbox for Obsidian. Features such as Help, community plugins, embeds,
 and other upstream integrations may still contact their own external services.
 
-The copied app uses bundle identifier `com.blackglass.bridge`, does not register
+The copied app uses bundle identifier `com.blackglass.app`, does not register
 Obsidian's URL scheme or iCloud container, and uses a dedicated profile so it
 can coexist with an ordinary Obsidian installation. Its outer app filename and
-display name are Blackglass Bridge, while the upstream `Obsidian` bundle name,
+display name are Blackglass, while the upstream `Obsidian` bundle name,
 main executable, and Electron helper topology remain unchanged for runtime
 compatibility.
 

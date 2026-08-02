@@ -267,10 +267,10 @@ export function assertBridgeReleaseManifest(
     throw new Error("Bridge release manifest artifact bindings are inconsistent");
   }
   if (
-    value.macOS.bundleIdentifier !== "com.blackglass.bridge" ||
-    value.macOS.appBundleName !== "Blackglass Bridge.app" ||
+    value.macOS.bundleIdentifier !== "com.blackglass.app" ||
+    value.macOS.appBundleName !== "Blackglass.app" ||
     value.macOS.bundleName !== "Obsidian" ||
-    value.macOS.displayName !== "Blackglass Bridge" ||
+    value.macOS.displayName !== "Blackglass" ||
     value.macOS.executableName !== "Obsidian" ||
     value.macOS.cliExecutableName !== "obsidian-cli" ||
     value.macOS.cliSocketName !== BRIDGE_CLI_SOCKET_NAME ||
@@ -279,7 +279,7 @@ export function assertBridgeReleaseManifest(
     value.macOS.rendererCliRuntimeRootValidated !== true ||
     !isSha256(value.macOS.cliExecutableSha256) ||
     value.macOS.version !== value.rendererVersion ||
-    value.macOS.profileDirectory !== "Blackglass Bridge" ||
+    value.macOS.profileDirectory !== "Blackglass" ||
     value.macOS.profileMode !== 448 ||
     value.macOS.profilePathCanonicalAtSetup !== true ||
     value.macOS.explicitUserDataDirHonored !== true ||
@@ -288,7 +288,8 @@ export function assertBridgeReleaseManifest(
     value.macOS.nativeHomeFallbackPreserved !== true ||
     value.macOS.upstreamUpdatesDisabled !== true ||
     value.macOS.embeddedRendererOnly !== true ||
-    value.wrapper.profileDirectory !== "Blackglass Bridge" ||
+    value.wrapper.profileDirectory !== "Blackglass" ||
+    value.wrapper.applicationName !== "Blackglass" ||
     value.wrapper.profileMode !== 448 ||
     value.wrapper.profilePathCanonicalAtSetup !== true ||
     value.wrapper.explicitUserDataDirHonored !== true ||

@@ -147,7 +147,7 @@ if (
 }
 
 const realProfiles = [
-  join(homedir(), "Library/Application Support/Blackglass Bridge"),
+  join(homedir(), "Library/Application Support/Blackglass"),
   join(homedir(), "Library/Application Support/obsidian"),
 ];
 const realProfileFingerprintsBefore = await Promise.all(
@@ -231,7 +231,7 @@ try {
   launchHomeSameDeviceAsArchive = true;
   launchProfilePath = join(
     launchHomePath,
-    "Library/Application Support/Blackglass Bridge",
+    "Library/Application Support/Blackglass",
   );
   cliSocketAddress = join(launchHomePath, currentClient.cliSocketName);
   if (Buffer.byteLength(cliSocketAddress, "utf8") > 103) {
@@ -1581,7 +1581,7 @@ async function newDiagnosticReports(
     }
     if (
       body.includes(appPath) ||
-      body.includes("com.blackglass.bridge") ||
+      body.includes("com.blackglass.app") ||
       name.includes("blackglass bridge") ||
       name.includes("blackglass_bridge")
     ) {

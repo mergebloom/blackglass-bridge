@@ -6,7 +6,7 @@ import {
 } from "../../../tools/asar";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "./runtime-home";
 
-export const WRAPPER_PATCH_FORMAT_VERSION = 4;
+export const WRAPPER_PATCH_FORMAT_VERSION = 5;
 export const WRAPPER_INCISION_COUNT = 3;
 export const WRAPPER_PROFILE_MODE = 0o700;
 
@@ -22,9 +22,12 @@ const PROFILE_PATH_END = `	fn.end = function () {
 const PROFILE_PATH_SPAN_SHA256 =
   "e3136fcfce4c5cc87edafb0d211ccc729010be525e77b63684a0a05a9023c369";
 
-const PROFILE_PATH_SAFETY_PRELUDE = `let B=process.env.${BLACKGLASS_HOME_ENVIRONMENT},S=B&&fs.statSync(B);
+const APPLICATION_NAME = "Blackglass" as const;
+const APPLICATION_NAME_MARKER = `app.setName('${APPLICATION_NAME}');`;
+const PROFILE_PATH_SAFETY_PRELUDE = `${APPLICATION_NAME_MARKER}
+let B=process.env.${BLACKGLASS_HOME_ENVIRONMENT},S=B&&fs.statSync(B);
 if(B&&(B[0]!=='/'||fs.realpathSync(B)!==B||!S.isDirectory()||(S.mode&511)!==448||S.uid!==process.getuid()))throw Error('Unsafe home');
-let H=B||process.env.HOME,dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')||H?.[0]==='/'&&H+'/Library/Application Support/Blackglass Bridge');`;
+let H=B||process.env.HOME,dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')||H?.[0]==='/'&&H+'/Library/Application Support/Blackglass');`;
 const PROFILE_PATH_REPLACEMENT = `${PROFILE_PATH_SAFETY_PRELUDE}
 fs.mkdirSync(dataPath,{recursive:true,mode:448});
 if(fs.realpathSync(dataPath)!==dataPath)throw Error('Unsafe path');
@@ -67,7 +70,8 @@ const RENDERER_IS_DEV_BINDING =
 export interface WrapperPatchReport {
   patchFormatVersion: typeof WRAPPER_PATCH_FORMAT_VERSION;
   incisionCount: typeof WRAPPER_INCISION_COUNT;
-  profileDirectory: "Blackglass Bridge";
+  profileDirectory: "Blackglass";
+  applicationName: typeof APPLICATION_NAME;
   profileMode: typeof WRAPPER_PROFILE_MODE;
   profilePathCanonicalAtSetup: true;
   explicitUserDataDirHonored: true;
@@ -97,7 +101,8 @@ export function patchMacOSWrapperAsar(
     report: {
       patchFormatVersion: WRAPPER_PATCH_FORMAT_VERSION,
       incisionCount: WRAPPER_INCISION_COUNT,
-      profileDirectory: "Blackglass Bridge",
+      profileDirectory: "Blackglass",
+      applicationName: APPLICATION_NAME,
       profileMode: WRAPPER_PROFILE_MODE,
       profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
@@ -201,7 +206,8 @@ export function patchMacOSWrapperMain(main: Buffer): Buffer {
 }
 
 export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
-  profileDirectory: "Blackglass Bridge";
+  profileDirectory: "Blackglass";
+  applicationName: typeof APPLICATION_NAME;
   profileMode: typeof WRAPPER_PROFILE_MODE;
   profilePathCanonicalAtSetup: true;
   explicitUserDataDirHonored: true;
@@ -218,6 +224,7 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
     throw new Error(`Patched wrapper main.js is not valid JavaScript: ${String(error)}`);
   }
   requireExactlyOnce(main, PROFILE_MARKER, "patched wrapper profile marker");
+  requireExactlyOnce(main, APPLICATION_NAME_MARKER, "patched application name marker");
   requireExactlyOnce(main, SESSION_MARKER, "patched wrapper session marker");
   requireExactlyOnce(
     main,
@@ -246,7 +253,8 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
     throw new Error("Patched wrapper still contains an upstream safety anchor");
   }
   return {
-    profileDirectory: "Blackglass Bridge",
+    profileDirectory: "Blackglass",
+    applicationName: APPLICATION_NAME,
     profileMode: WRAPPER_PROFILE_MODE,
     profilePathCanonicalAtSetup: true,
     explicitUserDataDirHonored: true,

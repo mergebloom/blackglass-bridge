@@ -130,8 +130,8 @@ const receiptPath = await canonicalOutputPath(
 if (!sourceApp.endsWith(".app")) {
   throw new Error("Source must be an .app bundle");
 }
-if (basename(outputApp) !== "Blackglass Bridge.app") {
-  throw new Error('Output app basename must be exactly "Blackglass Bridge.app"');
+if (basename(outputApp) !== "Blackglass.app") {
+  throw new Error('Output app basename must be exactly "Blackglass.app"');
 }
 if (!manifestPath.endsWith(".json")) {
   throw new Error("Release manifest output must be a .json file");
@@ -372,7 +372,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     "-replace",
     "CFBundleDisplayName",
     "-string",
-    "Blackglass Bridge",
+    "Blackglass",
     infoPlist,
   ]);
   run([
@@ -380,7 +380,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     "-replace",
     "CFBundleIdentifier",
     "-string",
-    "com.blackglass.bridge",
+    "com.blackglass.app",
     infoPlist,
   ]);
   const helperBundleIdentifiers = await validatePreservedElectronHelpers(
@@ -419,13 +419,13 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       "-replace",
       key,
       "-string",
-      description.replaceAll("Obsidian", "Blackglass Bridge"),
+      description.replaceAll("Obsidian", "Blackglass"),
       infoPlist,
     ]);
   }
-  assertPlistString(infoPlist, "CFBundleDisplayName", "Blackglass Bridge");
+  assertPlistString(infoPlist, "CFBundleDisplayName", "Blackglass");
   assertPlistString(infoPlist, "CFBundleName", sourceBundleName);
-  assertPlistString(infoPlist, "CFBundleIdentifier", "com.blackglass.bridge");
+  assertPlistString(infoPlist, "CFBundleIdentifier", "com.blackglass.app");
   assertPlistString(infoPlist, "CFBundleExecutable", sourceExecutableName);
   if (hasPlistKey(infoPlist, "CFBundleURLTypes")) {
     throw new Error(
@@ -542,6 +542,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
           generatedWrapper.report.upstreamHeaderSha256,
         wrapperPatchedHeaderSha256: generatedWrapper.report.patchedHeaderSha256,
         profileDirectory: generatedWrapper.report.profileDirectory,
+        applicationName: generatedWrapper.report.applicationName,
         profileMode: generatedWrapper.report.profileMode,
         profilePathCanonicalAtSetup:
           generatedWrapper.report.profilePathCanonicalAtSetup,

@@ -44,7 +44,7 @@ const identity = {
   debugTargetUrl: "file:///app/index.html",
   executablePath: "/app/Obsidian",
   executableSha256: "d".repeat(64),
-  appBundlePath: "/app/Blackglass Bridge.app",
+  appBundlePath: "/app/Blackglass.app",
   appArtifactSha256: "e".repeat(64),
   appArtifact: {},
   adapterPath: "/run/client-a/user-data/obsidian-1.12.7.asar",

@@ -1,8 +1,8 @@
-# Blackglass Bridge architecture
+# Blackglass architecture
 
 ## Responsibility
 
-Blackglass Bridge owns the desktop compatibility boundary:
+Blackglass owns the desktop compatibility boundary:
 
 1. inspect an authorized upstream renderer against a reviewed versioned baseline;
 2. inventory every packed JavaScript file, every JavaScript file in the two
@@ -79,7 +79,7 @@ it; the tooling tree at the tag must remain byte-identical.
 - Plaintext loopback endpoints are permitted only for local testing.
 - Non-loopback deployments require authenticated TLS endpoints.
 - An explicit `--user-data-dir` is honored for disposable E2E clients; otherwise
-  the wrapper selects the separate Blackglass Bridge profile under
+  the wrapper selects the separate Blackglass profile under
   `BLACKGLASS_HOME`, with native `HOME` as the ordinary-launch fallback. The GUI
   `HOME` is never overridden, so Electron continues to use the user's login
   Keychain. The wrapper rejects a non-canonical path at setup and enforces

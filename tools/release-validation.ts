@@ -324,10 +324,10 @@ export function assertReleaseValidationRecord(
   assertMacOSRootMetadata(macOS.rootMetadata);
   if (
     macOS.schemaVersion !== 8 ||
-    macOS.appBundleName !== "Blackglass Bridge.app" ||
-    macOS.bundleIdentifier !== "com.blackglass.bridge" ||
+    macOS.appBundleName !== "Blackglass.app" ||
+    macOS.bundleIdentifier !== "com.blackglass.app" ||
     macOS.bundleName !== "Obsidian" ||
-    macOS.displayName !== "Blackglass Bridge" ||
+    macOS.displayName !== "Blackglass" ||
     macOS.executableName !== "Obsidian" ||
     macOS.cliExecutableName !== "obsidian-cli" ||
     macOS.cliSocketName !== BRIDGE_CLI_SOCKET_NAME ||
@@ -335,7 +335,7 @@ export function assertReleaseValidationRecord(
     macOS.rendererRuntimeHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
     macOS.rendererCliRuntimeRootValidated !== true ||
     macOS.version !== value.rendererVersion ||
-    macOS.profileDirectory !== "Blackglass Bridge" ||
+    macOS.profileDirectory !== "Blackglass" ||
     macOS.profileMode !== 448 ||
     macOS.profilePathCanonicalAtSetup !== true ||
     macOS.explicitUserDataDirHonored !== true ||

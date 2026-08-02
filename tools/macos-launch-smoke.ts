@@ -11,7 +11,7 @@ export const FINDER_LAUNCH_DEBUG_PORT = 9_320;
 export const FINDER_LAUNCH_DEBUG_ADDRESS = "127.0.0.1" as const;
 export const FINDER_LAUNCH_LISTENER_TIMEOUT_MS = 30_000;
 export const FINDER_LAUNCH_STARTER_TIMEOUT_MS = 90_000;
-export const BLACKGLASS_BUNDLE_IDENTIFIER = "com.blackglass.bridge" as const;
+export const BLACKGLASS_BUNDLE_IDENTIFIER = "com.blackglass.app" as const;
 export const OBSIDIAN_BUNDLE_IDENTIFIER = "md.obsidian" as const;
 export const MACOS_LAUNCH_REQUIRED_ABSENT_BUNDLE_IDENTIFIERS = [
   BLACKGLASS_BUNDLE_IDENTIFIER,
@@ -167,7 +167,7 @@ export function finderLaunchSmokeLayout(root: string): {
   return {
     smokeRoot,
     homePath,
-    profilePath: join(homePath, "Library/Application Support/Blackglass Bridge"),
+    profilePath: join(homePath, "Library/Application Support/Blackglass"),
     vaultPath: join(smokeRoot, "vault"),
     stdoutPath: join(smokeRoot, "stdout.log"),
     stderrPath: join(smokeRoot, "stderr.log"),
@@ -334,10 +334,10 @@ export function assertMacOSLaunchPreflight(
       .join("; ");
     throw new Error(
       `Refusing LaunchServices smoke while ${[
-        ...(exactRunning ? ["the exact generated Blackglass Bridge app"] : []),
-        ...(otherBridgeRunning ? ["another Blackglass Bridge app"] : []),
+        ...(exactRunning ? ["the exact generated Blackglass app"] : []),
+        ...(otherBridgeRunning ? ["another Blackglass app"] : []),
         ...(officialRunning ? ["Obsidian"] : []),
-      ].join(" and ")} is running; quit every Obsidian and Blackglass Bridge app: ` +
+      ].join(" and ")} is running; quit every Obsidian and Blackglass app: ` +
         summary,
     );
   }
