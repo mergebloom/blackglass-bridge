@@ -145,7 +145,7 @@ describe("committed release records", () => {
     expect(validation.artifacts.server).toMatchObject({
       schemaVersion: 2,
       name: "blackglass-server",
-      version: "0.2.2",
+      version: "0.3.0",
       sourceRevision: expect.stringMatching(/^[a-f0-9]{40}$/u),
       binaryName: "blackglass-server",
       architecture: "arm64",
