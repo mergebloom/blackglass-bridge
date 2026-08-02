@@ -59,8 +59,12 @@ checks, exact server builds, two independent client packages,
 reproducibility verification, E2E preparation, and TLS setup. It refuses a
 changed checkout or partial output set. Add `--require-gui` only from the
 unlocked desktop session; that final preflight checks conflicting processes
-and ports before the interactive qualification below. Generated state remains
-under ignored `.data` paths and contains no credentials.
+and ports before the interactive qualification below. To retry a failed GUI
+qualification, pass a fresh `--run` directory: candidate checks, builds, and
+packages are reused while only that run's E2E and TLS outputs are prepared.
+The preflight finds generated `Blackglass.app` processes even when
+LaunchServices omits them. Generated state remains under ignored `.data` paths
+and contains no credentials.
 
 Build the app twice from the same inputs into separate directories, retaining
 the receipt emitted by each package invocation, then verify the two outputs and

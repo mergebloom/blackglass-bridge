@@ -33,6 +33,9 @@ describe("immutable release runner", () => {
     expect(source).toContain("tools/prepare-e2e-tls.ts");
     expect(source).toContain('join(runRoot, "run-manifest.json")');
     expect(source).not.toContain('join(runRoot, "run.json")');
+    expect(source).toContain("runScopedStageKey(");
+    expect(source).toContain("entry.key === stageResumeKey(stage)");
+    expect(source).toContain('relative(resolve(root, ".data/e2e"), runRoot)');
   });
 
   test("treats an old native binary as rebuildable cache state", async () => {
@@ -44,5 +47,14 @@ describe("immutable release runner", () => {
     expect(source).not.toContain(
       "Existing native server binary does not match the release candidate",
     );
+  });
+
+  test("finds generated apps even when LaunchServices omits them", async () => {
+    const source = await readFile(resolve(root, "tools/macos-launch-preflight.m"), "utf8");
+    const wrapper = await readFile(resolve(root, "tools/macos-preflight.ts"), "utf8");
+    expect(source).toContain("proc_listallpids");
+    expect(source).toContain("proc_pidpath");
+    expect(source).toContain("/Blackglass.app/Contents/MacOS/");
+    expect(wrapper).toContain('"-lproc"');
   });
 });

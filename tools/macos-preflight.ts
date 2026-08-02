@@ -37,6 +37,7 @@ export async function inspectMacOSLaunchPreflight(): Promise<MacOSLaunchPrefligh
       "AppKit",
       "-framework",
       "CoreGraphics",
+      "-lproc",
       source,
       "-o",
       helperPath,

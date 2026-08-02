@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, unlinkSync } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseStrictFlags } from "./cli-flags";
 import {
   assertPathWithin,
@@ -15,12 +15,12 @@ import {
   releaseCandidateSha256,
 } from "./release-candidate";
 
-const PIPELINE_STATE_SCHEMA_VERSION = 1;
+const PIPELINE_STATE_SCHEMA_VERSION = 2;
 
 interface PipelineState {
   schemaVersion: typeof PIPELINE_STATE_SCHEMA_VERSION;
   candidateSha256: string;
-  completed: Array<{ stage: string; completedAt: string }>;
+  completed: Array<{ stage: string; key: string; completedAt: string }>;
 }
 
 interface Stage {
@@ -30,6 +30,7 @@ interface Stage {
   outputs?: string[];
   environment?: Record<string, string>;
   revalidateOnResume?: boolean;
+  resumeKey?: string;
 }
 
 const [candidateArgument, ...flagArguments] = Bun.argv.slice(2);
@@ -236,6 +237,11 @@ if (parsed.booleans.has("--prepare-client")) {
     },
     {
       name: `client-${rendererVersion}-e2e-prepare`,
+      resumeKey: runScopedStageKey(
+        `client-${rendererVersion}-e2e-prepare`,
+        clientRoot,
+        runRoot,
+      ),
       command: [
         Bun.which("bun") ?? "bun", "run", "tools/prepare-e2e.ts", runRoot, patchedAsar,
         "--app", firstApp,
@@ -257,6 +263,11 @@ if (parsed.booleans.has("--prepare-client")) {
     },
     {
       name: `client-${rendererVersion}-e2e-tls`,
+      resumeKey: runScopedStageKey(
+        `client-${rendererVersion}-e2e-tls`,
+        clientRoot,
+        runRoot,
+      ),
       command: [Bun.which("bun") ?? "bun", "run", "tools/prepare-e2e-tls.ts", runRoot],
       cwd: clientRoot,
       outputs: [
@@ -293,7 +304,7 @@ if (parsed.booleans.has("--prepare-client")) {
 
 for (const stage of stages) {
   await assertReleaseCandidateMatchesCheckouts({ candidate, clientRoot, serverRoot });
-  if (isComplete(state, stage.name) && !stage.revalidateOnResume) {
+  if (isComplete(state, stage) && !stage.revalidateOnResume) {
     await assertOutputsComplete(stage);
     console.log(`[resume] ${stage.name}`);
     continue;
@@ -308,8 +319,12 @@ for (const stage of stages) {
     await assertNoPartialOutputs(stage);
     await run(stage);
   }
-  if (!isComplete(state, stage.name)) {
-    state.completed.push({ stage: stage.name, completedAt: new Date().toISOString() });
+  if (!isComplete(state, stage)) {
+    state.completed.push({
+      stage: stage.name,
+      key: stageResumeKey(stage),
+      completedAt: new Date().toISOString(),
+    });
   }
   await writeState(statePath, state);
 }
@@ -374,6 +389,7 @@ async function readState(path: string, expectedCandidate: string): Promise<Pipel
     !Array.isArray(value.completed) ||
     value.completed.some((entry) =>
       typeof entry?.stage !== "string" ||
+      typeof entry.key !== "string" ||
       typeof entry.completedAt !== "string" ||
       !Number.isFinite(Date.parse(entry.completedAt))
     )
@@ -394,8 +410,18 @@ async function writeState(path: string, state: PipelineState): Promise<void> {
   }
 }
 
-function isComplete(state: PipelineState, stage: string): boolean {
-  return state.completed.some((entry) => entry.stage === stage);
+function isComplete(state: PipelineState, stage: Stage): boolean {
+  return state.completed.some((entry) => entry.key === stageResumeKey(stage));
+}
+
+function stageResumeKey(stage: Stage): string {
+  return stage.resumeKey ?? stage.name;
+}
+
+function runScopedStageKey(stage: string, root: string, runRoot: string): string {
+  const runPath = relative(resolve(root, ".data/e2e"), runRoot);
+  const digest = createHash("sha256").update(runPath).digest("hex");
+  return `${stage}:run-${digest}`;
 }
 
 async function outputsPresent(paths: string[]): Promise<"missing" | "partial" | "complete"> {

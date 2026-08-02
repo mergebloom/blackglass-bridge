@@ -2,6 +2,8 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <libproc.h>
 #include <sysexits.h>
 #include <unistd.h>
 
@@ -56,6 +58,7 @@ int main(int argc, const char *argv[]) {
     }
 
     NSMutableArray<NSDictionary *> *applications = [NSMutableArray array];
+    NSMutableSet<NSNumber *> *applicationPIDs = [NSMutableSet set];
     for (NSRunningApplication *application in
          NSWorkspace.sharedWorkspace.runningApplications) {
       if (application.isTerminated) continue;
@@ -70,7 +73,47 @@ int main(int argc, const char *argv[]) {
         @"bundlePath" : CanonicalPath(application.bundleURL),
         @"executablePath" : CanonicalPath(application.executableURL),
       }];
+      [applicationPIDs addObject:@(application.processIdentifier)];
     }
+
+    // LaunchServices can omit generated copies that were started with an
+    // isolated profile. Inspect kernel-reported executable paths as a
+    // fail-closed fallback so any running generated Blackglass.app is found.
+    int processCount = proc_listallpids(NULL, 0);
+    if (processCount <= 0) {
+      fputs("Unable to enumerate running macOS processes\n", stderr);
+      return EX_UNAVAILABLE;
+    }
+    pid_t *processes = calloc((size_t)processCount, sizeof(pid_t));
+    if (processes == NULL) return EX_OSERR;
+    int populatedCount = proc_listallpids(processes,
+                                          processCount * (int)sizeof(pid_t));
+    if (populatedCount <= 0) {
+      free(processes);
+      fputs("Unable to read running macOS processes\n", stderr);
+      return EX_UNAVAILABLE;
+    }
+    NSString *generatedMarker = @"/Blackglass.app/Contents/MacOS/";
+    for (int index = 0; index < populatedCount; index++) {
+      pid_t pid = processes[index];
+      if (pid <= 0 || [applicationPIDs containsObject:@(pid)]) continue;
+      char pathBuffer[PROC_PIDPATHINFO_MAXSIZE] = {0};
+      if (proc_pidpath(pid, pathBuffer, sizeof(pathBuffer)) <= 0) continue;
+      NSString *executablePath = [NSString stringWithUTF8String:pathBuffer];
+      NSRange markerRange = [executablePath rangeOfString:generatedMarker];
+      if (markerRange.location == NSNotFound) continue;
+      NSString *bundlePath = [[executablePath
+          substringToIndex:markerRange.location]
+          stringByAppendingString:@"/Blackglass.app"];
+      [applications addObject:@{
+        @"pid" : @(pid),
+        @"bundleIdentifier" : blackglassBundleIdentifier,
+        @"bundlePath" : bundlePath,
+        @"executablePath" : executablePath,
+      }];
+      [applicationPIDs addObject:@(pid)];
+    }
+    free(processes);
     [applications sortUsingDescriptors:@[
       [NSSortDescriptor sortDescriptorWithKey:@"bundleIdentifier" ascending:YES],
       [NSSortDescriptor sortDescriptorWithKey:@"bundlePath" ascending:YES],
