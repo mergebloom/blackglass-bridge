@@ -354,6 +354,18 @@ try {
     const index = Number(arguments_[2] ?? "0");
     await page.locator(selector).nth(index).fill(value);
     console.log(JSON.stringify({ filled: selector, index, url: page.url() }));
+  } else if (action === "select-option") {
+    const selector = required(arguments_[0], "selector");
+    const value = required(arguments_[1], "option value");
+    const index = Number(arguments_[2] ?? "0");
+    await page.locator(selector).nth(index).selectOption(value);
+    console.log(JSON.stringify({ selected: selector, value, index, url: page.url() }));
+  } else if (action === "select-option-label") {
+    const selector = required(arguments_[0], "selector");
+    const label = required(arguments_[1], "option label");
+    const index = Number(arguments_[2] ?? "0");
+    await page.locator(selector).nth(index).selectOption({ label });
+    console.log(JSON.stringify({ selected: selector, label, index, url: page.url() }));
   } else if (action === "press") {
     const key = required(arguments_[0], "key");
     await page.keyboard.press(key);
