@@ -329,6 +329,29 @@ try {
           .map((value) => value.trim().slice(0, 1000));
       }))].slice(0, 1000),
     );
+    const syncState = await boundPage.evaluate(() => {
+      const plugin = globalThis.app?.internalPlugins?.getPluginById?.("sync");
+      const instance = plugin?.instance;
+      const server = instance?.server;
+      return {
+        pluginPresent: Boolean(plugin),
+        instancePresent: Boolean(instance),
+        ready: typeof instance?.ready === "boolean" ? instance.ready : null,
+        syncStatus:
+          typeof instance?.syncStatus === "string"
+            ? instance.syncStatus.slice(0, 200)
+            : null,
+        serverPresent: Boolean(server),
+        vaultIdPresent:
+          typeof instance?.vaultId === "string" && instance.vaultId.length > 0,
+        paused:
+          typeof instance?.paused === "boolean"
+            ? instance.paused
+            : typeof instance?.isPaused === "boolean"
+              ? instance.isPaused
+              : null,
+      };
+    });
     const snapshot = {
       schemaVersion: E2E_UI_EVIDENCE_SCHEMA_VERSION,
       observedAt: new Date().toISOString(),
@@ -355,6 +378,7 @@ try {
       bodyText: (await page.locator("body").innerText()).slice(0, 30_000),
       accessibleText,
       interactive,
+      syncState,
       screenshotPath,
       screenshotSha256: screenshotBytes
         ? createHash("sha256").update(screenshotBytes).digest("hex")

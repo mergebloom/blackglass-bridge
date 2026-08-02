@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_E2E_SCENARIO,
   E2E_SCENARIO_IDS,
+  e2eScenarioCheckpointDefinition,
   e2eScenarioDefinition,
   parseE2EScenarioId,
   preparedE2EScenarioId,
@@ -36,5 +37,45 @@ describe("E2E scenario identity", () => {
         "a".repeat(40),
       ),
     ).toBe(`phase-4-custom-e2ee-obsidian-1.13.4-${"a".repeat(40)}.json`);
+  });
+
+  test("gives every phase checkpoint an executable client and UI contract", () => {
+    for (const scenarioId of E2E_SCENARIO_IDS.filter(
+      (value) => value !== "E2E-RELEASE-SYNC-RECOVERY",
+    )) {
+      const scenario = e2eScenarioDefinition(scenarioId);
+      for (const checkpoint of scenario.checkpoints) {
+        const contract = e2eScenarioCheckpointDefinition(scenarioId, checkpoint);
+        expect(scenario.clients).toContain(contract.client);
+        expect(contract.path).toBe(checkpoint);
+        expect(Array.isArray(contract.requiredText)).toBe(true);
+        expect(Array.isArray(contract.forbiddenText)).toBe(true);
+      }
+    }
+  });
+
+  test("binds password rejection, managed no-password, and outsider isolation", () => {
+    expect(
+      e2eScenarioCheckpointDefinition(
+        "E2E-P4-CUSTOM-E2EE",
+        "phase-4-custom/wrong-password",
+      ),
+    ).toMatchObject({
+      client: "client-b",
+      connected: false,
+      requiredText: ["Unable to access vault", "Unlock your remote vault"],
+    });
+    expect(
+      e2eScenarioCheckpointDefinition(
+        "E2E-P4-MANAGED-ENCRYPTION",
+        "phase-4-managed/connected-without-password",
+      ).forbiddenText,
+    ).toContain("Encryption password");
+    expect(
+      e2eScenarioCheckpointDefinition(
+        "E2E-P4-CUSTOM-E2EE",
+        "phase-4-custom/outsider-isolated",
+      ),
+    ).toMatchObject({ client: "client-c", connected: false });
   });
 });

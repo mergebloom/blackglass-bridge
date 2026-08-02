@@ -306,3 +306,35 @@ Sync, restart, deletion, exact endpoint evidence across all lifecycle phases,
 byte-identical user-content recovery including its multipart image
 (`.obsidian/` local settings are excluded), permissions, and current artifact
 identities all pass.
+
+## Phase 3 and Phase 4 scenario evidence
+
+Named tenancy and collaboration runs use immutable checkpoints in the order
+declared by `tools/e2e-scenario.ts`. Capture each checkpoint through the bound
+client debugging port; the command writes the screenshot, sanitized UI state,
+safe database projection, file assertions, and an immutable proof record:
+
+```sh
+bun run e2e:scenario:capture -- .data/e2e/<run> \
+  phase-4-custom/wrong-password 9322
+```
+
+Use these exact proof filenames when creating scenario content:
+
+- `Blackglass E2E Tenant A Proof.md` and `Blackglass E2E Tenant B Proof.md`;
+- `Blackglass E2E Owner Proof.md` and `Blackglass E2E Collaborator Proof.md`;
+- `Blackglass E2E Former Member Proof.md`, created on B only after revocation;
+- `Blackglass E2E Cold Bootstrap Proof.md`, created on A before B's clean bootstrap.
+
+The verifier refuses missing, reordered, overwritten, cross-run, cross-client,
+or semantically inconsistent checkpoints. It verifies encryption-mode storage,
+membership transitions, user attribution, disabled-session revocation, tenant
+file absence, bidirectional byte equality, former-member local retention, and
+cold-bootstrap convergence before emitting `scenario-report.json`:
+
+```sh
+bun run e2e:scenario:verify -- .data/e2e/<run>
+```
+
+The report contains only hashes, counts, IDs, timestamps, and pass/fail state;
+it does not copy account addresses, passwords, vault content, or renderer code.

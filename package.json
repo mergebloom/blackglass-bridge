@@ -35,6 +35,8 @@
     "e2e:reset-for-recovery": "bun run tools/reset-e2e-for-recovery.ts",
     "e2e:server": "bun run tools/run-e2e-server.ts",
     "e2e:verify": "bun run tools/verify-e2e.ts",
+    "e2e:scenario:capture": "bun run tools/capture-e2e-scenario-checkpoint.ts",
+    "e2e:scenario:verify": "bun run tools/verify-e2e-scenario.ts",
     "e2e:tls:prepare": "bun run tools/prepare-e2e-tls.ts",
     "e2e:tls:proxy": "bun run tools/run-e2e-tls-proxy.ts",
     "e2e:validation:write": "bun run tools/write-validation-record.ts",
