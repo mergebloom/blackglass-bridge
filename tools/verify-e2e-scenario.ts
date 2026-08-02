@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { readPreparedE2ERun } from "./e2e-network";
 import {
   assertScenarioCheckpointEvidence,
+  assertScenarioToolingSourceBound,
   scenarioCheckpointPaths,
   sha256,
 } from "./e2e-scenario-evidence";
@@ -19,6 +20,7 @@ if (!rootArgument || extra.length !== 0) {
 }
 
 const run = await readPreparedE2ERun(rootArgument);
+await assertScenarioToolingSourceBound({ root: run.root, run: run.manifest });
 const scenario = e2eScenarioDefinition(run.manifest.scenarioId);
 if (scenario.id === "E2E-RELEASE-SYNC-RECOVERY") {
   throw new Error("Use e2e:verify for the release Sync/recovery scenario");

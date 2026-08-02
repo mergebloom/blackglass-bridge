@@ -11,6 +11,11 @@ import {
   type E2EScenarioId,
 } from "./e2e-scenario";
 import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
+import { parseBlackglassReleaseManifest } from "./release-manifest";
+import {
+  computeToolingSourceIdentity,
+  toolingSourceTreeEqual,
+} from "./tooling-source";
 
 export const E2E_SCENARIO_CHECKPOINT_SCHEMA_VERSION = 1;
 
@@ -72,6 +77,26 @@ export function scenarioCheckpointPaths(root: string, checkpoint: string): {
   return { screenshot: `${base}.png`, state: `${base}.json`, proof: `${base}.proof.json` };
 }
 
+export async function assertScenarioToolingSourceBound(options: {
+  root: string;
+  run: PreparedE2ERunManifest;
+}): Promise<void> {
+  const manifestBytes = await readFile(resolve(options.root, options.run.releaseManifestFileName));
+  if (sha256(manifestBytes) !== options.run.releaseManifestSha256) {
+    throw new Error("Scenario release manifest changed after E2E preparation");
+  }
+  const releaseManifest = parseBlackglassReleaseManifest(manifestBytes);
+  const current = await computeToolingSourceIdentity();
+  if (
+    releaseManifest.toolingSource.worktreeClean !== true ||
+    current.worktreeClean !== true ||
+    releaseManifest.toolingSource.gitRevision !== current.gitRevision ||
+    !toolingSourceTreeEqual(releaseManifest.toolingSource, current)
+  ) {
+    throw new Error("Scenario evidence tooling differs from the clean packaged source");
+  }
+}
+
 export async function buildScenarioCheckpointEvidence(options: {
   root: string;
   run: PreparedE2ERunManifest;
@@ -124,7 +149,7 @@ export async function buildScenarioCheckpointEvidence(options: {
       );
     }
   }
-  const database = await observeDatabase(options.root);
+  const database = await observeScenarioDatabase(options.root);
   assertDatabaseContract(scenario.id, options.checkpoint, database);
   const files = await observeFiles(options.root, scenario.id, options.checkpoint);
   assertFileContract(files);
@@ -268,12 +293,14 @@ export async function assertScenarioCheckpointEvidence(
   return proof;
 }
 
-async function observeDatabase(root: string): Promise<ScenarioDatabaseObservation> {
+export async function observeScenarioDatabase(
+  root: string,
+): Promise<ScenarioDatabaseObservation> {
   const path = resolve(root, "server.sqlite");
   const db = new Database(path, { readonly: true, strict: true });
   try {
     const users = db.query(`
-      SELECT users.id, users.status, COUNT(sessions.id) AS sessions
+      SELECT users.id, users.status, COUNT(sessions.token_hash) AS sessions
       FROM users LEFT JOIN sessions ON sessions.user_id = users.id
       GROUP BY users.id, users.status ORDER BY users.id
     `).all() as Array<{ id: number; status: string; sessions: number }>;
