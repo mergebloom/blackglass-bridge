@@ -10,6 +10,7 @@ import {
   type E2ENetworkCaptureFinalize,
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
+import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
 import { canonicalOutputPath } from "./path-safety";
 import {
   assertCanonicalRecoveryCorpusIdentity,
@@ -105,7 +106,7 @@ if (role === "client-b-recovery") {
   if (
     report.schemaVersion !== 3 ||
     report.ok !== true ||
-    state.schemaVersion !== 1 ||
+    state.schemaVersion !== E2E_UI_EVIDENCE_SCHEMA_VERSION ||
     state.launchIdentitySha256 !== launch.identitySha256 ||
     state.screenshotSha256 !== screenshotSha256 ||
     report.recoveryClient?.identitySha256 !== launch.identitySha256 ||

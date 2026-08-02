@@ -4,6 +4,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { connectOverBunNativeCDP } from "./bun-native-cdp.ts";
 import { verifyLiveClientLaunchBinding } from "./e2e-client.ts";
+import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence.ts";
 
 const [portArgument, action = "snapshot", ...arguments_] = process.argv.slice(2);
 const port = Number(portArgument);
@@ -297,7 +298,7 @@ try {
       }))].slice(0, 1000),
     );
     const snapshot = {
-      schemaVersion: 2,
+      schemaVersion: E2E_UI_EVIDENCE_SCHEMA_VERSION,
       observedAt: new Date().toISOString(),
       launchIdentityPath: launch.path,
       launchIdentitySha256: launch.sha256,

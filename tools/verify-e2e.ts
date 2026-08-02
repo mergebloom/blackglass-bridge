@@ -15,6 +15,7 @@ import {
   type E2ENetworkEvidence,
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
+import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
 import {
   inspectServerArtifact,
   publicServerArtifact,
@@ -582,7 +583,7 @@ for (const checkpoint of uiCheckpoints) {
   const binding = liveClientBindings.get(checkpoint.client)!;
   const identity = binding.identity;
   if (
-    state.schemaVersion !== 2 ||
+    state.schemaVersion !== E2E_UI_EVIDENCE_SCHEMA_VERSION ||
     typeof state.observedAt !== "string" ||
     typeof state.debugPort !== "number" ||
     !Number.isInteger(state.debugPort) ||

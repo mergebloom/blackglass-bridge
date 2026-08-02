@@ -7,6 +7,7 @@ import {
   verifyLiveClientLaunchBinding,
 } from "./e2e-client";
 import { readPreparedE2ERun } from "./e2e-network";
+import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
 import { pathExists } from "./path-safety";
 import {
   assertCanonicalRecoveryCorpusIdentity,
@@ -364,7 +365,7 @@ async function verifyRecoveryUi(
     height < 400 ||
     width > 16_384 ||
     height > 16_384 ||
-    state.schemaVersion !== 2 ||
+    state.schemaVersion !== E2E_UI_EVIDENCE_SCHEMA_VERSION ||
     state.debugPort !== identity.debugPort ||
     state.rendererPageCount !== 1 ||
     state.visibleRendererPageCount !== 1 ||
