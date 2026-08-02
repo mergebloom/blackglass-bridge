@@ -57,17 +57,22 @@ const flags = parseStrictFlags(flagArguments, {
     "--app",
     "--blackglass-home",
     "--debug-port",
+    "--debug-readiness-timeout-ms",
     "--e2e-tls-metadata",
     "--identity-out",
   ],
   booleanFlags: ["--replace-adapter", "--prepare-only", "--allow-upstream-wrapper"],
 });
 const debugPortValue = flags.values.get("--debug-port");
+const debugReadinessTimeoutValue = flags.values.get("--debug-readiness-timeout-ms");
 const tlsMetadataArgument = flags.values.get("--e2e-tls-metadata");
 const identityArgument = flags.values.get("--identity-out");
 const blackglassHomeArgument = flags.values.get("--blackglass-home");
 const prepareOnly = flags.booleans.has("--prepare-only");
 const e2eRequested = Boolean(debugPortValue || tlsMetadataArgument || identityArgument);
+const debugReadinessTimeoutMs = debugReadinessTimeoutValue
+  ? parseDebugReadinessTimeout(debugReadinessTimeoutValue)
+  : 30_000;
 if (
   e2eRequested &&
   (!debugPortValue || !tlsMetadataArgument || !identityArgument || prepareOnly)
@@ -78,6 +83,9 @@ if (
 }
 if (e2eRequested && blackglassHomeArgument) {
   throw new Error("Prepared E2E launches allocate BLACKGLASS_HOME automatically");
+}
+if (debugReadinessTimeoutValue && !e2eRequested) {
+  throw new Error("--debug-readiness-timeout-ms is available only for E2E launches");
 }
 
 const asar = await canonicalExistingPath(asarArgument, "Compatibility ASAR", "file");
@@ -389,7 +397,12 @@ if (launchBinding && debugPort) {
   const publicArtifact = publicMacOSArtifact(appArtifact);
   let debugBinding: Awaited<ReturnType<typeof waitForDebugBinding>> | undefined;
   try {
-    debugBinding = await waitForDebugBinding(debugPort, child.pid, child);
+    debugBinding = await waitForDebugBinding(
+      debugPort,
+      child.pid,
+      child,
+      debugReadinessTimeoutMs,
+    );
     if (
       debugBinding.nativeHomePath !== nativeHomePath ||
       debugBinding.blackglassHomePath !== launchHome ||
@@ -751,10 +764,22 @@ function parseDebugPort(value: string): number {
   return port;
 }
 
+function parseDebugReadinessTimeout(value: string): number {
+  if (!/^\d+$/u.test(value)) {
+    throw new Error("--debug-readiness-timeout-ms must be numeric");
+  }
+  const timeoutMs = Number(value);
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 30_000 || timeoutMs > 300_000) {
+    throw new Error("--debug-readiness-timeout-ms must be between 30000 and 300000");
+  }
+  return timeoutMs;
+}
+
 async function waitForDebugBinding(
   port: number,
   launchedPid: number,
   child: ReturnType<typeof Bun.spawn>,
+  timeoutMs: number,
 ): Promise<{
   listenerPid: number;
   listenerCommand: string;
@@ -763,7 +788,7 @@ async function waitForDebugBinding(
   nativeHomePath: string;
   blackglassHomePath: string;
 }> {
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + timeoutMs;
   let lastError: Error | undefined;
   const failureCounts = new Map<string, number>();
   while (Date.now() < deadline) {
@@ -957,7 +982,9 @@ function usage(): never {
   console.error(
     "Usage: bun run tools/launch-macos.ts <patched.asar> <existing-profile> <existing-vault> " +
       "[--app <Blackglass.app>] [--replace-adapter] [--prepare-only] " +
-      "[--allow-upstream-wrapper] [--debug-port <port> --e2e-tls-metadata <metadata.json> " +
+      "[--allow-upstream-wrapper] [--debug-port <port> " +
+      "--debug-readiness-timeout-ms <30000..300000> " +
+      "--e2e-tls-metadata <metadata.json> " +
       "--identity-out <identity.json>]",
   );
   process.exit(2);
