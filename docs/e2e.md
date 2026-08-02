@@ -33,6 +33,35 @@ qualifying a newly built artifact.
 
 ## Run outline
 
+### Resumable preparation
+
+Freeze one clean client/server pair before starting expensive work. The server
+release contract must already name the exact client commit:
+
+```sh
+bun run release:candidate:create -- \
+  .data/release-candidates/release.json \
+  --server-repo ../blackglass-server \
+  --control-origin https://sync.example.test \
+  --data-host sync-data.example.test
+
+bun run release:run -- .data/release-candidates/release.json \
+  --server-repo ../blackglass-server \
+  --full-checks --linux --prepare-client \
+  --renderer 1.12.7 \
+  --official-app '/Volumes/Obsidian/Obsidian.app' \
+  --official-dmg /path/to/Obsidian.dmg \
+  --run .data/e2e/release
+```
+
+The runner always repeats its release doctor, then resumes candidate-bound
+checks, exact server builds, two independent client packages,
+reproducibility verification, E2E preparation, and TLS setup. It refuses a
+changed checkout or partial output set. Add `--require-gui` only from the
+unlocked desktop session; that final preflight checks conflicting processes
+and ports before the interactive qualification below. Generated state remains
+under ignored `.data` paths and contains no credentials.
+
 Build the app twice from the same inputs into separate directories, retaining
 the receipt emitted by each package invocation, then verify the two outputs and
 build the server. The verifier writes path-free evidence and fails if the
@@ -155,8 +184,9 @@ bun run e2e:network:capture -- .data/e2e/<run> client-b
 Through the built-in UI, client A logs in, creates an E2EE vault in Blackglass
 Server, connects, unlocks, and starts Sync. Client B logs in, selects the same
 vault, connects, unlocks, and starts Sync. The operator opens the relevant
-native dialogs; `tools/e2e-ui.mjs` is a launch-bound CDP helper for the form
-submissions and evidence snapshots, not a full-flow orchestrator. Typical
+native dialogs. `release:run` has already prepared and bound the artifacts;
+`tools/e2e-ui.mjs` is its launch-bound CDP helper for form submissions and
+evidence snapshots, not an unattended native-dialog driver. Typical
 client-A calls are:
 
 ```sh

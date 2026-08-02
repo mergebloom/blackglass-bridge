@@ -102,6 +102,10 @@ directory and run `package:macos:verify-reproducibility` with both invocation
 receipts as shown in the E2E guide. Preparation refuses an app without that
 bound two-build evidence.
 
+For release work, `release:candidate:create` freezes the exact clean client and
+server revisions, and `release:run` provides a resumable doctor/check/build/
+package preparation path. See the E2E guide for the compact command.
+
 For a real deployment, use HTTPS/WSS endpoints and follow the
 [deployment guide](docs/deployment.md). Run the packaged-client qualification in
 [the E2E guide](docs/e2e.md) before relying on a generated build.

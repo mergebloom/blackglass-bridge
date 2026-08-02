@@ -18,6 +18,9 @@
   "scripts": {
     "analyze:release": "bun run tools/analyze-release.ts",
     "baseline:candidate": "bun run tools/create-baseline-candidate.ts",
+    "release:candidate:create": "bun run tools/create-release-candidate.ts",
+    "release:doctor": "bun run tools/doctor-release-candidate.ts",
+    "release:run": "bun run tools/run-release-candidate.ts",
     "patch:client": "bun run tools/patch-client.ts",
     "package:macos": "bun run tools/package-macos.ts",
     "package:macos:verify-reproducibility": "bun run tools/verify-macos-reproducibility.ts",
@@ -39,7 +42,9 @@
     "tooling:verify-qualified": "bun run tools/verify-qualified-tooling.ts",
     "recovery:drill": "bun run tools/recovery-drill.ts",
     "runtime:verify": "bun run tools/verify-runtime.ts",
-    "check": "bun run runtime:verify && bun run typecheck && bun test",
+    "check:fast": "bun run runtime:verify && bun run typecheck && bun test tests/cli-flags.test.ts tests/client-adapter.test.ts tests/client-contract.test.ts tests/release-candidate.test.ts tests/release-compatibility.test.ts tests/release-runner.test.ts tests/tooling-source.test.ts",
+    "check:full": "bun run runtime:verify && bun run typecheck && bun test",
+    "check": "bun run check:full",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
