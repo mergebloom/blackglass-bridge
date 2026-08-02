@@ -517,20 +517,41 @@ function collectNetworkCompatibility(
   const checker = createLexicalChecker(sourceFile);
   const possibleNetworkAliases = new Map<ts.Symbol, Set<NetworkTarget>>();
   const networkBindings: NetworkBindingCandidate[] = [];
-  const aliasBindings: Array<{ alias: string; source: string }> = [];
-  const functions = new Map<string, ts.FunctionLikeDeclaration>();
+  const aliasBindings: Array<{
+    alias: ts.Symbol;
+    aliasName: string;
+    source: ts.Symbol;
+    sourceName: string;
+  }> = [];
+  const functions = new Map<
+    ts.Symbol,
+    { name: string; declaration: ts.FunctionLikeDeclaration }
+  >();
 
   visit(sourceFile, (node) => {
     if (ts.isVariableDeclaration(node) && node.initializer) {
       collectNetworkBindingCandidates(node.name, node.initializer, networkBindings);
       if (ts.isIdentifier(node.name) && ts.isIdentifier(node.initializer)) {
-        aliasBindings.push({ alias: node.name.text, source: node.initializer.text });
+        const alias = checker.getSymbolAtLocation(node.name);
+        const source = checker.getSymbolAtLocation(node.initializer);
+        if (alias && source) {
+          aliasBindings.push({
+            alias,
+            aliasName: node.name.text,
+            source,
+            sourceName: node.initializer.text,
+          });
+        }
       }
       if (ts.isIdentifier(node.name) && isFunctionLike(node.initializer)) {
-        functions.set(node.name.text, node.initializer);
+        const symbol = checker.getSymbolAtLocation(node.name);
+        if (symbol) {
+          functions.set(symbol, { name: node.name.text, declaration: node.initializer });
+        }
       }
     } else if (ts.isFunctionDeclaration(node) && node.name) {
-      functions.set(node.name.text, node);
+      const symbol = checker.getSymbolAtLocation(node.name);
+      if (symbol) functions.set(symbol, { name: node.name.text, declaration: node });
     } else if (
       ts.isBinaryExpression(node) &&
       node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
@@ -538,7 +559,16 @@ function collectNetworkCompatibility(
     ) {
       networkBindings.push({ alias: node.left, source: node.right, properties: [] });
       if (ts.isIdentifier(node.right)) {
-        aliasBindings.push({ alias: node.left.text, source: node.right.text });
+        const alias = checker.getSymbolAtLocation(node.left);
+        const source = checker.getSymbolAtLocation(node.right);
+        if (alias && source) {
+          aliasBindings.push({
+            alias,
+            aliasName: node.left.text,
+            source,
+            sourceName: node.right.text,
+          });
+        }
       }
     } else if (ts.isImportDeclaration(node)) {
       collectElectronImportAliases(node, checker, possibleNetworkAliases);
@@ -573,13 +603,18 @@ function collectNetworkCompatibility(
   // helper from a POST-capable reviewed transport so unrelated minified
   // identifiers do not become protocol routes merely because they happen to
   // be named `gw`.
-  const helperNames = new Set<string>(file === "app.js" ? ["gw"] : []);
+  const helperSymbols = new Set<ts.Symbol>();
+  if (file === "app.js") {
+    for (const [symbol, entry] of functions) {
+      if (entry.name === "gw") helperSymbols.add(symbol);
+    }
+  }
   const requestHelpers: string[] = [];
-  for (const [name, declaration] of functions) {
+  for (const [symbol, { name, declaration }] of functions) {
+    const parameterNames = declaration.parameters
+      .map((parameter) => ts.isIdentifier(parameter.name) ? parameter.name.text : undefined);
     const parameters = new Set(
-      declaration.parameters
-        .map((parameter) => ts.isIdentifier(parameter.name) ? parameter.name.text : undefined)
-        .filter((value): value is string => value !== undefined),
+      parameterNames.filter((value): value is string => value !== undefined),
     );
     visit(declaration, (node) => {
       if (!ts.isCallExpression(node)) return;
@@ -589,8 +624,19 @@ function collectNetworkCompatibility(
         if (!address || !expressionUsesIdentifier(address, parameters)) continue;
         const target = compactExpression(node.expression, sourceFile);
         const compactAddress = compactExpression(address, sourceFile);
-        helperNames.add(name);
         requestHelpers.push(`${file}:${name}->${target}(${compactAddress})`);
+        const addressParameters = new Set<string>();
+        visit(address, (candidate) => {
+          if (ts.isIdentifier(candidate) && parameters.has(candidate.text)) {
+            addressParameters.add(candidate.text);
+          }
+        });
+        // A control-plane helper has one route parameter appended to a fixed
+        // origin. Helpers with multiple address parameters (for example the
+        // 1.13 Publish host + path helper) are generic network sinks: retain
+        // them in the reviewed helper inventory without misclassifying their
+        // computed host argument as a control route.
+        if (addressParameters.size === 1) helperSymbols.add(symbol);
         break;
       }
     });
@@ -601,9 +647,9 @@ function collectNetworkCompatibility(
   while (changed) {
     changed = false;
     for (const binding of aliasBindings) {
-      if (!helperNames.has(binding.source) || helperNames.has(binding.alias)) continue;
-      helperNames.add(binding.alias);
-      helperAliases.push(binding);
+      if (!helperSymbols.has(binding.source) || helperSymbols.has(binding.alias)) continue;
+      helperSymbols.add(binding.alias);
+      helperAliases.push({ alias: binding.aliasName, source: binding.sourceName });
       changed = true;
     }
   }
@@ -664,7 +710,11 @@ function collectNetworkCompatibility(
       if (isHostnameDescriptorCall(node, provenance)) {
         networkConstructors.push(`${file}:read:URL.prototype.hostname`);
       }
-      if (!ts.isIdentifier(node.expression) || !helperNames.has(node.expression.text)) return;
+      if (!ts.isIdentifier(node.expression)) return;
+      const helperSymbol = checker.getSymbolAtLocation(node.expression);
+      const isReviewedUnboundGw =
+        file === "app.js" && node.expression.text === "gw" && !helperSymbol;
+      if (!isReviewedUnboundGw && (!helperSymbol || !helperSymbols.has(helperSymbol))) return;
       const route = literalControlRoute(node.arguments[0]);
       if (!route) {
         rejectedCalls.push(

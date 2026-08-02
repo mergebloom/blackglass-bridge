@@ -9,6 +9,8 @@ import { MACOS_PACKAGING_EXECUTABLES } from "./packaging-toolchain";
 import { stableJson } from "./stable-json";
 
 export const MACOS_CODE_SIGNING_FORMAT_VERSION = 2;
+const LEGACY_MANTLE_IDENTIFIER = "org.mantle.Mantle";
+const CURRENT_MANTLE_IDENTIFIER = "com.electron.mantle";
 
 export const APPROVED_MACOS_ENTITLEMENTS = [
   "com.apple.security.cs.allow-jit",
@@ -98,10 +100,16 @@ export function signMacOSAppAdHoc(
   inventory: MacOSCodeInventory,
 ): MacOSCodeSigningEvidence {
   assertMacOSCodeInventory(inventory);
-  const packagedTargets = targetPaths(appPath, "com.blackglass.bridge");
-  if (source.targets.length !== packagedTargets.length) {
+  const basePackagedTargets = targetPaths(appPath, "com.blackglass.bridge");
+  if (source.targets.length !== basePackagedTargets.length) {
     throw new Error("Source macOS code-signing target inventory is incomplete");
   }
+  const packagedTargets = basePackagedTargets.map(
+    (target, index) =>
+      target.role === "application"
+        ? target
+        : { ...target, identifier: source.targets[index]!.identifier },
+  );
 
   const inventoryEntries = inventory.entries.filter((entry) => entry.kind === "mach-o");
   if (
@@ -231,7 +239,8 @@ export function assertMacOSCodeSigningEvidence(
     if (
       !isRecord(actual) ||
       actual.role !== expected.role ||
-      actual.identifier !== expected.identifier ||
+      typeof actual.identifier !== "string" ||
+      !approvedIdentifiers(expected.identifier).includes(actual.identifier) ||
       actual.entitlementPolicy !== expected.entitlementPolicy ||
       typeof actual.runtimeVersion !== "string" ||
       !/^\d+(?:\.\d+){1,3}$/u.test(actual.runtimeVersion)
@@ -279,7 +288,7 @@ function inspectApprovedCodeSignature(
   const runtimeVersion = /^Runtime Version=(\S+)$/mu.exec(details)?.[1];
   const codeDirectoryHash = /^CDHash=([a-f\d]+)$/mu.exec(details)?.[1];
   const signatureAdHoc = /^Signature=adhoc$/mu.test(details);
-  if (!identifier || identifier !== target.identifier) {
+  if (!identifier || !approvedIdentifiers(target.identifier).includes(identifier)) {
     throw new Error(
       `Unexpected ${targetLabel(target)} code-signing identifier: ${identifier ?? "missing"}`,
     );
@@ -335,6 +344,12 @@ function inspectApprovedCodeSignature(
     adHoc,
     codeDirectoryHash,
   };
+}
+
+function approvedIdentifiers(expected: string): readonly string[] {
+  return expected === LEGACY_MANTLE_IDENTIFIER
+    ? [LEGACY_MANTLE_IDENTIFIER, CURRENT_MANTLE_IDENTIFIER]
+    : [expected];
 }
 
 function parseAbstractEntitlements(output: string): string[] {
@@ -583,7 +598,7 @@ function targetDefinitions(applicationIdentifier: string): TargetDefinition[] {
     },
     {
       role: "framework",
-      identifier: "org.mantle.Mantle",
+      identifier: LEGACY_MANTLE_IDENTIFIER,
       entitlementPolicy: "none",
       relativePath: "Contents/Frameworks/Mantle.framework",
       signOrder: 50,

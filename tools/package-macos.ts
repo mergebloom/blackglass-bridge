@@ -61,6 +61,7 @@ import { computeTreeIdentity } from "./tree-identity";
 import { computeToolingSourceIdentity } from "./tooling-source";
 import { withPackageStaging } from "./package-staging";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
+import { stableJson } from "./stable-json";
 
 const [sourceArgument, asarArgument, outputArgument, ...flags] = Bun.argv.slice(
   2,
@@ -727,7 +728,7 @@ async function publishAtomically(
 }
 
 function treeIdentityEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return stableJson(left) === stableJson(right);
 }
 
 function usage(): never {

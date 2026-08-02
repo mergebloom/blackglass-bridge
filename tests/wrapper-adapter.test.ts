@@ -229,6 +229,20 @@ test("packaged wrapper keeps the renderer's development fallback dormant", () =>
   ).toThrow("two-argument renderer invocation");
 });
 
+test("packaged 1.13 renderer has no development-mode argument or IPC fallback", () => {
+  const wrapper = makeArchive("main.js", Buffer.from(wrapperMainCurrent()));
+  const renderer = makeArchive(
+    "main.js",
+    Buffer.from("module.exports=function(i,e){return i+e}"),
+  );
+  expect(inspectEmbeddedRendererDevModeContract(renderer, wrapper)).toEqual({
+    wrapperRendererArguments: 2,
+    rendererDevModeArgument: null,
+    packagedDevelopmentMode: false,
+  });
+  expect(() => patchMacOSWrapperMain(Buffer.from(wrapperMainCurrent()))).not.toThrow();
+});
+
 function wrapperMain(): string {
   return `let currentBaseVersion = app.getVersion();
 let currentPackageVersion = currentBaseVersion;
@@ -302,6 +316,20 @@ if (isV2MoreRecent(app.getVersion(), version)) {
 \t\tupdatedAsarVersion = version;
 \t}
 `;
+}
+
+function wrapperMainCurrent(): string {
+  return wrapperMain().replace(
+    `if (isV2MoreRecent(app.getVersion(), version)) {
+\t\tupdatedAsarPath = path.join(dataPath, candidateFile);
+\t\tupdatedAsarVersion = version;
+\t}`,
+    `let appVersion = app.getVersion();
+\tif (version && (isV2MoreRecent(appVersion, version) || appVersion === version)) {
+\t\tupdatedAsarPath = path.join(dataPath, candidateFile);
+\t\tupdatedAsarVersion = version;
+\t}`,
+  );
 }
 
 function executeWrapper(

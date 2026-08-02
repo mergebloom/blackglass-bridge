@@ -41,10 +41,14 @@ const UPDATER_QUEUE_ANCHOR = `let queueUpdate = (manual) => {
 };`;
 
 const UPDATER_QUEUE_REPLACEMENT = "let queueUpdate=()=>{};";
-const UPDATED_ASAR_SELECTION_ANCHOR = `if (isV2MoreRecent(app.getVersion(), version)) {
+const UPDATED_ASAR_SELECTION_ANCHORS = [`if (isV2MoreRecent(app.getVersion(), version)) {
 		updatedAsarPath = path.join(dataPath, candidateFile);
 		updatedAsarVersion = version;
-	}`;
+	}`,
+`if (version && (isV2MoreRecent(appVersion, version) || appVersion === version)) {
+		updatedAsarPath = path.join(dataPath, candidateFile);
+		updatedAsarVersion = version;
+	}`] as const;
 const UPDATED_ASAR_SELECTION_REPLACEMENT = "if(false){}";
 const PROFILE_MARKER = "app.setPath('userData',dataPath);";
 const SESSION_MARKER = "app.setPath('sessionData',dataPath);";
@@ -55,7 +59,8 @@ const PROFILE_CANONICAL_MARKER = "fs.realpathSync(dataPath)!==dataPath";
 const UPDATER_DISABLED_MARKER = UPDATER_QUEUE_REPLACEMENT;
 const EMBEDDED_RENDERER_MARKER = UPDATED_ASAR_SELECTION_REPLACEMENT;
 const WRAPPER_RENDERER_CALL = "fn(asarPath, updateEvents);";
-const RENDERER_EXPORT_SIGNATURE = "module.exports=function(c,i,l){";
+const LEGACY_RENDERER_EXPORT_SIGNATURE = "module.exports=function(c,i,l){";
+const CURRENT_RENDERER_EXPORT_SIGNATURE = "module.exports=function(i,e){";
 const RENDERER_IS_DEV_BINDING =
   'ipcMain.on("is-dev",t=>{t.returnValue=l})';
 
@@ -116,7 +121,7 @@ export function inspectEmbeddedRendererDevModeContract(
   wrapperAsar: Buffer,
 ): {
   wrapperRendererArguments: 2;
-  rendererDevModeArgument: 3;
+  rendererDevModeArgument: 3 | null;
   packagedDevelopmentMode: false;
 } {
   const rendererMain = AsarArchive.fromBuffer(rendererAsar)
@@ -130,25 +135,36 @@ export function inspectEmbeddedRendererDevModeContract(
     WRAPPER_RENDERER_CALL,
     "wrapper two-argument renderer invocation",
   );
-  requireExactlyOnce(
-    rendererMain,
-    RENDERER_EXPORT_SIGNATURE,
-    "renderer three-argument export",
-  );
-  requireExactlyOnce(
-    rendererMain,
-    RENDERER_IS_DEV_BINDING,
-    "renderer development-mode argument binding",
-  );
+  const legacy = countOccurrences(rendererMain, LEGACY_RENDERER_EXPORT_SIGNATURE);
+  const current = countOccurrences(rendererMain, CURRENT_RENDERER_EXPORT_SIGNATURE);
+  if (legacy + current !== 1) {
+    throw new Error(
+      `renderer reviewed export signature must match exactly once (found ${legacy + current})`,
+    );
+  }
+  if (legacy === 1) {
+    requireExactlyOnce(
+      rendererMain,
+      RENDERER_IS_DEV_BINDING,
+      "renderer development-mode argument binding",
+    );
+  } else if (rendererMain.includes('"is-dev"')) {
+    throw new Error("two-argument renderer unexpectedly retains a development-mode IPC binding");
+  }
   return {
     wrapperRendererArguments: 2,
-    rendererDevModeArgument: 3,
+    rendererDevModeArgument: legacy === 1 ? 3 : null,
     packagedDevelopmentMode: false,
   };
 }
 
 export function patchMacOSWrapperMain(main: Buffer): Buffer {
   const source = main.toString("utf8");
+  const updatedAsarSelectionAnchor = selectExactlyOneVariant(
+    source,
+    UPDATED_ASAR_SELECTION_ANCHORS,
+    "wrapper updated renderer selection anchor",
+  );
   let patched = replaceExactBoundedSpan(
     source,
     PROFILE_PATH_START,
@@ -169,10 +185,10 @@ export function patchMacOSWrapperMain(main: Buffer): Buffer {
   );
   patched = replaceExactlyOnce(
     patched,
-    UPDATED_ASAR_SELECTION_ANCHOR,
+    updatedAsarSelectionAnchor,
     paddedReplacement(
       UPDATED_ASAR_SELECTION_REPLACEMENT,
-      UPDATED_ASAR_SELECTION_ANCHOR.length,
+      updatedAsarSelectionAnchor.length,
       "updated renderer selection",
     ),
     "wrapper updated renderer selection anchor",
@@ -225,7 +241,7 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
     main.includes(PROFILE_PATH_START) ||
     main.includes(PROFILE_PATH_END) ||
     main.includes(UPDATER_QUEUE_ANCHOR) ||
-    main.includes(UPDATED_ASAR_SELECTION_ANCHOR)
+    UPDATED_ASAR_SELECTION_ANCHORS.some((anchor) => main.includes(anchor))
   ) {
     throw new Error("Patched wrapper still contains an upstream safety anchor");
   }
@@ -240,6 +256,22 @@ export function inspectPatchedMacOSWrapperAsar(wrapper: Buffer): {
     upstreamUpdatesDisabled: true,
     embeddedRendererOnly: true,
   };
+}
+
+function selectExactlyOneVariant<T extends string>(
+  source: string,
+  variants: readonly T[],
+  label: string,
+): T {
+  const matches = variants.filter((variant) => source.includes(variant));
+  if (matches.length !== 1) {
+    throw new Error(`${label} must match exactly once (found ${matches.length})`);
+  }
+  return matches[0]!;
+}
+
+function countOccurrences(source: string, needle: string): number {
+  return source.split(needle).length - 1;
 }
 
 function paddedReplacement(value: string, length: number, label: string): string {

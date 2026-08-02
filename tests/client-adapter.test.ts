@@ -13,6 +13,8 @@ const controlExpression =
   '"https://"+[String.fromCharCode(97,112,105),"obsidian","md"].join(".")';
 const hostnameCondition =
   '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h';
+const currentHostnameCondition =
+  '!tne.call(h,".obsidian.md")&&"127.0.0.1"!==h';
 const cliRuntimeRoot =
   "!U&&process.env.XDG_RUNTIME_DIR||ce.homedir()";
 const cliRegistration =
@@ -49,6 +51,21 @@ describe("client adapter", () => {
     expect(patched.toString("utf8")).not.toContain(controlExpression);
   });
 
+  test("patches the reviewed 1.13 Sync hostname guard", () => {
+    const upstream = Buffer.from(
+      `var Jw=${controlExpression};if(${currentHostnameCondition})throw Error();`,
+    );
+    const patched = patchRenderer(upstream, {
+      controlOrigin: "https://sync-control.example.test",
+      dataHost: "sync-data.example.test:8443",
+    });
+    expect(patched).toHaveLength(upstream.length);
+    expect(patched.toString("utf8")).toContain(
+      'u.host!=="sync-data.example.test:8443"',
+    );
+    expect(patched.toString("utf8")).not.toContain(currentHostnameCondition);
+  });
+
   test("uses BLACKGLASS_HOME for the dedicated fixed-length CLI socket", () => {
     const upstream = Buffer.from(upstreamMain());
     const patched = patchMainProcess(upstream);
@@ -69,6 +86,18 @@ describe("client adapter", () => {
         `const root=${cliRuntimeRoot};const socket=".obsidian-cli.sock"+".obsidian-cli.sock";${cliRegistration}}`,
       )),
     ).toThrow("CLI socket name must match exactly once");
+  });
+
+  test("patches the reviewed 1.13 desktop CLI bindings", () => {
+    const upstream = Buffer.from(upstreamMainCurrent());
+    const patched = patchMainProcess(upstream);
+    const source = patched.toString("utf8");
+    expect(source).toContain(
+      'C.join(process.env.BLACKGLASS_HOME||de.homedir()    ,".blackglass-b.sock")',
+    );
+    expect(source).toContain('let S="/usr/local/bin/blackglass";');
+    expect(source).not.toContain("process.env.XDG_RUNTIME_DIR");
+    expect(source).not.toContain("/usr/local/bin/obsidian");
   });
 
   test("fails closed when the CLI runtime-root incision is missing or ambiguous", () => {
@@ -291,6 +320,13 @@ describe("client adapter", () => {
 
 function upstreamMain(): string {
   return `module.exports=function(){const socket=D.join(${cliRuntimeRoot},".obsidian-cli.sock");${cliRegistration}}}`;
+}
+
+function upstreamMainCurrent(): string {
+  return 'module.exports=function(i,e){const socket=C.join(' +
+    '!W&&process.env.XDG_RUNTIME_DIR||de.homedir(),".obsidian-cli.sock");' +
+    'let g=C.join(d,"obsidian-cli");if(m.existsSync(g)){' +
+    'let S="/usr/local/bin/obsidian";}}';
 }
 
 function makeArchive(files: Record<string, Buffer>): Buffer {

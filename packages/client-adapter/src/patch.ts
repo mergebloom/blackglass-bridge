@@ -8,20 +8,31 @@ import { BLACKGLASS_HOME_ENVIRONMENT } from "./runtime-home";
 
 const CONTROL_ORIGIN_EXPRESSION =
   '"https://"+[String.fromCharCode(97,112,105),"obsidian","md"].join(".")';
-const DATA_HOST_CONDITION =
-  '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h';
-const UPSTREAM_CLI_RUNTIME_ROOT =
-  "!U&&process.env.XDG_RUNTIME_DIR||ce.homedir()";
-const BRIDGE_CLI_RUNTIME_ROOT =
-  `process.env.${BLACKGLASS_HOME_ENVIRONMENT}||ce.homedir()`;
-const BRIDGE_CLI_SOCKET_CONSTRUCTION =
-  `D.join(${BRIDGE_CLI_RUNTIME_ROOT.padEnd(UPSTREAM_CLI_RUNTIME_ROOT.length, " ")},` +
-  `"${BRIDGE_CLI_SOCKET_NAME}")`;
+const DATA_HOST_CONDITIONS = [
+  '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h',
+  '!tne.call(h,".obsidian.md")&&"127.0.0.1"!==h',
+] as const;
+const CLI_VARIANTS = [
+  {
+    runtimeRoot: "!U&&process.env.XDG_RUNTIME_DIR||ce.homedir()",
+    homeCall: "ce.homedir()",
+    pathBinding: "D",
+    registration:
+      'let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";',
+    registrationReplacement:
+      'let g=u+"/obsidian-cli";if(h.existsSync(g)){let w="/usr/local/bin/blackglass";',
+  },
+  {
+    runtimeRoot: "!W&&process.env.XDG_RUNTIME_DIR||de.homedir()",
+    homeCall: "de.homedir()",
+    pathBinding: "C",
+    registration:
+      'let g=C.join(d,"obsidian-cli");if(m.existsSync(g)){let S="/usr/local/bin/obsidian";',
+    registrationReplacement:
+      'let g=d+"/obsidian-cli";if(m.existsSync(g)){let S="/usr/local/bin/blackglass";',
+  },
+] as const;
 export { BRIDGE_CLI_SOCKET_NAME } from "../../../tools/cli-binary";
-const UPSTREAM_CLI_REGISTRATION =
-  'let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";';
-const BRIDGE_CLI_REGISTRATION =
-  'let g=u+"/obsidian-cli";if(h.existsSync(g)){let w="/usr/local/bin/blackglass";';
 export const BRIDGE_CLI_COMMAND_NAME = "blackglass";
 export const BRIDGE_CLI_COMMAND_PATH = "/usr/local/bin/blackglass";
 
@@ -58,6 +69,11 @@ export function patchRenderer(
 ): Buffer {
   const canonical = canonicalAdapterOptions(options);
   const source = renderer.toString("utf8");
+  const dataHostCondition = selectExactlyOneVariant(
+    source,
+    DATA_HOST_CONDITIONS,
+    "Sync hostname condition",
+  );
   const controlReplacement = paddedExpression(
     JSON.stringify(canonical.controlOrigin),
     CONTROL_ORIGIN_EXPRESSION.length,
@@ -66,7 +82,7 @@ export function patchRenderer(
   const data = parseDataHost(canonical.dataHost);
   const dataReplacement = paddedExpression(
     `u.host!==${JSON.stringify(data.host)}`,
-    DATA_HOST_CONDITION.length,
+    dataHostCondition.length,
     "data host",
   );
 
@@ -78,7 +94,7 @@ export function patchRenderer(
   );
   patched = replaceExactlyOnce(
     patched,
-    DATA_HOST_CONDITION,
+    dataHostCondition,
     dataReplacement,
     "Sync hostname condition",
   );
@@ -119,6 +135,12 @@ export function patchMainProcess(main: Buffer): Buffer {
     throw new Error("CLI socket replacement must preserve byte length");
   }
   const source = main.toString("utf8");
+  const variant = selectExactlyOneCliVariant(source);
+  const bridgeRuntimeRoot =
+    `process.env.${BLACKGLASS_HOME_ENVIRONMENT}||${variant.homeCall}`;
+  const bridgeSocketConstruction =
+    `${variant.pathBinding}.join(${bridgeRuntimeRoot.padEnd(variant.runtimeRoot.length, " ")},` +
+    `"${BRIDGE_CLI_SOCKET_NAME}")`;
   let patched = replaceExactlyOnce(
     source,
     UPSTREAM_CLI_SOCKET_NAME,
@@ -127,20 +149,20 @@ export function patchMainProcess(main: Buffer): Buffer {
   );
   patched = replaceExactlyOnce(
     patched,
-    UPSTREAM_CLI_RUNTIME_ROOT,
+    variant.runtimeRoot,
     paddedSource(
-      BRIDGE_CLI_RUNTIME_ROOT,
-      UPSTREAM_CLI_RUNTIME_ROOT.length,
+      bridgeRuntimeRoot,
+      variant.runtimeRoot.length,
       "CLI runtime home",
     ),
     "CLI runtime home",
   );
   patched = replaceExactlyOnce(
     patched,
-    UPSTREAM_CLI_REGISTRATION,
+    variant.registration,
     paddedSource(
-      BRIDGE_CLI_REGISTRATION,
-      UPSTREAM_CLI_REGISTRATION.length,
+      variant.registrationReplacement,
+      variant.registration.length,
       "CLI registration",
     ),
     "CLI registration target",
@@ -149,34 +171,52 @@ export function patchMainProcess(main: Buffer): Buffer {
   if (output.length !== main.length) {
     throw new Error("Main-process patch unexpectedly changed the byte length");
   }
-  inspectPatchedMainProcess(output);
+  inspectPatchedMainProcess(output, {
+    bridgeRuntimeRoot,
+    bridgeSocketConstruction,
+    upstreamRuntimeRoot: variant.runtimeRoot,
+    upstreamRegistration: variant.registration,
+  });
   return output;
 }
 
-export function inspectPatchedMainProcess(main: Buffer): {
+export function inspectPatchedMainProcess(
+  main: Buffer,
+  expected?: {
+    bridgeRuntimeRoot: string;
+    bridgeSocketConstruction: string;
+    upstreamRuntimeRoot: string;
+    upstreamRegistration: string;
+  },
+): {
   cliSocketName: typeof BRIDGE_CLI_SOCKET_NAME;
   runtimeHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
   cliCommandName: typeof BRIDGE_CLI_COMMAND_NAME;
   runtimeRootValidated: true;
 } {
   const source = main.toString("utf8");
+  const contract = expected ?? selectExactlyOnePatchedCliVariant(source);
   try {
     new Function(source);
   } catch (error) {
     throw new Error(`Patched renderer main.js is not valid JavaScript: ${String(error)}`);
   }
   requireExactlyOnce(source, BRIDGE_CLI_SOCKET_NAME, "patched CLI socket name");
-  requireExactlyOnce(source, BRIDGE_CLI_RUNTIME_ROOT, "patched CLI runtime root");
+  requireExactlyOnce(source, contract.bridgeRuntimeRoot, "patched CLI runtime root");
   requireExactlyOnce(
     source,
-    BRIDGE_CLI_SOCKET_CONSTRUCTION,
+    contract.bridgeSocketConstruction,
     "patched CLI socket construction",
   );
-  requireExactlyOnce(source, BRIDGE_CLI_REGISTRATION, "patched CLI registration");
+  const bridgeRegistration = CLI_VARIANTS.find(
+    (variant) => variant.runtimeRoot === contract.upstreamRuntimeRoot,
+  )?.registrationReplacement;
+  if (!bridgeRegistration) throw new Error("Unknown patched CLI variant");
+  requireExactlyOnce(source, bridgeRegistration, "patched CLI registration");
   if (
     source.includes(UPSTREAM_CLI_SOCKET_NAME) ||
-    source.includes(UPSTREAM_CLI_RUNTIME_ROOT) ||
-    source.includes(UPSTREAM_CLI_REGISTRATION)
+    source.includes(contract.upstreamRuntimeRoot) ||
+    source.includes(contract.upstreamRegistration)
   ) {
     throw new Error("Patched renderer main.js retains an upstream CLI anchor");
   }
@@ -186,6 +226,53 @@ export function inspectPatchedMainProcess(main: Buffer): {
     cliCommandName: BRIDGE_CLI_COMMAND_NAME,
     runtimeRootValidated: true,
   };
+}
+
+function selectExactlyOneCliVariant(source: string): (typeof CLI_VARIANTS)[number] {
+  const matches = CLI_VARIANTS.filter((variant) => source.includes(variant.runtimeRoot));
+  if (matches.length !== 1) {
+    throw new Error(`CLI runtime home must match exactly once (found ${matches.length})`);
+  }
+  return matches[0]!;
+}
+
+function selectExactlyOnePatchedCliVariant(source: string): {
+  bridgeRuntimeRoot: string;
+  bridgeSocketConstruction: string;
+  upstreamRuntimeRoot: string;
+  upstreamRegistration: string;
+} {
+  const matches = CLI_VARIANTS.flatMap((variant) => {
+    const bridgeRuntimeRoot =
+      `process.env.${BLACKGLASS_HOME_ENVIRONMENT}||${variant.homeCall}`;
+    const bridgeSocketConstruction =
+      `${variant.pathBinding}.join(${bridgeRuntimeRoot.padEnd(variant.runtimeRoot.length, " ")},` +
+      `"${BRIDGE_CLI_SOCKET_NAME}")`;
+    return source.includes(bridgeSocketConstruction)
+      ? [{
+          bridgeRuntimeRoot,
+          bridgeSocketConstruction,
+          upstreamRuntimeRoot: variant.runtimeRoot,
+          upstreamRegistration: variant.registration,
+        }]
+      : [];
+  });
+  if (matches.length !== 1) {
+    throw new Error(`patched CLI socket construction must match exactly once (found ${matches.length})`);
+  }
+  return matches[0]!;
+}
+
+function selectExactlyOneVariant<T extends string>(
+  source: string,
+  variants: readonly T[],
+  label: string,
+): T {
+  const matches = variants.filter((variant) => source.includes(variant));
+  if (matches.length !== 1) {
+    throw new Error(`${label} must match exactly once (found ${matches.length})`);
+  }
+  return matches[0]!;
 }
 
 export function patchAsar(

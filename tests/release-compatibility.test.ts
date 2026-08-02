@@ -126,6 +126,38 @@ describe("release compatibility baseline", () => {
     );
   });
 
+  test("inventories generic host-plus-path POST helpers without treating them as control routes", () => {
+    const source = rendererArchive(
+      'CONTROL_ANCHOR;var F=fetch,base="https://api.example";' +
+        'function control(path,body){return F(base+path,{method:"POST",body})}' +
+        'function generic(host,path,body){return F(host+path,{method:"POST",body})}' +
+        'control("/user/signin",{});generic(makeHost(x),dynamicPath,{});' +
+        'send({op:"ping"});',
+    );
+    const discovered = discoverRendererRelease(source, anchors);
+    expect(discovered.controlPlaneRoutes).toEqual({ "/user/signin": 1 });
+    expect(discovered.controlPlaneRequestHelpers).toMatchObject({
+      "app.js:control->F(base+path)": 1,
+      "app.js:generic->F(host+path)": 1,
+    });
+  });
+
+  test("keeps same-named request helpers in separate lexical scopes", () => {
+    const source = rendererArchive(
+      'CONTROL_ANCHOR;var F=fetch,base="https://api.example";' +
+        'function one(){function post(path){return F(base+path,{method:"POST"})}' +
+        'post("/user/signin")}' +
+        'function two(){function post(value){return value}post(dynamic)}' +
+        'one();two();send({op:"ping"});',
+    );
+    const discovered = discoverRendererRelease(source, anchors);
+
+    expect(discovered.controlPlaneRoutes).toEqual({ "/user/signin": 1 });
+    expect(discovered.controlPlaneRequestHelpers).toMatchObject({
+      "app.js:post->F(base+path)": 1,
+    });
+  });
+
   test("tracks request-helper aliases, transports, and network constructors", () => {
     const source = rendererArchive(
       'CONTROL_ANCHOR;var mw=window.fetch,WS=window.WebSocket,U=window.URL;' +
