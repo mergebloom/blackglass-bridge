@@ -5,6 +5,7 @@ import { AsarArchive } from "./asar";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import { parseStrictFlags } from "./cli-flags";
 import { deriveE2ENetworkPlan } from "./e2e-network";
+import { DEFAULT_E2E_SCENARIO, parseE2EScenarioId } from "./e2e-scenario";
 import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
 import { inspectMacOSPackagingToolchain } from "./packaging-toolchain";
 import {
@@ -35,6 +36,7 @@ const parsedFlags = parseStrictFlags(flags, {
     "--second-release-manifest",
     "--second-package-receipt",
     "--reproducibility-evidence",
+    "--scenario",
   ],
 });
 const appArgument = parsedFlags.values.get("--app");
@@ -48,6 +50,9 @@ const secondPackageReceiptArgument = parsedFlags.values.get(
   "--second-package-receipt",
 );
 const reproducibilityArgument = parsedFlags.values.get("--reproducibility-evidence");
+const scenarioId = parseE2EScenarioId(
+  parsedFlags.values.get("--scenario") ?? DEFAULT_E2E_SCENARIO,
+);
 if (
   !rootArgument ||
   !asarArgument ||
@@ -66,7 +71,8 @@ if (
       "--second-app <Blackglass.app> " +
       "--second-release-manifest <release.json> " +
       "--second-package-receipt <receipt.json> " +
-      "--reproducibility-evidence <reproducibility.json>",
+      "--reproducibility-evidence <reproducibility.json> " +
+      "[--scenario <scenario-id>]",
   );
   process.exit(2);
 }
@@ -224,6 +230,7 @@ if (
 const adapterFileName = `obsidian-${packageMetadata.version}.asar`;
 const runManifest = {
   schemaVersion: 4,
+  scenarioId,
   createdAt: new Date().toISOString(),
   blackglassVersion: releaseManifest.blackglassVersion,
   rendererVersion: packageMetadata.version,

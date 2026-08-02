@@ -4,6 +4,11 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseStrictFlags } from "./cli-flags";
 import {
+  DEFAULT_E2E_SCENARIO,
+  parseE2EScenarioId,
+  preparedE2EScenarioId,
+} from "./e2e-scenario";
+import {
   assertPathWithin,
   canonicalExistingPath,
   canonicalOutputPath,
@@ -41,6 +46,7 @@ const parsed = parseStrictFlags(flagArguments, {
     "--official-app",
     "--official-dmg",
     "--run",
+    "--scenario",
   ],
   booleanFlags: [
     "--prepare-client",
@@ -184,6 +190,9 @@ if (parsed.booleans.has("--prepare-client")) {
     "file",
   );
   const runArgument = requiredValue("--run");
+  const scenarioId = parseE2EScenarioId(
+    parsed.values.get("--scenario") ?? DEFAULT_E2E_SCENARIO,
+  );
   const renderer = candidate.renderers.find((entry) => entry.version === rendererVersion);
   if (!renderer) throw new Error(`Renderer ${rendererVersion} is not in this release candidate`);
   const actualDmgSha256 = await sha256File(officialDmg);
@@ -207,6 +216,17 @@ if (parsed.booleans.has("--prepare-client")) {
   const secondReceipt = join(secondRoot, "package-receipt.json");
   const reproducibility = join(rendererRoot, "reproducibility.json");
   const runRoot = await safeE2EOutputPath(clientRoot, runArgument);
+  const existingRunManifest = join(runRoot, "run-manifest.json");
+  if (await pathExists(existingRunManifest)) {
+    const existing = JSON.parse(await readFile(existingRunManifest, "utf8")) as {
+      scenarioId?: unknown;
+    };
+    if (preparedE2EScenarioId(existing.scenarioId) !== scenarioId) {
+      throw new Error(
+        `E2E run is already bound to ${preparedE2EScenarioId(existing.scenarioId)}; refusing ${scenarioId}`,
+      );
+    }
+  }
   packagedApp = firstApp;
 
   stages.push(
@@ -251,6 +271,7 @@ if (parsed.booleans.has("--prepare-client")) {
         "--second-release-manifest", secondManifest,
         "--second-package-receipt", secondReceipt,
         "--reproducibility-evidence", reproducibility,
+        "--scenario", scenarioId,
       ],
       cwd: clientRoot,
       outputs: [
@@ -455,6 +476,7 @@ function usage(): never {
       "--server-repo <blackglass-server> [--full-checks] [--linux] " +
       "[--prepare-client --renderer <version> --official-app <Obsidian.app> " +
       "--official-dmg <Obsidian.dmg> --run <.data/e2e/name>] " +
+      "[--scenario <scenario-id>] " +
       "[--require-gui] [--require-stable-signing]",
   );
   process.exit(2);

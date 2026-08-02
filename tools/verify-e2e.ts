@@ -16,6 +16,7 @@ import {
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
 import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
+import { preparedE2EScenarioId } from "./e2e-scenario";
 import {
   inspectServerArtifact,
   publicServerArtifact,
@@ -674,6 +675,7 @@ if (process.platform !== "win32" && (databaseMode !== 0o600 || stagingMode !== 0
 
 const report = {
   schemaVersion: 2,
+  scenarioId: preparedE2EScenarioId(runManifest.scenarioId),
   generatedAt: new Date().toISOString(),
   passed: true,
   referenceClient: {

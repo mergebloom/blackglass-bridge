@@ -14,6 +14,7 @@ import {
   type E2ENetworkCaptureFinalize,
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
+import { preparedE2EScenarioId } from "./e2e-scenario";
 import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
 import { inspectMacOSPackagingToolchain } from "./packaging-toolchain";
 import {
@@ -422,6 +423,7 @@ for (const file of [
 
 const qualification = {
   schemaVersion: 9,
+  scenarioId: preparedE2EScenarioId(runManifest.scenarioId),
   qualifiedAt: new Date().toISOString(),
   passed: true,
   platform: "macOS Apple Silicon",

@@ -11,6 +11,10 @@ import {
   canonicalExistingPath,
 } from "./path-safety";
 import { stableJson } from "./stable-json";
+import {
+  preparedE2EScenarioId,
+  type E2EScenarioId,
+} from "./e2e-scenario";
 
 export const E2E_NETWORK_SCHEMA_VERSION = 1;
 
@@ -39,6 +43,7 @@ export interface E2ENetworkPlan {
 
 export interface PreparedE2ERunManifest {
   schemaVersion: 4;
+  scenarioId?: E2EScenarioId;
   endpoints: AdapterOptions;
   network: E2ENetworkPlan;
   compatibilityAsarSha256: string;
@@ -146,6 +151,7 @@ export function assertPreparedE2ERunManifest(
   if (!isRecord(value) || value.schemaVersion !== 4 || !isRecord(value.endpoints)) {
     throw new Error("Unsupported prepared E2E run manifest schema");
   }
+  preparedE2EScenarioId(value.scenarioId);
   const endpoints = canonicalAdapterOptions({
     controlOrigin: String(value.endpoints.controlOrigin ?? ""),
     dataHost: String(value.endpoints.dataHost ?? ""),

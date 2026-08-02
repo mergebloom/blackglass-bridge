@@ -15,3 +15,8 @@ The baseline also records additional occurrences of existing account helpers.
 Those count changes are release-specific evidence and do not alter the server
 contract. Promotion from candidate to qualified requires the complete packaged
 client E2E gate, not only static baseline checks.
+
+On macOS, Settings is hosted in a separate `about:blank` Electron page while
+the vault remains in the bound `app://obsidian.md/index.html` page. Qualification
+keeps process and vault identity anchored to the latter and permits UI actions
+only in the single Settings page belonging to that same debugging endpoint.

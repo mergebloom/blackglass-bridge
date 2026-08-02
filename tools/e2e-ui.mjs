@@ -41,28 +41,48 @@ for (const candidate of rendererPages) {
     visibleRendererPages.push(candidate);
   }
 }
-const page =
+const boundPage =
   visibleRendererPages.length === 1
     ? visibleRendererPages[0]
     : rendererPages.length === 1
       ? rendererPages[0]
       : undefined;
-if (action !== "list-pages" && !page) {
+if (action !== "list-pages" && !boundPage) {
   throw new Error(
     `Expected exactly one Electron renderer for debugging port ${port}; ` +
       `found ${rendererPages.length} renderer pages (${visibleRendererPages.length} visible)`,
   );
 }
-if (page) {
-  await page.waitForFunction(() => globalThis.app?.vault?.adapter?.basePath, null, {
+if (boundPage) {
+  await boundPage.waitForFunction(() => globalThis.app?.vault?.adapter?.basePath, null, {
     timeout: 15_000,
   });
-  const rendererVault = await page.evaluate(() => globalThis.app.vault.adapter.basePath);
+  const rendererVault = await boundPage.evaluate(
+    () => globalThis.app.vault.adapter.basePath,
+  );
   if (resolve(rendererVault) !== launch.identity.vaultPath) {
     await browser.close();
     throw new Error(`Electron renderer vault does not match launch identity: ${rendererVault}`);
   }
 }
+const auxiliaryPages = [];
+for (const candidate of pages) {
+  if (
+    candidate !== boundPage &&
+    candidate.url() === "about:blank" &&
+    /^Settings(?:\s|\s+-)/u.test(await candidate.title())
+  ) {
+    auxiliaryPages.push(candidate);
+  }
+}
+if (auxiliaryPages.length > 1) {
+  throw new Error(
+    `Expected at most one Settings renderer for debugging port ${port}; found ${auxiliaryPages.length}`,
+  );
+}
+const page = usesForegroundPage(action) && auxiliaryPages.length === 1
+  ? auxiliaryPages[0]
+  : boundPage;
 
 try {
   if (action === "list-pages") {
@@ -271,18 +291,30 @@ try {
     const interactive = await page
       .locator("button, input, select, textarea, [role=button], [contenteditable=true]")
       .evaluateAll((elements) =>
-        elements.map((element, index) => ({
-          index,
-          tag: element.tagName,
-          text: element.textContent?.trim().slice(0, 200) ?? "",
-          ariaLabel: element.getAttribute("aria-label"),
-          placeholder: element.getAttribute("placeholder"),
-          title: element.getAttribute("title"),
-          type: element.getAttribute("type"),
-          checked: "checked" in element ? element.checked : null,
-          value: "value" in element ? String(element.value).slice(0, 200) : null,
-          classes: element.getAttribute("class"),
-        })),
+        elements.map((element, index) => {
+          const type = element.getAttribute("type");
+          const placeholder = element.getAttribute("placeholder");
+          const sensitive =
+            type === "password" ||
+            type === "email" ||
+            /password|email/iu.test(placeholder ?? "");
+          return {
+            index,
+            tag: element.tagName,
+            text: element.textContent?.trim().slice(0, 200) ?? "",
+            ariaLabel: element.getAttribute("aria-label"),
+            placeholder,
+            title: element.getAttribute("title"),
+            type,
+            checked: "checked" in element ? element.checked : null,
+            value: "value" in element
+              ? sensitive && String(element.value).length > 0
+                ? "[redacted]"
+                : String(element.value).slice(0, 200)
+              : null,
+            classes: element.getAttribute("class"),
+          };
+        }),
       );
     const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then((response) => {
       if (!response.ok) throw new Error(`DevTools target query failed: ${response.status}`);
@@ -541,23 +573,56 @@ try {
     await page.locator('input[placeholder="Your password..."]').fill(account.password);
     await page.getByText("Login", { exact: true }).last().click();
     console.log(JSON.stringify({ loginSubmitted: true, url: page.url() }));
-  } else if (action === "create-vault") {
+  } else if (action === "invite-collaborator") {
     const credentialsPath = resolve(required(arguments_[0], "credentials path"));
     assertE2EEvidencePath(credentialsPath, "credentials");
     const credentials = JSON.parse(await readFile(credentialsPath, "utf8"));
-    await page.locator('input[placeholder="My awesome vault"]').fill("E2E Vault");
+    if (!credentials.secondary?.email) {
+      throw new Error("Credentials do not contain the secondary account");
+    }
+    await page.locator('input[placeholder="Enter their email..."]').fill(
+      credentials.secondary.email,
+    );
+    await page.getByText("Add", { exact: true }).last().click();
+    console.log(JSON.stringify({ collaboratorInviteSubmitted: true, url: page.url() }));
+  } else if (action === "create-vault" || action === "create-managed-vault") {
+    const credentialsPath = resolve(required(arguments_[0], "credentials path"));
+    assertE2EEvidencePath(credentialsPath, "credentials");
+    const credentials = JSON.parse(await readFile(credentialsPath, "utf8"));
+    const managed = action === "create-managed-vault";
+    const vaultName = page.locator('input[placeholder="My awesome vault"]');
+    if (!(await vaultName.isVisible())) {
+      await page.getByText("Create new vault", { exact: true }).last().click();
+    }
+    await vaultName.fill(managed ? "Managed E2E Vault" : "E2E Vault");
     const region = page.locator("select").filter({ hasText: "Blackglass Server" });
     await region.selectOption({ label: "Blackglass Server" });
-    await page.locator('input[placeholder="Your password"]').fill(credentials.e2ePassword);
+    if (managed) {
+      const encryption = page.locator("select").filter({ hasText: "Standard encryption" });
+      await encryption.selectOption({ label: "Standard encryption" });
+    } else {
+      await page.locator('input[placeholder="Your password"]').fill(credentials.e2ePassword);
+    }
     await page.getByText("Create", { exact: true }).last().click();
-    console.log(JSON.stringify({ vaultCreateSubmitted: true, url: page.url() }));
-  } else if (action === "unlock-vault") {
+    console.log(JSON.stringify({
+      vaultCreateSubmitted: true,
+      encryption: managed ? "managed" : "custom-e2ee",
+      url: page.url(),
+    }));
+  } else if (action === "unlock-vault" || action === "unlock-vault-wrong") {
     const credentialsPath = resolve(required(arguments_[0], "credentials path"));
     assertE2EEvidencePath(credentialsPath, "credentials");
     const credentials = JSON.parse(await readFile(credentialsPath, "utf8"));
-    await page.locator('input[placeholder="Your password"]').last().fill(credentials.e2ePassword);
+    const password = action === "unlock-vault-wrong"
+      ? `${credentials.e2ePassword}-wrong`
+      : credentials.e2ePassword;
+    await page.locator('input[placeholder="Your password"]').last().fill(password);
     await page.getByText("Unlock vault", { exact: true }).last().click();
-    console.log(JSON.stringify({ vaultUnlockSubmitted: true, url: page.url() }));
+    console.log(JSON.stringify({
+      vaultUnlockSubmitted: true,
+      expectedSuccess: action === "unlock-vault",
+      url: page.url(),
+    }));
   } else {
     throw new Error(`Unknown action: ${action}`);
   }
@@ -645,4 +710,16 @@ function assertE2EEvidencePath(path, label) {
   if (!path.startsWith(`${allowedEvidenceRoot}/`)) {
     throw new Error(`${label} must remain inside ${allowedEvidenceRoot}`);
   }
+}
+
+function usesForegroundPage(requestedAction) {
+  return ![
+    "list-pages",
+    "sync-structure",
+    "sync-status",
+    "sync-method",
+    "sync-connect-diagnostic",
+    "trace-reconnect",
+    "trace-all-targets",
+  ].includes(requestedAction);
 }

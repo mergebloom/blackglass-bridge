@@ -54,6 +54,19 @@ bun run release:run -- .data/release-candidates/release.json \
   --run .data/e2e/release
 ```
 
+For the Phase 3/4 matrix, prepare a separate immutable run for each required
+scenario by adding one of:
+
+```text
+--scenario E2E-P3-TENANCY
+--scenario E2E-P4-CUSTOM-E2EE
+--scenario E2E-P4-MANAGED-ENCRYPTION
+```
+
+When omitted, preparation uses `E2E-RELEASE-SYNC-RECOVERY`, the existing
+bidirectional Sync and cold-recovery release gate. The selected scenario is
+stored in `run-manifest.json`; changing it requires a fresh run directory.
+
 The runner always repeats its release doctor, then resumes candidate-bound
 checks, exact server builds, two independent client packages,
 reproducibility verification, E2E preparation, and TLS setup. It refuses a
