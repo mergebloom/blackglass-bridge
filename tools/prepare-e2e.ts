@@ -297,6 +297,11 @@ const environment = {
   password: `pw-${randomBytes(18).toString("base64url")}`,
   token: randomBytes(32).toString("base64url"),
   e2ePassword: `vault-${randomBytes(18).toString("base64url")}`,
+  secondary: {
+    email: "e2e-secondary@example.test",
+    password: `pw-${randomBytes(18).toString("base64url")}`,
+    name: "E2E secondary user",
+  },
 };
 await writeFile(
   resolve(root, "credentials.json"),

@@ -41,7 +41,11 @@ if (
 }
 const credentials = JSON.parse(
   await readFile(resolve(root, "credentials.json"), "utf8"),
-) as { email: string; password: string };
+) as {
+  email: string;
+  password: string;
+  secondary?: { email: string; password: string; name: string };
+};
 const binary = resolve(
   process.env.BLACKGLASS_SERVER_BINARY ??
     process.env.SELFHOST_SERVER_BINARY ??
@@ -59,6 +63,19 @@ await recordArtifact(artifact);
 const inheritedEnvironment = Object.fromEntries(
   Object.entries(process.env).filter(([name]) => !name.startsWith("SELFHOST_")),
 );
+const databasePath = resolve(root, "server.sqlite");
+if (!(await Bun.file(databasePath).exists())) {
+  provisionUser(binary, databasePath, credentials.email, "E2E user", credentials.password);
+  if (credentials.secondary) {
+    provisionUser(
+      binary,
+      databasePath,
+      credentials.secondary.email,
+      credentials.secondary.name,
+      credentials.secondary.password,
+    );
+  }
+}
 
 const child = Bun.spawn([binary, "serve"], {
   cwd: root,
@@ -73,12 +90,8 @@ const child = Bun.spawn([binary, "serve"], {
     // scoped Electron resolver rule sends it to the loopback TLS proxy; using a
     // loopback host here would leave the data-host incision unqualified.
     SELFHOST_DATA_HOST: network.data.publicHost,
-    SELFHOST_DATABASE: resolve(root, "server.sqlite"),
+    SELFHOST_DATABASE: databasePath,
     SELFHOST_STAGING_DIR: resolve(root, "uploads"),
-    SELFHOST_EMAIL: credentials.email,
-    SELFHOST_PASSWORD: credentials.password,
-    SELFHOST_ALLOW_PLAINTEXT_PASSWORD: "1",
-    SELFHOST_NAME: "E2E user",
     SELFHOST_PER_FILE_MAX: String(200 * 1024 * 1024),
     SELFHOST_ALLOWED_ORIGIN: "app://obsidian.md",
     SELFHOST_MAX_CONCURRENT_UPLOADS: "4",
@@ -105,7 +118,7 @@ let processIdentity = {
   binaryPath: binary,
   expectedSourceRevision,
   artifact,
-  databasePath: resolve(root, "server.sqlite"),
+  databasePath,
   stagingPath: resolve(root, "uploads"),
   controlOrigin: endpoints.controlOrigin,
   dataHost: endpoints.dataHost,
@@ -201,4 +214,28 @@ async function recordArtifact(value: Awaited<ReturnType<typeof inspectServerArti
     mode: 0o600,
   });
   await rename(temporary, output);
+}
+
+function provisionUser(
+  executable: string,
+  database: string,
+  email: string,
+  name: string,
+  password: string,
+): void {
+  const result = Bun.spawnSync(
+    [executable, "user", "create", database, email, name],
+    {
+      stdin: Buffer.from(`${password}\n`),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: Object.fromEntries(
+        Object.entries(process.env).filter(([key]) => !key.startsWith("SELFHOST_")),
+      ),
+    },
+  );
+  if (result.exitCode !== 0) {
+    const error = result.stderr.toString("utf8").trim();
+    throw new Error(`Could not provision offline E2E account: ${error || "unknown error"}`);
+  }
 }
