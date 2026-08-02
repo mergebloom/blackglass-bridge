@@ -9,6 +9,7 @@ import {
   realpath,
   rename,
   rmdir,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -374,7 +375,13 @@ try {
     stderr: "inherit",
   });
 } catch (error) {
-  if (shortHomeRoot) await removeShortBlackglassHome(shortHomeRoot, launchHome);
+  if (shortHomeRoot) {
+    await removeShortBlackglassHome(
+      shortHomeRoot,
+      launchHome,
+      appArtifact?.cliSocketName ?? ".blackglass-c.sock",
+    );
+  }
   throw error;
 }
 if (launchBinding && debugPort) {
@@ -401,6 +408,7 @@ if (launchBinding && debugPort) {
       profile,
       shortHomeRoot,
       launchHome,
+      appArtifact.cliSocketName,
     );
   }
   if (!debugBinding) throw new Error("Client launch lost its DevTools binding");
@@ -455,6 +463,7 @@ if (launchBinding && debugPort) {
       profile,
       shortHomeRoot,
       launchHome,
+      appArtifact.cliSocketName,
     );
   }
 } else {
@@ -465,7 +474,11 @@ if (shortHomeRoot) {
   if (!await waitForClientProcessesExit(appBundle, profile, 5_000)) {
     throw new Error("Client helpers survived after the launched main process exited");
   }
-  await removeShortBlackglassHome(shortHomeRoot, launchHome);
+  await removeShortBlackglassHome(
+    shortHomeRoot,
+    launchHome,
+    appArtifact?.cliSocketName ?? ".blackglass-c.sock",
+  );
 } else if (blackglassHomeArgument) {
   if (!await waitForClientProcessesExit(appBundle, profile, 5_000)) {
     throw new Error("Client helpers survived after the launched main process exited");
@@ -571,7 +584,11 @@ async function waitForCliSocket(
   throw new Error("Launched client did not create its isolated CLI socket");
 }
 
-async function removeShortBlackglassHome(root: string, home: string): Promise<void> {
+async function removeShortBlackglassHome(
+  root: string,
+  home: string,
+  expectedSocketName: string,
+): Promise<void> {
   if (
     !/^\/private\/tmp\/blackglass-client-[A-Za-z0-9]{6}$/u.test(root) ||
     home !== join(root, "h")
@@ -600,6 +617,14 @@ async function removeShortBlackglassHome(root: string, home: string): Promise<vo
     await Bun.sleep(100);
     homeEntries = await readdir(home);
   }
+  if (
+    homeEntries.length === 1 &&
+    homeEntries[0] === expectedSocketName &&
+    (await lstat(join(home, expectedSocketName))).isSocket()
+  ) {
+    await unlink(join(home, expectedSocketName));
+    homeEntries = await readdir(home);
+  }
   if (homeEntries.length !== 0) {
     throw new Error(
       `BLACKGLASS_HOME retained runtime artifacts after shutdown: ${homeEntries.join(", ")}`,
@@ -619,6 +644,7 @@ async function rethrowAfterFailedLaunch(
   profile: string,
   shortHomeRoot: string | undefined,
   launchHome: string,
+  expectedSocketName: string,
 ): Promise<never> {
   const cleanupErrors: Error[] = [];
   try {
@@ -641,7 +667,7 @@ async function rethrowAfterFailedLaunch(
   }
   try {
     if (shortHomeRoot) {
-      await removeShortBlackglassHome(shortHomeRoot, launchHome);
+      await removeShortBlackglassHome(shortHomeRoot, launchHome, expectedSocketName);
     }
   } catch (error) {
     cleanupErrors.push(asError(error));
