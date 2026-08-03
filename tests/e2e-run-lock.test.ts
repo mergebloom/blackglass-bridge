@@ -1,10 +1,13 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
+  acquireCheckpointPublicationLease,
   acquirePreparedClientLease,
   acquireSourceLossResetLock,
+  assertNoCheckpointPublicationLeases,
+  releaseCheckpointPublicationLease,
   releasePreparedClientLease,
   releaseSourceLossResetLock,
 } from "../tools/e2e-run-lock";
@@ -155,6 +158,47 @@ describe("prepared-run launch/reset locking", () => {
         "Stop prepared clients",
       );
       await releasePreparedClientLease(active);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("serializes checkpoint publishers with an owner-bound lease", async () => {
+    const root = await mkdtemp(join(tmpdir(), "blackglass-run-lock-"));
+    const checkpoint = "evidence/client-a/settings";
+    try {
+      const attempts = await Promise.allSettled([
+        acquireCheckpointPublicationLease(root, checkpoint),
+        acquireCheckpointPublicationLease(root, checkpoint),
+      ]);
+      expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
+      expect(attempts.filter((attempt) => attempt.status === "rejected")).toHaveLength(1);
+      await expect(assertNoCheckpointPublicationLeases(root)).rejects.toThrow(
+        "Checkpoint publication leases remain",
+      );
+      const winner = attempts.find((attempt) => attempt.status === "fulfilled");
+      if (!winner || winner.status !== "fulfilled") throw new Error("No lease winner");
+      await releaseCheckpointPublicationLease(winner.value, checkpoint);
+      await expect(assertNoCheckpointPublicationLeases(root)).resolves.toBeUndefined();
+      const checkpointDirectory = join(root, "evidence/client-a");
+      await mkdir(checkpointDirectory, { recursive: true });
+      const crashedLease = await acquireCheckpointPublicationLease(root, checkpoint);
+      const stale = JSON.parse(await readFile(crashedLease, "utf8"));
+      stale.pid = 2_147_483_647;
+      stale.processStartIdentity = "f".repeat(64);
+      await writeFile(crashedLease, `${JSON.stringify(stale)}\n`, { mode: 0o600 });
+      const abandoned = await mkdtemp(join(checkpointDirectory, ".checkpoint-capture-"));
+      await writeFile(join(abandoned, "capture.png"), "partial capture", { mode: 0o600 });
+      const recovered = await acquireCheckpointPublicationLease(root, checkpoint);
+      await releaseCheckpointPublicationLease(recovered, checkpoint);
+      await expect(assertNoCheckpointPublicationLeases(root)).resolves.toBeUndefined();
+      const recoveredAttempts = await readdir(join(root, "evidence/failed-attempts"));
+      expect(recoveredAttempts.some((name) => name.includes("recovered-"))).toBe(true);
+
+      await mkdtemp(join(checkpointDirectory, ".checkpoint-capture-"));
+      await expect(assertNoCheckpointPublicationLeases(root)).rejects.toThrow(
+        "Checkpoint publication staging remains",
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }

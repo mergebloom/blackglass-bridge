@@ -41,6 +41,24 @@ export async function publishCheckpoint(
   await rename(staged.proof, final.proof);
 }
 
+export async function preserveFailedCheckpointCapture(
+  staging: string,
+  runRoot: string,
+  checkpoint: string,
+  error: unknown,
+): Promise<void> {
+  await writeFile(join(staging, "failure.txt"), `${String(error)}\n`, {
+    flag: "wx",
+    mode: 0o600,
+  });
+  const failedRoot = join(runRoot, "evidence", "failed-attempts");
+  await mkdir(failedRoot, { recursive: true, mode: 0o700 });
+  await rename(
+    staging,
+    join(failedRoot, `${checkpoint.replaceAll("/", "-")}-${basename(staging)}`),
+  );
+}
+
 export async function fileExists(path: string): Promise<boolean> {
   try {
     await readFile(path);

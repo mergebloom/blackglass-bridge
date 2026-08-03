@@ -44,6 +44,7 @@
     "e2e:server": "bun run tools/run-e2e-server.ts",
     "e2e:verify": "bun run tools/verify-e2e.ts",
     "e2e:scenario:capture": "bun run tools/capture-e2e-scenario-checkpoint.ts",
+    "e2e:release:capture": "bun run tools/capture-release-e2e-checkpoint.ts",
     "e2e:scenario:verify": "bun run tools/verify-e2e-scenario.ts",
     "e2e:tls:prepare": "bun run tools/prepare-e2e-tls.ts",
     "e2e:tls:proxy": "bun run tools/run-e2e-tls-proxy.ts",

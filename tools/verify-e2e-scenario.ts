@@ -12,6 +12,7 @@ import {
   type E2EClientRole,
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
+import { assertNoCheckpointPublicationLeases } from "./e2e-run-lock";
 import {
   assertScenarioCheckpointEvidence,
   assertScenarioToolingSourceBound,
@@ -37,6 +38,7 @@ const scenario = e2eScenarioDefinition(run.manifest.scenarioId);
 if (scenario.id === "E2E-RELEASE-SYNC-RECOVERY") {
   throw new Error("Use e2e:verify for the release Sync/recovery scenario");
 }
+await assertNoCheckpointPublicationLeases(run.root);
 const checkpoints = [];
 let previousObservedAt = 0;
 for (const checkpoint of scenario.checkpoints) {

@@ -1,7 +1,12 @@
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { readPreparedE2ERun } from "./e2e-network";
 import {
+  acquireCheckpointPublicationLease,
+  releaseCheckpointPublicationLease,
+} from "./e2e-run-lock";
+import {
+  assertScenarioCheckpointEvidence,
   assertScenarioToolingSourceBound,
   buildScenarioCheckpointEvidence,
   scenarioCheckpointPaths,
@@ -13,6 +18,7 @@ import {
 import {
   fileExists,
   prepareCheckpointPublication,
+  preserveFailedCheckpointCapture,
   publishCheckpoint,
 } from "./checkpoint-publication";
 
@@ -41,18 +47,26 @@ const checkpointIndex = scenario.checkpoints.indexOf(checkpoint);
 if (checkpointIndex > 0) {
   const previousCheckpoint = scenario.checkpoints[checkpointIndex - 1];
   if (!previousCheckpoint) throw new Error("Scenario checkpoint order is malformed");
-  await readFile(
-    scenarioCheckpointPaths(run.root, previousCheckpoint).proof,
+  const previousProof = JSON.parse(
+    await readFile(scenarioCheckpointPaths(run.root, previousCheckpoint).proof, "utf8"),
   );
+  await assertScenarioCheckpointEvidence(previousProof, {
+    root: run.root,
+    run: run.manifest,
+    runManifestSha256: run.manifestSha256,
+    checkpoint: previousCheckpoint,
+  });
 }
 const paths = scenarioCheckpointPaths(run.root, checkpoint);
-await prepareCheckpointPublication(paths, run.root, checkpoint);
-const staging = await mkdtemp(join(dirname(paths.screenshot), ".checkpoint-capture-"));
-const stagedScreenshot = join(staging, "capture.png");
-const stagedState = join(staging, "capture.json");
-const stagedProof = join(staging, "capture.proof.json");
-let published = false;
+const publicationLease = await acquireCheckpointPublicationLease(run.root, checkpoint);
 try {
+  await prepareCheckpointPublication(paths, run.root, checkpoint);
+  const staging = await mkdtemp(join(dirname(paths.screenshot), ".checkpoint-capture-"));
+  const stagedScreenshot = join(staging, "capture.png");
+  const stagedState = join(staging, "capture.json");
+  const stagedProof = join(staging, "capture.proof.json");
+  let published = false;
+  try {
   const child = Bun.spawn(
     [
       process.execPath,
@@ -90,29 +104,12 @@ await publishCheckpoint(
 );
 published = true;
 console.log(JSON.stringify({ scenarioId: scenario.id, checkpoint, proof: paths.proof }, null, 2));
-} catch (error) {
-  if (!published) await preserveFailedCapture(staging, run.root, checkpoint, error);
-  throw error;
+  } catch (error) {
+    if (!published) await preserveFailedCheckpointCapture(staging, run.root, checkpoint, error);
+    throw error;
+  } finally {
+    if (published) await rm(staging, { recursive: true, force: false });
+  }
 } finally {
-  if (published) await rm(staging, { recursive: true, force: false });
-}
-
-async function preserveFailedCapture(
-  staging: string,
-  root: string,
-  checkpoint: string,
-  error: unknown,
-): Promise<void> {
-  await writeFile(
-    join(staging, "failure.txt"),
-    `${String(error)}\n`,
-    { flag: "wx", mode: 0o600 },
-  );
-  const failedRoot = join(root, "evidence", "failed-attempts");
-  await mkdir(failedRoot, { recursive: true, mode: 0o700 });
-  const destination = join(
-    failedRoot,
-    `${checkpoint.replaceAll("/", "-")}-${basename(staging)}`,
-  );
-  await rename(staging, destination);
+  await releaseCheckpointPublicationLease(publicationLease, checkpoint);
 }

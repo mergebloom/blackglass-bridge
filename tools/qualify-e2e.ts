@@ -15,6 +15,7 @@ import {
   type E2ENetworkCaptureFinalize,
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
+import { assertNoCheckpointPublicationLeases } from "./e2e-run-lock";
 import { preparedE2EScenarioId, scenarioValidationFileName } from "./e2e-scenario";
 import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
 import { inspectMacOSPackagingToolchain } from "./packaging-toolchain";
@@ -41,6 +42,7 @@ import {
   toolingSourceTreeEqual,
 } from "./tooling-source";
 import { stableJson } from "./stable-json";
+import { releaseUiCheckpoints, validateReleaseUiCheckpointChain } from "./release-e2e-ui";
 import {
   assertMacOSReproducibilityEvidenceBinds,
   parseMacOSReproducibilityEvidence,
@@ -401,6 +403,20 @@ if (
 }
 rawNetworkEvidence["client-b-recovery"] = sha256(recoveryNetworkBytes);
 rawNetworkFinalizers["client-b-recovery"] = recoveryFinalizeSha256;
+
+await assertNoCheckpointPublicationLeases(root);
+const uiProofHashes = await validateReleaseUiCheckpointChain({
+  root,
+  rendererVersion: runManifest.rendererVersion,
+  runManifestSha256,
+  releaseManifestSha256: runManifest.releaseManifestSha256,
+});
+for (const checkpoint of releaseUiCheckpoints(runManifest.rendererVersion)) {
+  const summary = syncReport.uxEvidence.find((item: any) => item?.path === `${checkpoint.path}.png`);
+  if (!summary || summary.proofSha256 !== uiProofHashes.get(checkpoint.path)) {
+    throw new Error(`Release UI checkpoint changed after Sync verification: ${checkpoint.path}`);
+  }
+}
 
 for (const file of [
   "run-manifest.json",

@@ -15,6 +15,7 @@ import {
   type E2ENetworkEvidence,
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
+import { assertNoCheckpointPublicationLeases } from "./e2e-run-lock";
 import { assertNoObservationPublicationResidue } from "./observation-publication";
 import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
 import { preparedE2EScenarioId } from "./e2e-scenario";
@@ -32,6 +33,11 @@ import { parseBlackglassReleaseManifest } from "./release-manifest";
 import { isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
 import { readPackagedBridgeConfig } from "./launcher-runtime";
+import {
+  releaseUiCheckpointPaths,
+  releaseUiCheckpoints,
+  validateReleaseUiCheckpointChain,
+} from "./release-e2e-ui";
 import {
   assertMacOSReproducibilityEvidenceBinds,
   parseMacOSReproducibilityEvidence,
@@ -492,44 +498,14 @@ for (const pair of proofPairs) {
   }
 }
 
-const uiCheckpoints = [
-  {
-    client: "client-a",
-    path: "evidence/client-a/settings",
-    requiredText: [`Version ${runManifest.rendererVersion}`, "Automatic updates", "Your account"],
-    forbiddenText: ["quit unexpectedly"],
-  },
-  {
-    client: "client-a",
-    path: "evidence/client-a/created",
-    requiredText: ["Your remote vaults", "E2E Vault", "Blackglass Server"],
-    forbiddenText: ["Unable to connect"],
-  },
-  {
-    client: "client-a",
-    path: "evidence/client-a/unlocked",
-    requiredText: ["Setup connection", "connected to", "E2E Vault", "Start syncing"],
-    forbiddenText: ["Unable to retrieve your vault size", "Unable to connect"],
-  },
-  {
-    client: "client-b",
-    path: "evidence/client-b/vault-chooser",
-    requiredText: ["Your remote vaults", "E2E Vault", "Blackglass Server"],
-    forbiddenText: ["Unable to connect"],
-  },
-  {
-    client: "client-b",
-    path: "evidence/client-b/converged",
-    requiredText: ["E2E Vault", "Fully synced", "E2E Sync Proof"],
-    forbiddenText: ["Unable to", "Sync error"],
-  },
-  {
-    client: "client-b",
-    path: "evidence/client-b/deleted-files",
-    requiredText: ["Deleted files", "Deletion Sync Proof"],
-    forbiddenText: ["Unable to", "Sync error"],
-  },
-] as const;
+const uiCheckpoints = releaseUiCheckpoints(runManifest.rendererVersion);
+await assertNoCheckpointPublicationLeases(root);
+const uiProofHashes = await validateReleaseUiCheckpointChain({
+  root,
+  rendererVersion: runManifest.rendererVersion,
+  runManifestSha256: preparedRun.manifestSha256,
+  releaseManifestSha256: runManifest.releaseManifestSha256,
+});
 const uxEvidence: Array<{
   path: string;
   client: "client-a" | "client-b";
@@ -542,10 +518,12 @@ const uxEvidence: Array<{
   observedAt: string;
   bodyTextSha256: string;
   accessibleTextSha256: string;
+  proofSha256: string;
 }> = [];
 for (const checkpoint of uiCheckpoints) {
-  const screenshot = resolve(root, `${checkpoint.path}.png`);
-  const statePath = resolve(root, `${checkpoint.path}.json`);
+  const checkpointPaths = releaseUiCheckpointPaths(root, checkpoint.path);
+  const screenshot = checkpointPaths.screenshot;
+  const statePath = checkpointPaths.state;
   const screenshotStat = await stat(screenshot);
   if (
     screenshotStat.size < 1024 ||
@@ -569,7 +547,8 @@ for (const checkpoint of uiCheckpoints) {
       `UX evidence has implausible dimensions ${width}x${height}: ${screenshot}`,
     );
   }
-  const state = JSON.parse(await readFile(statePath, "utf8")) as {
+  const stateBytes = await readFile(statePath);
+  const state = JSON.parse(stateBytes.toString("utf8")) as {
     schemaVersion?: unknown;
     observedAt?: unknown;
     debugPort?: unknown;
@@ -643,6 +622,7 @@ for (const checkpoint of uiCheckpoints) {
       throw new Error(`UI checkpoint ${statePath} contains failure text: ${forbiddenText}`);
     }
   }
+  const proofSha256 = uiProofHashes.get(checkpoint.path)!;
   uxEvidence.push({
     path: screenshot.slice(root.length + 1),
     client: checkpoint.client,
@@ -655,6 +635,7 @@ for (const checkpoint of uiCheckpoints) {
     observedAt: state.observedAt,
     bodyTextSha256: sha256(Buffer.from(state.bodyText)),
     accessibleTextSha256: sha256(Buffer.from(state.accessibleText.join("\n"))),
+    proofSha256,
   });
 }
 if (new Set(uxEvidence.map((item) => item.sha256)).size !== uxEvidence.length) {

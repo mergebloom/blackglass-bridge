@@ -212,17 +212,19 @@ evidence snapshots, not an unattended native-dialog driver. Typical
 client-A calls are:
 
 ```sh
-bun tools/e2e-ui.mjs 9321 snapshot \
-  .data/e2e/<run>/evidence/client-a/settings.png \
-  .data/e2e/<run>/evidence/client-a/settings.json
+bun run e2e:release:capture -- .data/e2e/<run> \
+  evidence/client-a/settings 9321
 bun tools/e2e-ui.mjs 9321 login .data/e2e/<run>/credentials.json
 bun tools/e2e-ui.mjs 9321 create-vault .data/e2e/<run>/credentials.json
 bun tools/e2e-ui.mjs 9321 unlock-vault .data/e2e/<run>/credentials.json
 ```
 
 Use port `9322` for client B, select the created vault in the native chooser,
-and use the same `login`, `unlock-vault`, and `snapshot` helpers. Snapshot paths
-must use the required checkpoint stems below. The recovery client uses port
+and use the same `login` and `unlock-vault` helpers. Capture each named release
+checkpoint through `e2e:release:capture`; it validates the UI contract before
+publishing a hash-chained proof. Failed or interrupted attempts are preserved
+outside the final paths and can be recaptured, while a published proof is
+immutable. The recovery client uses port
 `9323` and the same bound helpers.
 
 Use `e2e:observe` for the three allowed proof transfers and one deletion. The

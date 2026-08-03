@@ -19,3 +19,17 @@ test("live E2E controls target the bound window and native checkbox input", asyn
   expect(source).toContain("await checkbox.evaluate((element) => element.click())");
   expect(source).not.toContain("await container.click({ force: true })");
 });
+
+test("release UI checkpoints validate before immutable proof publication", async () => {
+  const source = await readFile(
+    resolve(import.meta.dir, "../tools/capture-release-e2e-checkpoint.ts"),
+    "utf8",
+  );
+  expect(source).toContain("prepareCheckpointPublication(paths");
+  expect(source).toContain("Release UI checkpoint is missing required text");
+  expect(source.indexOf("is missing required text")).toBeLessThan(
+    source.indexOf("publishCheckpoint(staged, paths)"),
+  );
+  expect(source).toContain("previousCheckpointProofSha256");
+  expect(source).toContain("preserveFailedCheckpointCapture");
+});
