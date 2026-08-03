@@ -94,6 +94,7 @@ const evidenceFiles = {
   recoveryLaunchSha256: "client-b-recovery-launch.json",
   recoveryUiStateSha256: "evidence/recovery/client-b-restored.json",
   recoveryScreenshotSha256: "evidence/recovery/client-b-restored.png",
+  recoveryUiProofSha256: "evidence/recovery/client-b-restored.proof.json",
   finderLaunchSmokeSha256: "finder-launch-smoke.json",
   clientReproducibilitySha256: run.manifest.reproducibilityEvidenceFileName,
 } as const;

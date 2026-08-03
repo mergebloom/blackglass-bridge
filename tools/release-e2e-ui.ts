@@ -10,6 +10,8 @@ export type ReleaseUiCheckpoint = {
   client: "client-a" | "client-b";
   path: string;
   requiredText: readonly string[];
+  requiredBodyText?: readonly string[];
+  requiredAccessibleText?: readonly string[];
   forbiddenText: readonly string[];
 };
 
@@ -50,6 +52,14 @@ const RELEASE_UI_CHECKPOINTS: readonly ReleaseUiCheckpoint[] = [
     requiredText: ["Deleted files", "Deletion Sync Proof"],
     forbiddenText: ["Unable to", "Sync error"],
   },
+  {
+    client: "client-b",
+    path: "evidence/recovery/client-b-restored",
+    requiredText: ["Recovery Drill Home", "Fully synced"],
+    requiredBodyText: ["Recovery Drill Home"],
+    requiredAccessibleText: ["Fully synced"],
+    forbiddenText: ["Unable to", "Sync error"],
+  },
 ] as const;
 
 export function releaseUiCheckpoints(rendererVersion: string): readonly ReleaseUiCheckpoint[] {
@@ -59,6 +69,12 @@ export function releaseUiCheckpoints(rendererVersion: string): readonly ReleaseU
   return RELEASE_UI_CHECKPOINTS.map((checkpoint, index) => index === 0
     ? { ...checkpoint, requiredText: [`Version ${rendererVersion}`, ...checkpoint.requiredText] }
     : checkpoint);
+}
+
+export function releasePrimaryUiCheckpoints(
+  rendererVersion: string,
+): readonly ReleaseUiCheckpoint[] {
+  return releaseUiCheckpoints(rendererVersion).slice(0, -1);
 }
 
 export function releaseUiCheckpoint(
@@ -81,6 +97,80 @@ export function releaseUiCheckpointPaths(root: string, path: string): {
     state: `${base}.json`,
     proof: `${base}.proof.json`,
   };
+}
+
+export function assertReleaseUiCheckpointContent(
+  checkpoint: ReleaseUiCheckpoint,
+  state: Record<string, unknown>,
+  launchStartedAt: string,
+  now = Date.now(),
+): void {
+  if (
+    typeof state.bodyText !== "string" ||
+    !Array.isArray(state.accessibleText) ||
+    state.accessibleText.some((value) => typeof value !== "string") ||
+    typeof state.observedAt !== "string"
+  ) {
+    throw new Error(`Release UI checkpoint has malformed content: ${checkpoint.path}`);
+  }
+  const observedAt = Date.parse(state.observedAt);
+  const startedAt = Date.parse(launchStartedAt);
+  if (
+    !Number.isFinite(observedAt) || !Number.isFinite(startedAt) ||
+    observedAt <= startedAt || observedAt > now + 5_000
+  ) {
+    throw new Error(`Release UI checkpoint has an invalid observation time: ${checkpoint.path}`);
+  }
+  const accessibleText = state.accessibleText as string[];
+  const uiText = [state.bodyText, ...accessibleText].join("\n");
+  for (const required of checkpoint.requiredText) {
+    if (!uiText.includes(required)) {
+      throw new Error(`Release UI checkpoint is missing required text: ${required}`);
+    }
+  }
+  for (const required of checkpoint.requiredBodyText ?? []) {
+    if (!state.bodyText.includes(required)) {
+      throw new Error(`Release UI checkpoint body is missing required text: ${required}`);
+    }
+  }
+  for (const required of checkpoint.requiredAccessibleText ?? []) {
+    if (!accessibleText.includes(required)) {
+      throw new Error(`Release UI checkpoint accessibility tree is missing exact text: ${required}`);
+    }
+  }
+  for (const forbidden of checkpoint.forbiddenText) {
+    if (uiText.toLowerCase().includes(forbidden.toLowerCase())) {
+      throw new Error(`Release UI checkpoint contains failure text: ${forbidden}`);
+    }
+  }
+}
+
+export function assertReleaseUiCheckpointProof(options: {
+  checkpoint: ReleaseUiCheckpoint;
+  proof: Record<string, unknown>;
+  observedAt: string;
+  previousCheckpointProofSha256: string | null;
+  runManifestSha256: string;
+  releaseManifestSha256: string;
+  launchIdentitySha256: string;
+  stateBytes: Uint8Array;
+  screenshotBytes: Uint8Array;
+}): void {
+  const { checkpoint, proof } = options;
+  if (
+    proof.schemaVersion !== RELEASE_UI_CHECKPOINT_PROOF_SCHEMA_VERSION ||
+    proof.scenarioId !== "E2E-RELEASE-SYNC-RECOVERY" ||
+    proof.checkpoint !== checkpoint.path || proof.client !== checkpoint.client ||
+    proof.observedAt !== options.observedAt ||
+    proof.previousCheckpointProofSha256 !== options.previousCheckpointProofSha256 ||
+    proof.runManifestSha256 !== options.runManifestSha256 ||
+    proof.releaseManifestSha256 !== options.releaseManifestSha256 ||
+    proof.launchIdentitySha256 !== options.launchIdentitySha256 ||
+    proof.uiStateSha256 !== sha256(options.stateBytes) ||
+    proof.screenshotSha256 !== sha256(options.screenshotBytes)
+  ) {
+    throw new Error(`Malformed or unchained release UI checkpoint: ${checkpoint.path}`);
+  }
 }
 
 export async function validateReleaseUiCheckpointChain(options: {
@@ -106,7 +196,18 @@ export async function validateReleaseUiCheckpointChain(options: {
     const proof = JSON.parse(proofBytes.toString("utf8")) as Record<string, unknown>;
     const identityBytes = await readFile(String(state.launchIdentityPath ?? ""));
     const identity = await readClientLaunchIdentity(String(state.launchIdentityPath ?? ""));
-    const uiText = [String(state.bodyText ?? ""), ...(state.accessibleText ?? [])].join("\n");
+    assertReleaseUiCheckpointContent(checkpoint, state, identity.startedAt);
+    assertReleaseUiCheckpointProof({
+      checkpoint,
+      proof,
+      observedAt: String(state.observedAt),
+      previousCheckpointProofSha256: previousProofSha256,
+      runManifestSha256: options.runManifestSha256,
+      releaseManifestSha256: options.releaseManifestSha256,
+      launchIdentitySha256: sha256(identityBytes),
+      stateBytes,
+      screenshotBytes,
+    });
     const observedAt = Date.parse(String(state.observedAt ?? ""));
     if (
       screenshotStat.size < 1024 || !isPng(screenshotBytes) ||
@@ -128,29 +229,9 @@ export async function validateReleaseUiCheckpointChain(options: {
       state.profilePath !== identity.profilePath || state.vaultPath !== identity.vaultPath ||
       state.rendererPageCount !== 1 || state.visibleRendererPageCount !== 1 ||
       state.url !== identity.debugTargetUrl || !Number.isFinite(observedAt) ||
-      Math.abs(screenshotStat.mtimeMs - observedAt) > 30_000 ||
-      proof.schemaVersion !== RELEASE_UI_CHECKPOINT_PROOF_SCHEMA_VERSION ||
-      proof.scenarioId !== "E2E-RELEASE-SYNC-RECOVERY" ||
-      proof.checkpoint !== checkpoint.path || proof.client !== checkpoint.client ||
-      proof.observedAt !== state.observedAt ||
-      proof.previousCheckpointProofSha256 !== previousProofSha256 ||
-      proof.runManifestSha256 !== options.runManifestSha256 ||
-      proof.releaseManifestSha256 !== options.releaseManifestSha256 ||
-      proof.launchIdentitySha256 !== sha256(identityBytes) ||
-      proof.uiStateSha256 !== sha256(stateBytes) ||
-      proof.screenshotSha256 !== sha256(screenshotBytes)
+      Math.abs(screenshotStat.mtimeMs - observedAt) > 30_000
     ) {
       throw new Error(`Malformed or unchained release UI checkpoint: ${checkpoint.path}`);
-    }
-    for (const required of checkpoint.requiredText) {
-      if (!uiText.includes(required)) {
-        throw new Error(`Release UI checkpoint is missing required text: ${required}`);
-      }
-    }
-    for (const forbidden of checkpoint.forbiddenText) {
-      if (uiText.toLowerCase().includes(forbidden.toLowerCase())) {
-        throw new Error(`Release UI checkpoint contains failure text: ${forbidden}`);
-      }
     }
     previousProofSha256 = sha256(proofBytes);
     hashes.set(checkpoint.path, previousProofSha256);

@@ -277,6 +277,7 @@ describe("E2E network evidence", () => {
         recoveryReportSha256: "3".repeat(64),
         recoveryUiStateSha256: "4".repeat(64),
         recoveryScreenshotSha256: "5".repeat(64),
+        recoveryUiProofSha256: "6".repeat(64),
       },
     };
     expect(() =>

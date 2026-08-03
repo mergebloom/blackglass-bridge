@@ -33,6 +33,7 @@ export interface E2ENetworkCaptureFinalize {
         recoveryReportSha256: string;
         recoveryUiStateSha256: string;
         recoveryScreenshotSha256: string;
+        recoveryUiProofSha256: string;
       }
     | {
         scenarioId: string;
@@ -350,7 +351,8 @@ export function assertNetworkCaptureFinalize(
     !isSha256(value.context.recoveryLaunchSha256) ||
     !isSha256(value.context.recoveryReportSha256) ||
     !isSha256(value.context.recoveryUiStateSha256) ||
-    !isSha256(value.context.recoveryScreenshotSha256)
+    !isSha256(value.context.recoveryScreenshotSha256) ||
+    !isSha256(value.context.recoveryUiProofSha256)
   )) {
     throw new Error("Network finalizer lacks cold-recovery evidence bindings");
   } else if (value.phase === "scenario-complete" && (

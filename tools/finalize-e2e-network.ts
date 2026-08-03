@@ -18,6 +18,11 @@ import {
   scenarioCheckpointPaths,
 } from "./e2e-scenario-evidence";
 import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
+import { assertNoCheckpointPublicationLeases } from "./e2e-run-lock";
+import {
+  releaseUiCheckpoints,
+  validateReleaseUiCheckpointChain,
+} from "./release-e2e-ui";
 import { canonicalOutputPath } from "./path-safety";
 import {
   assertCanonicalRecoveryCorpusIdentity,
@@ -98,6 +103,16 @@ if (run.manifest.scenarioId !== "E2E-RELEASE-SYNC-RECOVERY") {
   const reportPath = resolve(run.root, "recovery-report.json");
   const statePath = resolve(run.root, "evidence/recovery/client-b-restored.json");
   const screenshotPath = resolve(run.root, "evidence/recovery/client-b-restored.png");
+  const proofPath = resolve(run.root, "evidence/recovery/client-b-restored.proof.json");
+  await assertNoCheckpointPublicationLeases(run.root);
+  const rendererVersion = String(run.manifest.rendererVersion);
+  const recoveryCheckpoint = releaseUiCheckpoints(rendererVersion).at(-1)!;
+  const recoveryProofHashes = await validateReleaseUiCheckpointChain({
+    root: run.root,
+    rendererVersion,
+    runManifestSha256: run.manifestSha256,
+    releaseManifestSha256: run.manifest.releaseManifestSha256,
+  });
   const [
     resetBytes,
     recoveryManifestBytes,
@@ -105,6 +120,7 @@ if (run.manifest.scenarioId !== "E2E-RELEASE-SYNC-RECOVERY") {
     reportBytes,
     stateBytes,
     screenshotBytes,
+    proofBytes,
     launchBytes,
   ] = await Promise.all([
     readFile(resetPath),
@@ -113,6 +129,7 @@ if (run.manifest.scenarioId !== "E2E-RELEASE-SYNC-RECOVERY") {
     readFile(reportPath),
     readFile(statePath),
     readFile(screenshotPath),
+    readFile(proofPath),
     readFile(launch.identityPath),
   ]);
   const reset = JSON.parse(resetBytes.toString("utf8")) as any;
@@ -122,6 +139,10 @@ if (run.manifest.scenarioId !== "E2E-RELEASE-SYNC-RECOVERY") {
   const report = JSON.parse(reportBytes.toString("utf8")) as any;
   const state = JSON.parse(stateBytes.toString("utf8")) as any;
   const screenshotSha256 = sha256(screenshotBytes);
+  const recoveryUiProofSha256 = sha256(proofBytes);
+  if (recoveryProofHashes.get(recoveryCheckpoint.path) !== recoveryUiProofSha256) {
+    throw new Error("Cold-recovery UI proof is not the terminal chain proof");
+  }
   const recoveryManifestSha256 = sha256(recoveryManifestBytes);
   const sourceLossResetSha256 = sha256(resetBytes);
   if (
@@ -174,6 +195,7 @@ if (run.manifest.scenarioId !== "E2E-RELEASE-SYNC-RECOVERY") {
       recoveryReportSha256: sha256(reportBytes),
       recoveryUiStateSha256: sha256(stateBytes),
       recoveryScreenshotSha256: screenshotSha256,
+      recoveryUiProofSha256,
     },
   };
 } else {

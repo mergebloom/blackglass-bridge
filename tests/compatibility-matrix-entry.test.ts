@@ -54,7 +54,7 @@ describe("compatibility matrix report binding", () => {
 
 function releaseReport() {
   return {
-    schemaVersion: 10,
+    schemaVersion: 11,
     scenarioId: "E2E-RELEASE-SYNC-RECOVERY",
     passed: true,
     qualifiedAt: "2026-08-03T12:00:00.000Z",

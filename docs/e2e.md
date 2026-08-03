@@ -290,8 +290,10 @@ bun run e2e:reset-for-recovery -- .data/e2e/<run>
 
 Launch that client with identity output `client-b-recovery-launch.json`, then
 start `e2e:network:capture` for `client-b-recovery` before login. Restore through
-the same built-in UI and capture `evidence/recovery/client-b-restored.png` plus
-its JSON peer. Verify recovery, explicitly finalize its trace, and qualify:
+the same built-in UI, open `Recovery Drill Home`, leave Sync settings showing
+`Fully synced`, and transactionally capture the terminal checkpoint. A failed
+attempt is quarantined and may be safely retried; a published proof is immutable.
+Verify recovery, explicitly finalize its trace, and qualify:
 
 ```sh
 bun run client:launch -- \
@@ -312,6 +314,8 @@ UI, and then run the remaining commands:
 
 ```sh
 bun run e2e:network:capture -- .data/e2e/<run> client-b-recovery
+bun run e2e:release:capture -- .data/e2e/<run> \
+  evidence/recovery/client-b-restored 9323
 bun run recovery:drill -- verify .data/e2e/<run> \
   .data/e2e/<run>/client-b/vault
 bun run e2e:network:finalize -- .data/e2e/<run> client-b-recovery

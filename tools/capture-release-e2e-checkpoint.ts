@@ -16,6 +16,7 @@ import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
 import { assertScenarioToolingSourceBound } from "./e2e-scenario-evidence";
 import {
   RELEASE_UI_CHECKPOINT_PROOF_SCHEMA_VERSION,
+  assertReleaseUiCheckpointContent,
   releaseUiCheckpoint,
   releaseUiCheckpoints,
   releaseUiCheckpointPaths,
@@ -85,7 +86,7 @@ try {
   const screenshotBytes = await readFile(staged.screenshot);
   const screenshotStat = await stat(staged.screenshot);
   const binding = await verifyLiveClientLaunchBinding(String(state.launchIdentityPath ?? ""));
-  const uiText = [String(state.bodyText ?? ""), ...(state.accessibleText ?? [])].join("\n");
+  assertReleaseUiCheckpointContent(checkpoint, state, binding.identity.startedAt);
   const observedAt = Date.parse(String(state.observedAt ?? ""));
   if (
     state.schemaVersion !== E2E_UI_EVIDENCE_SCHEMA_VERSION ||
@@ -114,16 +115,6 @@ try {
     Math.abs(screenshotStat.mtimeMs - observedAt) > 30_000
   ) {
     throw new Error(`Release UI checkpoint is not bound to ${checkpoint.client}`);
-  }
-  for (const required of checkpoint.requiredText) {
-    if (!uiText.includes(required)) {
-      throw new Error(`Release UI checkpoint is missing required text: ${required}`);
-    }
-  }
-  for (const forbidden of checkpoint.forbiddenText) {
-    if (uiText.toLowerCase().includes(forbidden.toLowerCase())) {
-      throw new Error(`Release UI checkpoint contains failure text: ${forbidden}`);
-    }
   }
   state.screenshotPath = paths.screenshot;
   const finalStateBytes = Buffer.from(`${JSON.stringify(state, null, 2)}\n`);

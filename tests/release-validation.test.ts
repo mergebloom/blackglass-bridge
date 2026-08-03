@@ -230,7 +230,7 @@ function qualification(): ReleaseQualification {
     packageReceipts: receipts.map((receipt) => ({ sha256: sha256(serializeMacOSPackageReceipt(receipt)), receipt })) as any,
   };
   return {
-    schemaVersion: 10,
+    schemaVersion: 11,
     scenarioId: "E2E-RELEASE-SYNC-RECOVERY",
     qualifiedAt: "2026-07-28T12:00:00.000Z",
     passed: true,
@@ -256,7 +256,8 @@ function qualification(): ReleaseQualification {
     evidence: {
       runManifestSha256: digest("1"), syncReportSha256: digest("2"), recoveryManifestSha256: digest("3"),
       recoveryReportSha256: digest("4"), sourceLossResetSha256: digest("5"), recoveryLaunchSha256: digest("6"),
-      recoveryUiStateSha256: digest("7"), recoveryScreenshotSha256: digest("8"), finderLaunchSmokeSha256: digest("f"),
+      recoveryUiStateSha256: digest("7"), recoveryScreenshotSha256: digest("8"),
+      recoveryUiProofSha256: digest("9"), finderLaunchSmokeSha256: digest("f"),
       clientReproducibilitySha256: digest("0"), clientReproducibility: reproducibility,
       networkEvidenceSha256: { "client-a": digest("9"), "client-b": digest("a"), "client-b-recovery": digest("b") },
       networkFinalizeSha256: { "client-a": digest("c"), "client-b": digest("d"), "client-b-recovery": digest("e") },

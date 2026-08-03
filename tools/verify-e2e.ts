@@ -35,7 +35,7 @@ import { stableJson } from "./stable-json";
 import { readPackagedBridgeConfig } from "./launcher-runtime";
 import {
   releaseUiCheckpointPaths,
-  releaseUiCheckpoints,
+  releasePrimaryUiCheckpoints,
   validateReleaseUiCheckpointChain,
 } from "./release-e2e-ui";
 import {
@@ -498,13 +498,14 @@ for (const pair of proofPairs) {
   }
 }
 
-const uiCheckpoints = releaseUiCheckpoints(runManifest.rendererVersion);
+const uiCheckpoints = releasePrimaryUiCheckpoints(runManifest.rendererVersion);
 await assertNoCheckpointPublicationLeases(root);
 const uiProofHashes = await validateReleaseUiCheckpointChain({
   root,
   rendererVersion: runManifest.rendererVersion,
   runManifestSha256: preparedRun.manifestSha256,
   releaseManifestSha256: runManifest.releaseManifestSha256,
+  throughPath: uiCheckpoints.at(-1)!.path,
 });
 const uxEvidence: Array<{
   path: string;

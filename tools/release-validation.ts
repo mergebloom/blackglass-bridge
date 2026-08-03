@@ -37,13 +37,13 @@ import {
   type MacOSReproducibilityEvidence,
 } from "./verify-macos-reproducibility";
 
-export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 13;
+export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 14;
 
 type PublicMacOSArtifact = Omit<MacOSArtifact, "appPath">;
 type PublicServerArtifact = Omit<ServerArtifact, "binaryPath">;
 
 export interface ReleaseQualification {
-  schemaVersion: 10;
+  schemaVersion: 11;
   scenarioId: "E2E-RELEASE-SYNC-RECOVERY";
   qualifiedAt: string;
   passed: true;
@@ -90,6 +90,7 @@ export interface ReleaseQualification {
     recoveryLaunchSha256: string;
     recoveryUiStateSha256: string;
     recoveryScreenshotSha256: string;
+    recoveryUiProofSha256: string;
     finderLaunchSmokeSha256: string;
     clientReproducibilitySha256: string;
     clientReproducibility: MacOSReproducibilityEvidence;
@@ -191,7 +192,7 @@ export function assertReleaseQualification(
 ): asserts value is ReleaseQualification {
   if (
     !isRecord(value) ||
-    value.schemaVersion !== 10 ||
+    value.schemaVersion !== 11 ||
     value.scenarioId !== "E2E-RELEASE-SYNC-RECOVERY" ||
     value.passed !== true ||
     value.platform !== "macOS Apple Silicon" ||
@@ -391,6 +392,7 @@ function assertEvidence(
     !isSha256(value.recoveryLaunchSha256) ||
     !isSha256(value.recoveryUiStateSha256) ||
     !isSha256(value.recoveryScreenshotSha256) ||
+    !isSha256(value.recoveryUiProofSha256) ||
     !isSha256(value.finderLaunchSmokeSha256) ||
     !isSha256(value.clientReproducibilitySha256) ||
     !isRecord(value.clientReproducibility) ||

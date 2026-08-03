@@ -7,6 +7,7 @@ import {
   verifyLiveClientLaunchBinding,
 } from "./e2e-client";
 import { readPreparedE2ERun } from "./e2e-network";
+import { assertNoCheckpointPublicationLeases } from "./e2e-run-lock";
 import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
 import { pathExists } from "./path-safety";
 import {
@@ -19,6 +20,11 @@ import {
   type RecoveryCorpusIdentity,
 } from "./recovery-corpus";
 import { assertSourceLossResetRecord } from "./source-loss-reset";
+import {
+  assertReleaseUiCheckpointContent,
+  releaseUiCheckpoints,
+  validateReleaseUiCheckpointChain,
+} from "./release-e2e-ui";
 
 const [action, firstArgument, secondArgument] = Bun.argv.slice(2);
 const e2eRoot = resolve(import.meta.dir, "../.data/e2e");
@@ -326,8 +332,21 @@ async function verifyRecoveryUi(
   runRoot: string,
   launch: LiveClientLaunchBinding,
 ): Promise<Record<string, unknown>> {
+  await assertNoCheckpointPublicationLeases(runRoot);
+  const rendererVersion = String(launch.run.manifest.rendererVersion);
+  const checkpoint = releaseUiCheckpoints(rendererVersion).at(-1)!;
+  if (checkpoint.path !== "evidence/recovery/client-b-restored") {
+    throw new Error("Recovery UI checkpoint definition is not terminal");
+  }
+  const proofHashes = await validateReleaseUiCheckpointChain({
+    root: runRoot,
+    rendererVersion,
+    runManifestSha256: launch.run.manifestSha256,
+    releaseManifestSha256: launch.run.manifest.releaseManifestSha256,
+  });
   const screenshotPath = join(runRoot, "evidence/recovery/client-b-restored.png");
   const statePath = join(runRoot, "evidence/recovery/client-b-restored.json");
+  const proofPath = join(runRoot, "evidence/recovery/client-b-restored.proof.json");
   const screenshot = await readFile(screenshotPath);
   const screenshotStat = await stat(screenshotPath);
   const stateStat = await stat(statePath);
@@ -353,6 +372,7 @@ async function verifyRecoveryUi(
     vaultPath?: unknown;
   };
   const identity = launch.identity;
+  assertReleaseUiCheckpointContent(checkpoint, state, identity.startedAt);
   const width = screenshot.length >= 24 ? screenshot.readUInt32BE(16) : 0;
   const height = screenshot.length >= 24 ? screenshot.readUInt32BE(20) : 0;
   if (
@@ -372,14 +392,7 @@ async function verifyRecoveryUi(
     state.url !== identity.debugTargetUrl ||
     typeof state.observedAt !== "string" ||
     !Number.isFinite(Date.parse(state.observedAt)) ||
-    Date.parse(state.observedAt) <= Date.parse(identity.startedAt) ||
-    Date.parse(state.observedAt) > Date.now() + 5_000 ||
     Math.abs(screenshotStat.mtimeMs - Date.parse(state.observedAt)) > 30_000 ||
-    typeof state.bodyText !== "string" ||
-    !state.bodyText.includes("Recovery Drill Home") ||
-    !Array.isArray(state.accessibleText) ||
-    state.accessibleText.some((value) => typeof value !== "string") ||
-    !state.accessibleText.includes("Fully synced") ||
     typeof state.screenshotPath !== "string" ||
     resolve(state.screenshotPath) !== screenshotPath ||
     state.screenshotSha256 !== sha256(screenshot) ||
@@ -398,6 +411,8 @@ async function verifyRecoveryUi(
   return {
     path: relative(runRoot, screenshotPath),
     statePath: relative(runRoot, statePath),
+    proofPath: relative(runRoot, proofPath),
+    proofSha256: proofHashes.get(checkpoint.path),
     bytes: screenshotStat.size,
     sha256: sha256(screenshot),
     width,

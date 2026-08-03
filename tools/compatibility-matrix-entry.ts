@@ -21,7 +21,7 @@ export function validateMatrixScenarioReport(
   parseE2EScenarioId(value.scenarioId);
   if (expectedScenario === "E2E-RELEASE-SYNC-RECOVERY") {
     const qualification = value as unknown as ReleaseQualification;
-    if (qualification.schemaVersion !== 10 ||
+    if (qualification.schemaVersion !== 11 ||
       qualification.blackglassVersion !== record.blackglassVersion ||
       qualification.validationFileName !== scenarioValidationFileName(
         expectedScenario,

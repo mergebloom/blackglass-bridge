@@ -42,7 +42,12 @@ import {
   toolingSourceTreeEqual,
 } from "./tooling-source";
 import { stableJson } from "./stable-json";
-import { releaseUiCheckpoints, validateReleaseUiCheckpointChain } from "./release-e2e-ui";
+import {
+  releasePrimaryUiCheckpoints,
+  releaseUiCheckpointPaths,
+  releaseUiCheckpoints,
+  validateReleaseUiCheckpointChain,
+} from "./release-e2e-ui";
 import {
   assertMacOSReproducibilityEvidenceBinds,
   parseMacOSReproducibilityEvidence,
@@ -381,6 +386,9 @@ const recoveryUiStateBytes = await readFile(
 const recoveryScreenshotBytes = await readFile(
   resolve(root, "evidence/recovery/client-b-restored.png"),
 );
+const recoveryProofBytes = await readFile(
+  resolve(root, "evidence/recovery/client-b-restored.proof.json"),
+);
 const recoveryReportBytes = await readFile(resolve(root, "recovery-report.json"));
 const recoveryUiState = JSON.parse(recoveryUiStateBytes.toString("utf8")) as any;
 const recoveryContext = recoveryFinalize.context as any;
@@ -393,6 +401,7 @@ if (
   recoveryContext.recoveryReportSha256 !== sha256(recoveryReportBytes) ||
   recoveryContext.recoveryUiStateSha256 !== sha256(recoveryUiStateBytes) ||
   recoveryContext.recoveryScreenshotSha256 !== sha256(recoveryScreenshotBytes) ||
+  recoveryContext.recoveryUiProofSha256 !== sha256(recoveryProofBytes) ||
   recoveryReport.recoveryClient?.identitySha256 !== recoveryIdentitySha256 ||
   recoveryUiState.launchIdentitySha256 !== recoveryIdentitySha256 ||
   recoveryUiState.screenshotSha256 !== sha256(recoveryScreenshotBytes) ||
@@ -411,11 +420,20 @@ const uiProofHashes = await validateReleaseUiCheckpointChain({
   runManifestSha256,
   releaseManifestSha256: runManifest.releaseManifestSha256,
 });
-for (const checkpoint of releaseUiCheckpoints(runManifest.rendererVersion)) {
+for (const checkpoint of releasePrimaryUiCheckpoints(runManifest.rendererVersion)) {
   const summary = syncReport.uxEvidence.find((item: any) => item?.path === `${checkpoint.path}.png`);
   if (!summary || summary.proofSha256 !== uiProofHashes.get(checkpoint.path)) {
     throw new Error(`Release UI checkpoint changed after Sync verification: ${checkpoint.path}`);
   }
+}
+const recoveryCheckpoint = releaseUiCheckpoints(runManifest.rendererVersion).at(-1)!;
+const recoveryCheckpointPaths = releaseUiCheckpointPaths(root, recoveryCheckpoint.path);
+if (
+  recoveryCheckpoint.path !== "evidence/recovery/client-b-restored" ||
+  recoveryCheckpointPaths.proof !== resolve(root, "evidence/recovery/client-b-restored.proof.json") ||
+  uiProofHashes.get(recoveryCheckpoint.path) !== sha256(recoveryProofBytes)
+) {
+  throw new Error("Cold-recovery UI checkpoint proof is missing or unchained");
 }
 
 for (const file of [
@@ -436,6 +454,7 @@ for (const file of [
   "client-b-recovery-launch.json",
   "evidence/recovery/client-b-restored.json",
   "evidence/recovery/client-b-restored.png",
+  "evidence/recovery/client-b-restored.proof.json",
   "evidence/network-client-b-recovery.json",
   "evidence/network-client-b-recovery.finalize.json",
 ]) {
@@ -445,7 +464,7 @@ for (const file of [
 }
 
 const qualification = {
-  schemaVersion: 10,
+  schemaVersion: 11,
   scenarioId: preparedE2EScenarioId(runManifest.scenarioId),
   qualifiedAt: new Date().toISOString(),
   passed: true,
@@ -498,6 +517,7 @@ const qualification = {
     recoveryLaunchSha256: recoveryIdentitySha256,
     recoveryUiStateSha256: sha256(recoveryUiStateBytes),
     recoveryScreenshotSha256: sha256(recoveryScreenshotBytes),
+    recoveryUiProofSha256: sha256(recoveryProofBytes),
     finderLaunchSmokeSha256: sha256(finderSmokeBytes),
     clientReproducibilitySha256: sha256(reproducibilityBytes),
     clientReproducibility: reproducibilityEvidence,
