@@ -53,9 +53,9 @@ import {
   canonicalOutputPath,
 } from "./path-safety";
 import {
-  assertBridgeReleaseManifest,
-  BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION,
-  type BridgeReleaseManifest,
+  assertBlackglassReleaseManifest,
+  BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION,
+  type BlackglassReleaseManifest,
 } from "./release-manifest";
 import { computeTreeIdentity } from "./tree-identity";
 import { computeToolingSourceIdentity } from "./tooling-source";
@@ -130,8 +130,8 @@ const receiptPath = await canonicalOutputPath(
 if (!sourceApp.endsWith(".app")) {
   throw new Error("Source must be an .app bundle");
 }
-if (basename(outputApp) !== "Blackglass Bridge.app") {
-  throw new Error('Output app basename must be exactly "Blackglass Bridge.app"');
+if (basename(outputApp) !== "Blackglass.app") {
+  throw new Error('Output app basename must be exactly "Blackglass.app"');
 }
 if (!manifestPath.endsWith(".json")) {
   throw new Error("Release manifest output must be a .json file");
@@ -372,7 +372,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     "-replace",
     "CFBundleDisplayName",
     "-string",
-    "Blackglass Bridge",
+    "Blackglass",
     infoPlist,
   ]);
   run([
@@ -380,7 +380,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     "-replace",
     "CFBundleIdentifier",
     "-string",
-    "com.blackglass.bridge",
+    "com.blackglass.app",
     infoPlist,
   ]);
   const helperBundleIdentifiers = await validatePreservedElectronHelpers(
@@ -419,13 +419,13 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       "-replace",
       key,
       "-string",
-      description.replaceAll("Obsidian", "Blackglass Bridge"),
+      description.replaceAll("Obsidian", "Blackglass"),
       infoPlist,
     ]);
   }
-  assertPlistString(infoPlist, "CFBundleDisplayName", "Blackglass Bridge");
+  assertPlistString(infoPlist, "CFBundleDisplayName", "Blackglass");
   assertPlistString(infoPlist, "CFBundleName", sourceBundleName);
-  assertPlistString(infoPlist, "CFBundleIdentifier", "com.blackglass.bridge");
+  assertPlistString(infoPlist, "CFBundleIdentifier", "com.blackglass.app");
   assertPlistString(infoPlist, "CFBundleExecutable", sourceExecutableName);
   if (hasPlistKey(infoPlist, "CFBundleURLTypes")) {
     throw new Error(
@@ -444,11 +444,11 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   if (!macOSCodeInventoriesEqual(macOSArtifact.codeInventory, sourceMacOSCodeInventory)) {
     throw new Error("Packaged macOS code inventory does not match the reviewed source");
   }
-  const bridgeVersion = await readBridgeVersion();
+  const blackglassVersion = await readBlackglassVersion();
   const publicArtifact = publicMacOSArtifact(macOSArtifact);
-  const releaseManifest: BridgeReleaseManifest = {
-    schemaVersion: BRIDGE_RELEASE_MANIFEST_SCHEMA_VERSION,
-    bridgeVersion,
+  const releaseManifest: BlackglassReleaseManifest = {
+    schemaVersion: BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION,
+    blackglassVersion,
     rendererVersion: sourceVersion,
     compatibilityBaseline: qualification.report.baseline,
     source: {
@@ -498,7 +498,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       packagedCodeInventoryMatchedSource: true,
     },
   };
-  assertBridgeReleaseManifest(releaseManifest);
+  assertBlackglassReleaseManifest(releaseManifest);
   const releaseManifestBytes = Buffer.from(
     `${JSON.stringify(releaseManifest, null, 2)}\n`,
     "utf8",
@@ -542,6 +542,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
           generatedWrapper.report.upstreamHeaderSha256,
         wrapperPatchedHeaderSha256: generatedWrapper.report.patchedHeaderSha256,
         profileDirectory: generatedWrapper.report.profileDirectory,
+        applicationName: generatedWrapper.report.applicationName,
         profileMode: generatedWrapper.report.profileMode,
         profilePathCanonicalAtSetup:
           generatedWrapper.report.profilePathCanonicalAtSetup,
@@ -667,14 +668,14 @@ function generatedSha256(value: Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-async function readBridgeVersion(): Promise<string> {
+async function readBlackglassVersion(): Promise<string> {
   const metadata = JSON.parse(
     await readFile(join(import.meta.dir, "../package.json"), "utf8"),
   ) as { version?: unknown };
   if (
     !isSupportedSemver(metadata.version)
   ) {
-    throw new Error("Bridge package has no semantic version");
+    throw new Error("Blackglass package has no semantic version");
   }
   return metadata.version;
 }

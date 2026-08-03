@@ -19,15 +19,15 @@ describe("E2E runtime binding", () => {
       releaseManifestSha256: "b".repeat(64),
       startedAt: "2026-07-28T12:00:00.000Z",
       pid: 100,
-      launchCommand: "/Applications/Blackglass Bridge.app/Contents/MacOS/Obsidian",
+      launchCommand: "/Applications/Blackglass.app/Contents/MacOS/Obsidian",
       debugPort: 9321,
       debugListenerPid: 100,
-      debugListenerCommand: "/Applications/Blackglass Bridge.app/Contents/MacOS/Obsidian",
+      debugListenerCommand: "/Applications/Blackglass.app/Contents/MacOS/Obsidian",
       debugTargetId: "renderer",
       debugTargetUrl: "file:///app/index.html",
-      executablePath: "/Applications/Blackglass Bridge.app/Contents/MacOS/Obsidian",
+      executablePath: "/Applications/Blackglass.app/Contents/MacOS/Obsidian",
       executableSha256: "c".repeat(64),
-      appBundlePath: "/Applications/Blackglass Bridge.app",
+      appBundlePath: "/Applications/Blackglass.app",
       appArtifactSha256: "d".repeat(64),
       appArtifact: { schemaVersion: 2 },
       adapterPath: "/tmp/obsidian-1.12.7.asar",
@@ -37,7 +37,7 @@ describe("E2E runtime binding", () => {
       blackglassHomeEnvironment: "BLACKGLASS_HOME",
       blackglassHomeMode: 0o700,
       blackglassHomeCanonical: true,
-      cliSocketPath: "/private/tmp/blackglass-client-ABC123/h/.blackglass-b.sock",
+      cliSocketPath: "/private/tmp/blackglass-client-ABC123/h/.blackglass-c.sock",
       nativeHomePath: "/Users/example",
       nativeHomeEnvironmentPreserved: true,
       vaultPath: "/tmp/client-a/vault",
@@ -82,19 +82,19 @@ describe("E2E runtime binding", () => {
       await writeFile(
         join(runRoot, "run-manifest.json"),
         `${JSON.stringify({
-          schemaVersion: 3,
+          schemaVersion: 4,
           endpoints,
           network: deriveE2ENetworkPlan(endpoints),
           compatibilityAsarSha256: "a".repeat(64),
           releaseManifestSha256: "b".repeat(64),
           adapterFileName: "obsidian-1.12.7.asar",
-          releaseManifestFileName: "bridge-release-manifest.json",
+          releaseManifestFileName: "blackglass-release-manifest.json",
           reproducibilityEvidenceFileName: "client-reproducibility.json",
           reproducibilityEvidenceSha256: "c".repeat(64),
         }, null, 2)}\n`,
         { mode: 0o600 },
       );
-      for (const client of ["client-a", "client-b"]) {
+      for (const client of ["client-a", "client-b", "client-c"]) {
         await mkdir(join(runRoot, client, "user-data"), { recursive: true });
         await mkdir(join(runRoot, client, "vault"), { recursive: true });
       }
@@ -104,6 +104,11 @@ describe("E2E runtime binding", () => {
       );
       expect(layout.clientName).toBe("client-a");
       expect(layout.clientRoot).toBe(join(runRoot, "client-a"));
+      const outsiderLayout = await resolvePreparedClientLayout(
+        join(runRoot, "client-c/user-data"),
+        join(runRoot, "client-c/vault"),
+      );
+      expect(outsiderLayout.clientName).toBe("client-c");
       const adapterPath = join(runRoot, "client-a/user-data/obsidian-1.12.7.asar");
       expect(
         assertPreparedClientAdapterPath(

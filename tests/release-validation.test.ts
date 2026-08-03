@@ -4,8 +4,8 @@ import { mkdtemp, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  assertBridgeReleaseManifest,
-  type BridgeReleaseManifest,
+  assertBlackglassReleaseManifest,
+  type BlackglassReleaseManifest,
 } from "../tools/release-manifest";
 import { canonicalOutputPath } from "../tools/path-safety";
 import { APPROVED_MACOS_ENTITLEMENTS } from "../tools/macos-code-signing";
@@ -130,10 +130,10 @@ const packagingToolchain: MacOSPackagingToolchain = {
 
 const macOS = {
   schemaVersion: 8 as const,
-  appBundleName: "Blackglass Bridge.app" as const,
-  bundleIdentifier: "com.blackglass.bridge" as const,
+  appBundleName: "Blackglass.app" as const,
+  bundleIdentifier: "com.blackglass.app" as const,
   bundleName: "Obsidian" as const,
-  displayName: "Blackglass Bridge" as const,
+  displayName: "Blackglass" as const,
   version: "1.12.7",
   executableName: "Obsidian" as const,
   infoPlistSha256: digest("1"),
@@ -141,7 +141,7 @@ const macOS = {
   cliExecutableName: "obsidian-cli" as const,
   // macOS codesigning changes the whole-file identity after the raw CLI patch.
   cliExecutableSha256: digest("a"),
-  cliSocketName: ".blackglass-b.sock" as const,
+  cliSocketName: ".blackglass-c.sock" as const,
   cliSocketOccurrences: 2 as const,
   embeddedAsarSha256: digest("3"),
   rendererRuntimeHomeEnvironment: "BLACKGLASS_HOME" as const,
@@ -170,7 +170,7 @@ const macOS = {
     targets: [
       {
         role: "application" as const,
-        identifier: "com.blackglass.bridge",
+        identifier: "com.blackglass.app",
         runtimeVersion: "26.0.0",
         entitlementPolicy: "approved" as const,
       },
@@ -244,7 +244,7 @@ const macOS = {
   },
   codeInventory,
   rootMetadata,
-  profileDirectory: "Blackglass Bridge" as const,
+  profileDirectory: "Blackglass" as const,
   profileMode: 448 as const,
   profilePathCanonicalAtSetup: true as const,
   explicitUserDataDirHonored: true as const,
@@ -257,10 +257,10 @@ const macOS = {
   upstreamICloudContainerRegistered: false as const,
 };
 
-function manifest(): BridgeReleaseManifest {
+function manifest(): BlackglassReleaseManifest {
   return {
-    schemaVersion: 8,
-    bridgeVersion: "0.1.1",
+    schemaVersion: 9,
+    blackglassVersion: "0.1.1",
     rendererVersion: "1.12.7",
     compatibilityBaseline: {
       id: "obsidian-macos-1.12.7",
@@ -276,9 +276,9 @@ function manifest(): BridgeReleaseManifest {
       macOSCodeInventory: codeInventory,
     },
     patcher: {
-      renderer: { formatVersion: 6, incisions: 6 },
-      wrapper: { formatVersion: 4, incisions: 3 },
-      cli: { formatVersion: 1, incisions: 2 },
+      renderer: { formatVersion: 7, incisions: 6 },
+      wrapper: { formatVersion: 5, incisions: 3 },
+      cli: { formatVersion: 2, incisions: 2 },
     },
     endpoints: {
       controlOrigin: "https://blackglass.example.com",
@@ -287,11 +287,11 @@ function manifest(): BridgeReleaseManifest {
     packagingToolchain,
     toolingSource,
     renderer: {
-      patchFormatVersion: 6,
+      patchFormatVersion: 7,
       incisionCount: 6,
       controlOrigin: "https://blackglass.example.com",
       dataHost: "blackglass-data.example.com",
-      cliSocketName: ".blackglass-b.sock",
+      cliSocketName: ".blackglass-c.sock",
       cliCommandName: "blackglass",
       cliCommandPath: "/usr/local/bin/blackglass",
       runtimeHomeEnvironment: "BLACKGLASS_HOME",
@@ -305,9 +305,10 @@ function manifest(): BridgeReleaseManifest {
       mainAfterSha256: digest("5"),
     },
     wrapper: {
-      patchFormatVersion: 4,
+      patchFormatVersion: 5,
       incisionCount: 3,
-      profileDirectory: "Blackglass Bridge",
+      profileDirectory: "Blackglass",
+      applicationName: "Blackglass",
       profileMode: 448,
       profilePathCanonicalAtSetup: true,
       explicitUserDataDirHonored: true,
@@ -324,9 +325,9 @@ function manifest(): BridgeReleaseManifest {
       mainAfterSha256: digest("f"),
     },
     cli: {
-      patchFormatVersion: 1,
+      patchFormatVersion: 2,
       incisionCount: 2,
-      socketName: ".blackglass-b.sock",
+      socketName: ".blackglass-c.sock",
       upstreamSha256: digest("d"),
       patchedSha256: digest("e"),
     },
@@ -354,12 +355,12 @@ function qualification(): ReleaseQualification {
     startedAt: string,
     completedAt: string,
   ): MacOSPackageReceipt => ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedBy: "tools/package-macos.ts",
     invocationId,
     startedAt,
     completedAt,
-    bridgeVersion: "0.1.1",
+    blackglassVersion: "0.1.1",
     rendererVersion: "1.12.7",
     releaseManifestSha256: digest("a"),
     macOSArtifactSha256: createHash("sha256")
@@ -386,12 +387,12 @@ function qualification(): ReleaseQualification {
     "2026-07-28T11:03:00.000Z",
   );
   const clientReproducibility: MacOSReproducibilityEvidence = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     generatedBy: "tools/verify-macos-reproducibility.ts",
     passed: true,
     separateOutputs: true,
     independentPackageInvocations: true,
-    bridgeVersion: "0.1.1",
+    blackglassVersion: "0.1.1",
     rendererVersion: "1.12.7",
     releaseManifestSha256: digest("a"),
     macOSArtifactSha256: firstReceipt.macOSArtifactSha256,
@@ -416,11 +417,11 @@ function qualification(): ReleaseQualification {
     ],
   };
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     qualifiedAt: "2026-07-28T12:00:00.000Z",
     passed: true,
     platform: "macOS Apple Silicon",
-    bridgeVersion: "0.1.1",
+    blackglassVersion: "0.1.1",
     rendererVersion: "1.12.7",
     endpoints: {
       controlOrigin: "https://blackglass.example.com",
@@ -557,14 +558,14 @@ describe("generated release validation records", () => {
       (value: any) =>
         (value.packagingToolchain.runtimeDependencies[0].tree.sha256 =
           "changed"),
-      (value: any) => (value.macOS.appBundleName = "Renamed Bridge.app"),
+      (value: any) => (value.macOS.appBundleName = "Renamed Blackglass.app"),
       (value: any) =>
         (value.macOS.cliExecutableSha256 = value.cli.upstreamSha256),
       (value: any) => (value.cli.patchedSha256 = value.cli.upstreamSha256),
     ]) {
       const candidate = structuredClone(manifest()) as any;
       mutate(candidate);
-      expect(() => assertBridgeReleaseManifest(candidate)).toThrow();
+      expect(() => assertBlackglassReleaseManifest(candidate)).toThrow();
     }
   });
 
@@ -573,10 +574,10 @@ describe("generated release validation records", () => {
     expect(candidate.cli.patchedSha256).not.toBe(
       candidate.macOS.cliExecutableSha256,
     );
-    expect(() => assertBridgeReleaseManifest(candidate)).not.toThrow();
+    expect(() => assertBlackglassReleaseManifest(candidate)).not.toThrow();
 
     candidate.macOS.cliExecutableSha256 = candidate.cli.upstreamSha256;
-    expect(() => assertBridgeReleaseManifest(candidate)).toThrow(
+    expect(() => assertBlackglassReleaseManifest(candidate)).toThrow(
       "artifact bindings",
     );
   });
@@ -613,7 +614,7 @@ describe("generated release validation records", () => {
   test("rejects unsafe names and negative tree counts", () => {
     expect(() => releaseValidationRecordFileName("next", "1.12.7")).toThrow();
     expect(releaseValidationRecordFileName("0.1.1", "1.12.7")).toBe(
-      "blackglass-bridge-0.1.1-obsidian-1.12.7-qualification.json",
+      "blackglass-0.1.1-obsidian-1.12.7-qualification.json",
     );
 
     const record = buildReleaseValidationRecord({
@@ -632,7 +633,7 @@ describe("generated release validation records", () => {
   });
 
   test("rejects noncanonical semantic versions in manifests and records", () => {
-    const invalidBridgeVersions = [
+    const invalidBlackglassVersions = [
       "01.2.3",
       "1.02.3",
       "1.2.03",
@@ -642,24 +643,24 @@ describe("generated release validation records", () => {
       "1.2.3-alpha.01",
       "1.2.3+build",
     ];
-    for (const version of invalidBridgeVersions) {
+    for (const version of invalidBlackglassVersions) {
       const candidateManifest = structuredClone(manifest()) as any;
-      candidateManifest.bridgeVersion = version;
-      expect(() => assertBridgeReleaseManifest(candidateManifest), version).toThrow();
+      candidateManifest.blackglassVersion = version;
+      expect(() => assertBlackglassReleaseManifest(candidateManifest), version).toThrow();
 
       const candidateRecord = buildReleaseValidationRecord({
         manifest: manifest(),
         qualification: qualification(),
         qualificationSha256: digest("f"),
       }) as any;
-      candidateRecord.bridgeVersion = version;
+      candidateRecord.blackglassVersion = version;
       expect(() => assertReleaseValidationRecord(candidateRecord), version).toThrow();
     }
 
     for (const version of ["01.12.7", "1.12.07", "1.12.7-alpha"]) {
       const candidateManifest = structuredClone(manifest()) as any;
       candidateManifest.rendererVersion = version;
-      expect(() => assertBridgeReleaseManifest(candidateManifest), version).toThrow();
+      expect(() => assertBlackglassReleaseManifest(candidateManifest), version).toThrow();
 
       const candidateRecord = buildReleaseValidationRecord({
         manifest: manifest(),
@@ -678,7 +679,7 @@ describe("generated release validation records", () => {
       releaseValidationRecordFileName("0.1.1", "1.12.7"),
     );
     expect(await canonicalOutputPath(output, "Validation record")).toEndWith(
-      `/blackglass-bridge-0.1.1-obsidian-1.12.7-qualification.json`,
+      `/blackglass-0.1.1-obsidian-1.12.7-qualification.json`,
     );
     await writeFile(output, "existing");
     await expect(canonicalOutputPath(output, "Validation record")).rejects.toThrow(

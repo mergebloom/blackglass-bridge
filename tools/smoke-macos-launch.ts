@@ -47,6 +47,7 @@ import {
   type DevToolsTargetDiagnostic,
   type FinderLaunchSmokeEvidence,
 } from "./macos-launch-smoke";
+import { inspectMacOSLaunchPreflight } from "./macos-preflight";
 import { readPreparedE2ERun } from "./e2e-network";
 import { readVerifiedE2ETls } from "./e2e-tls";
 import {
@@ -147,7 +148,7 @@ if (
 }
 
 const realProfiles = [
-  join(homedir(), "Library/Application Support/Blackglass Bridge"),
+  join(homedir(), "Library/Application Support/Blackglass"),
   join(homedir(), "Library/Application Support/obsidian"),
 ];
 const realProfileFingerprintsBefore = await Promise.all(
@@ -231,7 +232,7 @@ try {
   launchHomeSameDeviceAsArchive = true;
   launchProfilePath = join(
     launchHomePath,
-    "Library/Application Support/Blackglass Bridge",
+    "Library/Application Support/Blackglass",
   );
   cliSocketAddress = join(launchHomePath, currentClient.cliSocketName);
   if (Buffer.byteLength(cliSocketAddress, "utf8") > 103) {
@@ -1274,100 +1275,6 @@ function processUsesPath(mainPid: number, path: string): boolean {
   return result.stdout.toString().split("\n").some((line) => line.startsWith(prefix));
 }
 
-async function inspectMacOSLaunchPreflight(): Promise<unknown> {
-  const helperRoot = await mkdtemp("/private/tmp/blackglass-preflight-");
-  const helperPath = join(helperRoot, "macos-launch-preflight");
-  let snapshot: unknown;
-  let primaryError: Error | undefined;
-  try {
-    const helperRootStat = await lstat(helperRoot);
-    if (
-      !helperRootStat.isDirectory() ||
-      helperRootStat.isSymbolicLink() ||
-      (helperRootStat.mode & 0o777) !== 0o700 ||
-      helperRootStat.uid !== process.getuid!()
-    ) {
-      throw new Error("Disposable macOS launch preflight directory is not private");
-    }
-    const source = resolve(import.meta.dir, "macos-launch-preflight.m");
-    const compiled = Bun.spawnSync([
-      "/usr/bin/xcrun",
-      "clang",
-      "-fobjc-arc",
-      "-Wall",
-      "-Wextra",
-      "-Werror",
-      "-framework",
-      "AppKit",
-      "-framework",
-      "CoreGraphics",
-      source,
-      "-o",
-      helperPath,
-    ], { stdout: "pipe", stderr: "pipe" });
-    if (compiled.exitCode !== 0) {
-      throw new Error(
-        `Unable to compile macOS launch preflight helper: ${compiled.stderr.toString("utf8").trim()}`,
-      );
-    }
-    const helperStat = await lstat(helperPath);
-    if (!helperStat.isFile() || helperStat.isSymbolicLink()) {
-      throw new Error("Compiled macOS launch preflight helper is not a real file");
-    }
-    const inspected = Bun.spawnSync(
-      [
-        helperPath,
-        BLACKGLASS_BUNDLE_IDENTIFIER,
-        OBSIDIAN_BUNDLE_IDENTIFIER,
-      ],
-      { stdout: "pipe", stderr: "pipe" },
-    );
-    if (inspected.exitCode !== 0) {
-      throw new Error(
-        `Unable to inspect macOS launch preflight state (exit ${inspected.exitCode}): ` +
-          inspected.stderr.toString("utf8").trim(),
-      );
-    }
-    try {
-      snapshot = JSON.parse(inspected.stdout.toString("utf8")) as unknown;
-    } catch (error) {
-      throw new Error(`macOS launch preflight returned malformed JSON: ${asError(error).message}`);
-    }
-  } catch (error) {
-    primaryError = asError(error);
-  }
-
-  const cleanupErrors: Error[] = [];
-  try {
-    if (await pathExists(helperPath)) await unlink(helperPath);
-  } catch (error) {
-    cleanupErrors.push(new Error(`Unable to remove launch preflight helper: ${asError(error).message}`));
-  }
-  try {
-    await rmdir(helperRoot);
-  } catch (error) {
-    cleanupErrors.push(
-      new Error(`Unable to remove launch preflight directory: ${asError(error).message}`),
-    );
-  }
-  if (primaryError && cleanupErrors.length > 0) {
-    throw new AggregateError(
-      [primaryError, ...cleanupErrors],
-      `macOS launch preflight failed: ${primaryError.message}; cleanup failures: ` +
-        cleanupErrors.map((error) => error.message).join(" | "),
-    );
-  }
-  if (primaryError) throw primaryError;
-  if (cleanupErrors.length > 0) {
-    throw new AggregateError(
-      cleanupErrors,
-      `macOS launch preflight cleanup failed: ` +
-        cleanupErrors.map((error) => error.message).join(" | "),
-    );
-  }
-  return snapshot;
-}
-
 async function compileMacOSTerminationHelper(smokeRoot: string): Promise<string> {
   const source = resolve(import.meta.dir, "macos-terminate.m");
   const output = join(smokeRoot, "terminate-macos-application");
@@ -1581,9 +1488,9 @@ async function newDiagnosticReports(
     }
     if (
       body.includes(appPath) ||
-      body.includes("com.blackglass.bridge") ||
-      name.includes("blackglass bridge") ||
-      name.includes("blackglass_bridge")
+      body.includes("com.blackglass.app") ||
+      name.includes("blackglass blackglass") ||
+      name.includes("blackglass_blackglass")
     ) {
       candidates.push(path);
     }

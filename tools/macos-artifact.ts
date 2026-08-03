@@ -6,7 +6,7 @@ import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runt
 import { inspectPatchedMainProcess } from "../packages/client-adapter/src/patch";
 import { AsarArchive, asarHeaderSha256 } from "./asar";
 import {
-  BRIDGE_CLI_SOCKET_NAME,
+  BLACKGLASS_CLI_SOCKET_NAME,
   CLI_BINARY_INCISION_COUNT,
   inspectPatchedCliBinary,
 } from "./cli-binary";
@@ -36,17 +36,17 @@ export const ELECTRON_HELPER_VARIANTS = [
 export interface MacOSArtifact {
   schemaVersion: 8;
   appPath: string;
-  appBundleName: "Blackglass Bridge.app";
-  bundleIdentifier: "com.blackglass.bridge";
+  appBundleName: "Blackglass.app";
+  bundleIdentifier: "com.blackglass.app";
   bundleName: "Obsidian";
-  displayName: "Blackglass Bridge";
+  displayName: "Blackglass";
   version: string;
   executableName: "Obsidian";
   infoPlistSha256: string;
   executableSha256: string;
   cliExecutableName: "obsidian-cli";
   cliExecutableSha256: string;
-  cliSocketName: typeof BRIDGE_CLI_SOCKET_NAME;
+  cliSocketName: typeof BLACKGLASS_CLI_SOCKET_NAME;
   cliSocketOccurrences: typeof CLI_BINARY_INCISION_COUNT;
   embeddedAsarSha256: string;
   rendererRuntimeHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
@@ -60,7 +60,7 @@ export interface MacOSArtifact {
   codeSigning: MacOSCodeSigningEvidence;
   codeInventory: MacOSCodeInventory;
   rootMetadata: MacOSRootMetadata;
-  profileDirectory: "Blackglass Bridge";
+  profileDirectory: "Blackglass";
   profileMode: 448;
   profilePathCanonicalAtSetup: true;
   explicitUserDataDirHonored: true;
@@ -76,7 +76,7 @@ export interface MacOSArtifact {
 export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSArtifact> {
   const appPath = resolve(appArgument);
   if (
-    basename(appPath) !== "Blackglass Bridge.app" ||
+    basename(appPath) !== "Blackglass.app" ||
     !(await lstat(appPath)).isDirectory()
   ) {
     throw new Error(`macOS artifact is not an app bundle: ${appPath}`);
@@ -86,19 +86,19 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   const bundleName = plistString(infoPlist, "CFBundleName");
   const displayName = plistString(infoPlist, "CFBundleDisplayName");
   if (
-    bundleIdentifier !== "com.blackglass.bridge" ||
+    bundleIdentifier !== "com.blackglass.app" ||
     bundleName !== "Obsidian" ||
-    displayName !== "Blackglass Bridge"
+    displayName !== "Blackglass"
   ) {
     throw new Error(
-      `Unexpected Bridge identity: ${bundleIdentifier}, ${bundleName}, ${displayName}`,
+      `Unexpected Blackglass identity: ${bundleIdentifier}, ${bundleName}, ${displayName}`,
     );
   }
   if (hasPlistKey(infoPlist, "CFBundleURLTypes")) {
-    throw new Error("Blackglass Bridge must not register an upstream URL scheme");
+    throw new Error("Blackglass must not register an upstream URL scheme");
   }
   if (hasPlistKey(infoPlist, "NSUbiquitousContainers")) {
-    throw new Error("Blackglass Bridge must not register an upstream iCloud container");
+    throw new Error("Blackglass must not register an upstream iCloud container");
   }
   run([
     MACOS_PACKAGING_EXECUTABLES.codesign,
@@ -122,11 +122,11 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
 
   const executableName = plistString(infoPlist, "CFBundleExecutable");
   if (executableName !== "Obsidian") {
-    throw new Error(`Unexpected Bridge runtime executable: ${executableName}`);
+    throw new Error(`Unexpected Blackglass runtime executable: ${executableName}`);
   }
   const version = plistString(infoPlist, "CFBundleShortVersionString");
   if (!isSupportedStableSemver(version)) {
-    throw new Error(`Unexpected Bridge renderer version: ${version}`);
+    throw new Error(`Unexpected Blackglass renderer version: ${version}`);
   }
   const helperBundleIdentifiers: string[] = [];
   for (const helper of ELECTRON_HELPER_VARIANTS) {
@@ -138,13 +138,13 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     );
     const helperIdentifier = `md.obsidian.helper${helper.identifierSuffix}`;
     if (plistString(helperPlist, "CFBundleIdentifier") !== helperIdentifier) {
-      throw new Error(`Unexpected Bridge helper identifier: ${helperName}`);
+      throw new Error(`Unexpected Blackglass helper identifier: ${helperName}`);
     }
     if (plistString(helperPlist, "CFBundleDisplayName") !== helperName) {
-      throw new Error(`Unexpected Bridge helper display name: ${helperName}`);
+      throw new Error(`Unexpected Blackglass helper display name: ${helperName}`);
     }
     if (plistString(helperPlist, "CFBundleExecutable") !== helperName) {
-      throw new Error(`Unexpected Bridge helper executable: ${helperName}`);
+      throw new Error(`Unexpected Blackglass helper executable: ${helperName}`);
     }
     helperBundleIdentifiers.push(helperIdentifier);
   }
@@ -169,10 +169,10 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   return {
     schemaVersion: 8,
     appPath,
-    appBundleName: "Blackglass Bridge.app",
-    bundleIdentifier: "com.blackglass.bridge",
+    appBundleName: "Blackglass.app",
+    bundleIdentifier: "com.blackglass.app",
     bundleName: "Obsidian",
-    displayName: "Blackglass Bridge",
+    displayName: "Blackglass",
     version,
     executableName: "Obsidian",
     infoPlistSha256: await sha256File(infoPlist),

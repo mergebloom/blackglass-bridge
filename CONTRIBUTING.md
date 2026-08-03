@@ -1,6 +1,6 @@
 # Contributing
 
-Blackglass Bridge accepts improvements to the compatibility tooling, safety
+Blackglass accepts improvements to the compatibility tooling, safety
 checks, tests, and documentation. Contributions must not include proprietary
 application binaries, ASARs, credentials, vault contents, or generated app
 bundles.

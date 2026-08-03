@@ -113,7 +113,7 @@ function resolveMacOSDeveloperTool(name: "git" | "lipo" | "xcodebuild"): string 
 export function assertPinnedBunVersion(): void {
   if (Bun.version !== PINNED_BUN_VERSION) {
     throw new Error(
-      `Blackglass Bridge requires Bun ${PINNED_BUN_VERSION}; found ${Bun.version}`,
+      `Blackglass requires Bun ${PINNED_BUN_VERSION}; found ${Bun.version}`,
     );
   }
 }

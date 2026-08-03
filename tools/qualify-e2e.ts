@@ -14,6 +14,7 @@ import {
   type E2ENetworkCaptureFinalize,
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
+import { preparedE2EScenarioId } from "./e2e-scenario";
 import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
 import { inspectMacOSPackagingToolchain } from "./packaging-toolchain";
 import {
@@ -27,7 +28,7 @@ import {
   assertCanonicalRecoveryCorpusManifest,
 } from "./recovery-corpus";
 import { inspectServerArtifact, publicServerArtifact } from "./server-artifact";
-import { parseBridgeReleaseManifest } from "./release-manifest";
+import { parseBlackglassReleaseManifest } from "./release-manifest";
 import {
   assertRecoveryReportResetBinding,
   assertSourceLossResetRecord,
@@ -58,7 +59,7 @@ const releaseManifestBytes = await readFile(
 if (sha256(releaseManifestBytes) !== runManifest.releaseManifestSha256) {
   throw new Error("Prepared release manifest changed after E2E setup");
 }
-const releaseManifest = parseBridgeReleaseManifest(releaseManifestBytes);
+const releaseManifest = parseBlackglassReleaseManifest(releaseManifestBytes);
 const currentToolingSource = await computeToolingSourceIdentity();
 const currentPackagingToolchain = await inspectMacOSPackagingToolchain();
 if (
@@ -95,7 +96,7 @@ const [
 ]);
 
 if (
-  runManifest.schemaVersion !== 3 ||
+  runManifest.schemaVersion !== 4 ||
   syncReport.schemaVersion !== 2 ||
   syncReport.passed !== true ||
   recoveryManifest.schemaVersion !== 3 ||
@@ -421,11 +422,12 @@ for (const file of [
 }
 
 const qualification = {
-  schemaVersion: 8,
+  schemaVersion: 9,
+  scenarioId: preparedE2EScenarioId(runManifest.scenarioId),
   qualifiedAt: new Date().toISOString(),
   passed: true,
   platform: "macOS Apple Silicon",
-  bridgeVersion: runManifest.bridgeVersion,
+  blackglassVersion: runManifest.blackglassVersion,
   rendererVersion: runManifest.rendererVersion,
   endpoints: runManifest.endpoints,
   toolingSource: releaseManifest.toolingSource,

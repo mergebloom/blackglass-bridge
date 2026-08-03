@@ -1,8 +1,8 @@
-# Blackglass Bridge architecture
+# Blackglass architecture
 
 ## Responsibility
 
-Blackglass Bridge owns the desktop compatibility boundary:
+Blackglass owns the desktop compatibility boundary:
 
 1. inspect an authorized upstream renderer against a reviewed versioned baseline;
 2. inventory every packed JavaScript file, every JavaScript file in the two
@@ -28,13 +28,13 @@ or production operations. Those belong to Blackglass Server.
 
 ## Stable boundary with Blackglass Server
 
-Bridge expects two endpoints:
+Blackglass expects two endpoints:
 
 - an HTTP control origin, such as `http://127.0.0.1:3000`; and
 - a Sync WebSocket host, such as `127.0.0.1:3003`.
 
 The protocol contract is documented in
-[`protocol/obsidian-1.12.7.md`](protocol/obsidian-1.12.7.md). Bridge treats the
+[`protocol/obsidian-1.12.7.md`](protocol/obsidian-1.12.7.md). Blackglass treats the
 server as an external dependency and the E2E runner accepts its binary through
 `BLACKGLASS_SERVER_BINARY`. The default is the release artifact in the sibling
 `blackglass-server` project.
@@ -79,12 +79,15 @@ it; the tooling tree at the tag must remain byte-identical.
 - Plaintext loopback endpoints are permitted only for local testing.
 - Non-loopback deployments require authenticated TLS endpoints.
 - An explicit `--user-data-dir` is honored for disposable E2E clients; otherwise
-  the wrapper selects the separate Blackglass Bridge profile under
+  the wrapper selects the separate Blackglass profile under
   `BLACKGLASS_HOME`, with native `HOME` as the ordinary-launch fallback. The GUI
   `HOME` is never overridden, so Electron continues to use the user's login
   Keychain. The wrapper rejects a non-canonical path at setup and enforces
   directory mode `0700` for both forms.
-- The embedded main process uses `.blackglass-b.sock` instead of Obsidian's
+- The wrapper sets Electron's application name to `Blackglass` before profile
+  initialization. Electron therefore uses `Blackglass Safe Storage`; it never
+  requests Obsidian's Safe Storage item or migrates the Obsidian login.
+- The embedded main process uses `.blackglass-c.sock` instead of Obsidian's
   global CLI socket, so the two applications cannot unlink each other's CLI
   endpoint. On macOS, a sixth renderer incision makes `BLACKGLASS_HOME` the
   socket runtime root. Its registration action installs

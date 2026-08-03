@@ -20,13 +20,13 @@ const endpoints = {
   dataHost: "blackglass-data.example.com",
 };
 const run: PreparedE2ERunManifest = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   endpoints,
   network: deriveE2ENetworkPlan(endpoints),
   compatibilityAsarSha256: "a".repeat(64),
   releaseManifestSha256: "b".repeat(64),
   adapterFileName: "obsidian-1.12.7.asar",
-  releaseManifestFileName: "bridge-release-manifest.json",
+  releaseManifestFileName: "blackglass-release-manifest.json",
   reproducibilityEvidenceFileName: "client-reproducibility.json",
   reproducibilityEvidenceSha256: "c".repeat(64),
 };
@@ -44,7 +44,7 @@ const identity = {
   debugTargetUrl: "file:///app/index.html",
   executablePath: "/app/Obsidian",
   executableSha256: "d".repeat(64),
-  appBundlePath: "/app/Blackglass Bridge.app",
+  appBundlePath: "/app/Blackglass.app",
   appArtifactSha256: "e".repeat(64),
   appArtifact: {},
   adapterPath: "/run/client-a/user-data/obsidian-1.12.7.asar",
@@ -54,7 +54,7 @@ const identity = {
   blackglassHomeEnvironment: "BLACKGLASS_HOME",
   blackglassHomeMode: 0o700,
   blackglassHomeCanonical: true,
-  cliSocketPath: "/private/tmp/blackglass-client-ABC123/h/.blackglass-b.sock",
+  cliSocketPath: "/private/tmp/blackglass-client-ABC123/h/.blackglass-c.sock",
   nativeHomePath: "/Users/example",
   nativeHomeEnvironmentPreserved: true,
   vaultPath: "/run/client-a/vault",

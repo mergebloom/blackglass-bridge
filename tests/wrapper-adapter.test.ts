@@ -17,9 +17,10 @@ test("macOS wrapper uses an isolated profile and disables upstream updates", () 
 
   expect(generated.buffer.length).toBe(upstream.length);
   expect(generated.report).toMatchObject({
-    patchFormatVersion: 4,
+    patchFormatVersion: 5,
     incisionCount: 3,
-    profileDirectory: "Blackglass Bridge",
+    profileDirectory: "Blackglass",
+    applicationName: "Blackglass",
     profileMode: 0o700,
     profilePathCanonicalAtSetup: true,
     explicitUserDataDirHonored: true,
@@ -33,7 +34,8 @@ test("macOS wrapper uses an isolated profile and disables upstream updates", () 
     generated.report.mainBeforeSha256,
   );
   expect(inspectPatchedMacOSWrapperAsar(generated.buffer)).toEqual({
-    profileDirectory: "Blackglass Bridge",
+    profileDirectory: "Blackglass",
+    applicationName: "Blackglass",
     profileMode: 0o700,
     profilePathCanonicalAtSetup: true,
     explicitUserDataDirHonored: true,
@@ -49,13 +51,16 @@ test("macOS wrapper prefers BLACKGLASS_HOME while preserving native HOME fallbac
   const patched = patchMacOSWrapperMain(Buffer.from(wrapperMain())).toString("utf8");
 
   expect(patched).toContain(
+    "app.setName('Blackglass');",
+  );
+  expect(patched).toContain(
     "let B=process.env.BLACKGLASS_HOME,S=B&&fs.statSync(B);",
   );
   expect(patched).toContain(
     "let H=B||process.env.HOME,dataPath=path.resolve(app.commandLine.getSwitchValue('user-data-dir')",
   );
   expect(patched).toContain(
-    "H?.[0]==='/'&&H+'/Library/Application Support/Blackglass Bridge'",
+    "H?.[0]==='/'&&H+'/Library/Application Support/Blackglass'",
   );
   expect(patched).toContain("app.setPath('userData',dataPath);");
   expect(patched).toContain("app.setPath('sessionData',dataPath);");
@@ -82,7 +87,7 @@ test("macOS wrapper isolates BLACKGLASS_HOME, falls back to HOME, and honors exp
     });
     const defaultProfile = nodePath.join(
       dedicatedHome,
-      "Library/Application Support/Blackglass Bridge",
+      "Library/Application Support/Blackglass",
     );
     expect(defaultPaths).toEqual({
       userData: defaultProfile,
@@ -92,7 +97,7 @@ test("macOS wrapper isolates BLACKGLASS_HOME, falls back to HOME, and honors exp
     expect(fs.existsSync(
       nodePath.join(
         nativeHome,
-        "Library/Application Support/Blackglass Bridge",
+        "Library/Application Support/Blackglass",
       ),
     )).toBe(false);
 
@@ -100,7 +105,7 @@ test("macOS wrapper isolates BLACKGLASS_HOME, falls back to HOME, and honors exp
     expect(nativePaths.userData).toBe(
       nodePath.join(
         nativeHome,
-        "Library/Application Support/Blackglass Bridge",
+        "Library/Application Support/Blackglass",
       ),
     );
     for (const unsafeNativeHome of [undefined, "", "relative/home"]) {
@@ -186,6 +191,19 @@ test("wrapper inspection rejects disabled home checks and changed native fallbac
       makeArchive("main.js", Buffer.from(changed)),
     )).toThrow("safety prelude");
   }
+});
+
+test("wrapper inspection requires the Blackglass identity before profile initialization", () => {
+  const patched = patchMacOSWrapperMain(Buffer.from(wrapperMain())).toString("utf8");
+  const applicationName = "app.setName('Blackglass');";
+  const profileMarker = "app.setPath('userData',dataPath);";
+  const reordered = patched
+    .replace(applicationName, " ".repeat(applicationName.length))
+    .replace(profileMarker, `${profileMarker}${applicationName}`);
+
+  expect(() =>
+    inspectPatchedMacOSWrapperAsar(makeArchive("main.js", Buffer.from(reordered))),
+  ).toThrow("before profile initialization");
 });
 
 test("macOS wrapper rejects missing boundaries and altered reviewed spans", () => {
@@ -347,6 +365,7 @@ function executeWrapper(
       throw new Error(`Unexpected app path: ${name}`);
     },
     getVersion: () => "1.12.7",
+    setName: () => undefined,
     setPath: (name: string, value: string) => {
       paths[name] = value;
     },

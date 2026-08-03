@@ -39,7 +39,7 @@ if ! is_supported_semver "$version"; then
   exit 1
 fi
 
-name="blackglass-bridge-v${version}-tooling"
+name="blackglass-v${version}-tooling"
 archive="${out_dir}/${name}.zip"
 checksum="${archive}.sha256"
 mkdir -p "$out_dir"

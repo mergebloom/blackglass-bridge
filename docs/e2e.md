@@ -33,6 +33,52 @@ qualifying a newly built artifact.
 
 ## Run outline
 
+### Resumable preparation
+
+Freeze one clean client/server pair before starting expensive work. The server
+release contract must already name the exact client commit:
+
+```sh
+bun run release:candidate:create -- \
+  .data/release-candidates/release.json \
+  --server-repo ../blackglass-server \
+  --control-origin https://sync.example.test \
+  --data-host sync-data.example.test
+
+bun run release:run -- .data/release-candidates/release.json \
+  --server-repo ../blackglass-server \
+  --full-checks --linux --prepare-client \
+  --renderer 1.12.7 \
+  --official-app '/Volumes/Obsidian/Obsidian.app' \
+  --official-dmg /path/to/Obsidian.dmg \
+  --run .data/e2e/release
+```
+
+For the Phase 3/4 matrix, prepare a separate immutable run for each required
+scenario by adding one of:
+
+```text
+--scenario E2E-P3-TENANCY
+--scenario E2E-P4-CUSTOM-E2EE
+--scenario E2E-P4-MANAGED-ENCRYPTION
+```
+
+When omitted, preparation uses `E2E-RELEASE-SYNC-RECOVERY`, the existing
+bidirectional Sync and cold-recovery release gate. The selected scenario is
+stored in `run-manifest.json`; changing it requires a fresh run directory.
+
+The runner always repeats its release doctor, then resumes candidate-bound
+checks, exact server builds, two independent client packages,
+reproducibility verification, E2E preparation, and TLS setup. It refuses a
+changed checkout or partial output set. Add `--require-gui` only from the
+unlocked desktop session; that final preflight checks conflicting processes
+and ports before the interactive qualification below. To retry a failed GUI
+qualification, pass a fresh `--run` directory: candidate checks, builds, and
+packages are reused while only that run's E2E and TLS outputs are prepared.
+The preflight finds generated `Blackglass.app` processes even when
+LaunchServices omits them. Generated state remains under ignored `.data` paths
+and contains no credentials.
+
 Build the app twice from the same inputs into separate directories, retaining
 the receipt emitted by each package invocation, then verify the two outputs and
 build the server. The verifier writes path-free evidence and fails if the
@@ -41,9 +87,9 @@ or release manifest differs:
 
 ```sh
 bun run package:macos:verify-reproducibility -- \
-  '/path/to/build-a/Blackglass Bridge.app' /path/to/build-a/release.json \
+  '/path/to/build-a/Blackglass.app' /path/to/build-a/release.json \
   /path/to/build-a/package-receipt.json \
-  '/path/to/build-b/Blackglass Bridge.app' /path/to/build-b/release.json \
+  '/path/to/build-b/Blackglass.app' /path/to/build-b/release.json \
   /path/to/build-b/package-receipt.json \
   /path/to/client-reproducibility.json
 ```
@@ -52,10 +98,10 @@ Then create a fresh run and its scoped TLS material:
 
 ```sh
 bun run e2e:prepare -- .data/e2e/<run> /path/to/blackglass.asar \
-  --app '/path/to/build-a/Blackglass Bridge.app' \
+  --app '/path/to/build-a/Blackglass.app' \
   --release-manifest /path/to/build-a/release.json \
   --package-receipt /path/to/build-a/package-receipt.json \
-  --second-app '/path/to/build-b/Blackglass Bridge.app' \
+  --second-app '/path/to/build-b/Blackglass.app' \
   --second-release-manifest /path/to/build-b/release.json \
   --second-package-receipt /path/to/build-b/package-receipt.json \
   --reproducibility-evidence /path/to/client-reproducibility.json
@@ -77,6 +123,11 @@ BLACKGLASS_SERVER_BINARY=/path/to/blackglass-server \
   --expected-server-source-revision "$server_source_revision"
 ```
 
+On a new run the server harness provisions the primary and isolation-test
+accounts through the server's offline `user create` command before starting any
+listener. A restart reuses the existing SQLite account state. No plaintext
+runtime bootstrap setting is accepted or supplied.
+
 The launcher bundles the verified proxy source to an owner-only temporary
 directory and runs it with Node.js. This avoids a Bun 1.3.8 TLS-upgrade socket
 forwarding defect while keeping the documented command and source provenance
@@ -90,7 +141,7 @@ packaged-app smoke in a third terminal and let it finish before launching the
 two E2E clients:
 
 Run the smoke from the active, unlocked macOS desktop session with Xcode Command
-Line Tools available. Quit every Obsidian and Blackglass Bridge application
+Line Tools available. Quit every Obsidian and Blackglass application
 first; the smoke fails closed before launch if either bundle identifier is
 running. It also requires its loopback debugging port to be unused.
 
@@ -123,7 +174,7 @@ bun run client:launch -- \
   .data/e2e/<run>/client-a/user-data/obsidian-1.12.7.asar \
   .data/e2e/<run>/client-a/user-data \
   .data/e2e/<run>/client-a/vault \
-  --app '/path/to/Blackglass Bridge.app' \
+  --app '/path/to/Blackglass.app' \
   --debug-port 9321 \
   --e2e-tls-metadata .data/e2e/<run>/tls-metadata.json \
   --identity-out .data/e2e/<run>/client-a-launch.json
@@ -132,7 +183,7 @@ bun run client:launch -- \
   .data/e2e/<run>/client-b/user-data/obsidian-1.12.7.asar \
   .data/e2e/<run>/client-b/user-data \
   .data/e2e/<run>/client-b/vault \
-  --app '/path/to/Blackglass Bridge.app' \
+  --app '/path/to/Blackglass.app' \
   --debug-port 9322 \
   --e2e-tls-metadata .data/e2e/<run>/tls-metadata.json \
   --identity-out .data/e2e/<run>/client-b-launch.json
@@ -150,8 +201,9 @@ bun run e2e:network:capture -- .data/e2e/<run> client-b
 Through the built-in UI, client A logs in, creates an E2EE vault in Blackglass
 Server, connects, unlocks, and starts Sync. Client B logs in, selects the same
 vault, connects, unlocks, and starts Sync. The operator opens the relevant
-native dialogs; `tools/e2e-ui.mjs` is a launch-bound CDP helper for the form
-submissions and evidence snapshots, not a full-flow orchestrator. Typical
+native dialogs. `release:run` has already prepared and bound the artifacts;
+`tools/e2e-ui.mjs` is its launch-bound CDP helper for form submissions and
+evidence snapshots, not an unattended native-dialog driver. Typical
 client-A calls are:
 
 ```sh
@@ -231,7 +283,7 @@ bun run client:launch -- \
   .data/e2e/<run>/client-b/user-data/obsidian-1.12.7.asar \
   .data/e2e/<run>/client-b/user-data \
   .data/e2e/<run>/client-b/vault \
-  --app '/path/to/Blackglass Bridge.app' \
+  --app '/path/to/Blackglass.app' \
   --debug-port 9323 \
   --e2e-tls-metadata .data/e2e/<run>/tls-metadata.json \
   --identity-out .data/e2e/<run>/client-b-recovery-launch.json
@@ -254,3 +306,35 @@ Sync, restart, deletion, exact endpoint evidence across all lifecycle phases,
 byte-identical user-content recovery including its multipart image
 (`.obsidian/` local settings are excluded), permissions, and current artifact
 identities all pass.
+
+## Phase 3 and Phase 4 scenario evidence
+
+Named tenancy and collaboration runs use immutable checkpoints in the order
+declared by `tools/e2e-scenario.ts`. Capture each checkpoint through the bound
+client debugging port; the command writes the screenshot, sanitized UI state,
+safe database projection, file assertions, and an immutable proof record:
+
+```sh
+bun run e2e:scenario:capture -- .data/e2e/<run> \
+  phase-4-custom/wrong-password 9322
+```
+
+Use these exact proof filenames when creating scenario content:
+
+- `Blackglass E2E Tenant A Proof.md` and `Blackglass E2E Tenant B Proof.md`;
+- `Blackglass E2E Owner Proof.md` and `Blackglass E2E Collaborator Proof.md`;
+- `Blackglass E2E Former Member Proof.md`, created on B only after revocation;
+- `Blackglass E2E Cold Bootstrap Proof.md`, created on A before B's clean bootstrap.
+
+The verifier refuses missing, reordered, overwritten, cross-run, cross-client,
+or semantically inconsistent checkpoints. It verifies encryption-mode storage,
+membership transitions, user attribution, disabled-session revocation, tenant
+file absence, bidirectional byte equality, former-member local retention, and
+cold-bootstrap convergence before emitting `scenario-report.json`:
+
+```sh
+bun run e2e:scenario:verify -- .data/e2e/<run>
+```
+
+The report contains only hashes, counts, IDs, timestamps, and pass/fail state;
+it does not copy account addresses, passwords, vault content, or renderer code.

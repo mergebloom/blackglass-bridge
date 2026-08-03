@@ -5,6 +5,7 @@ import { AsarArchive } from "./asar";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import { parseStrictFlags } from "./cli-flags";
 import { deriveE2ENetworkPlan } from "./e2e-network";
+import { DEFAULT_E2E_SCENARIO, parseE2EScenarioId } from "./e2e-scenario";
 import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
 import { inspectMacOSPackagingToolchain } from "./packaging-toolchain";
 import {
@@ -12,7 +13,7 @@ import {
   canonicalExistingPath,
   canonicalOutputPath,
 } from "./path-safety";
-import { parseBridgeReleaseManifest } from "./release-manifest";
+import { parseBlackglassReleaseManifest } from "./release-manifest";
 import {
   computeToolingSourceIdentity,
   toolingSourceTreeEqual,
@@ -35,6 +36,7 @@ const parsedFlags = parseStrictFlags(flags, {
     "--second-release-manifest",
     "--second-package-receipt",
     "--reproducibility-evidence",
+    "--scenario",
   ],
 });
 const appArgument = parsedFlags.values.get("--app");
@@ -48,6 +50,9 @@ const secondPackageReceiptArgument = parsedFlags.values.get(
   "--second-package-receipt",
 );
 const reproducibilityArgument = parsedFlags.values.get("--reproducibility-evidence");
+const scenarioId = parseE2EScenarioId(
+  parsedFlags.values.get("--scenario") ?? DEFAULT_E2E_SCENARIO,
+);
 if (
   !rootArgument ||
   !asarArgument ||
@@ -61,12 +66,13 @@ if (
 ) {
   console.error(
     "Usage: bun run tools/prepare-e2e.ts <run-directory> <patched.asar> " +
-      "--app <Blackglass Bridge.app> --release-manifest <release.json> " +
+      "--app <Blackglass.app> --release-manifest <release.json> " +
       "--package-receipt <receipt.json> " +
-      "--second-app <Blackglass Bridge.app> " +
+      "--second-app <Blackglass.app> " +
       "--second-release-manifest <release.json> " +
       "--second-package-receipt <receipt.json> " +
-      "--reproducibility-evidence <reproducibility.json>",
+      "--reproducibility-evidence <reproducibility.json> " +
+      "[--scenario <scenario-id>]",
   );
   process.exit(2);
 }
@@ -146,7 +152,7 @@ if (
 }
 const clientArtifact = await inspectMacOSArtifact(app);
 const releaseManifestBytes = await readFile(releaseManifestPath);
-const releaseManifest = parseBridgeReleaseManifest(releaseManifestBytes);
+const releaseManifest = parseBlackglassReleaseManifest(releaseManifestBytes);
 const releaseManifestSha256 = createHash("sha256")
   .update(releaseManifestBytes)
   .digest("hex");
@@ -223,13 +229,14 @@ if (
 }
 const adapterFileName = `obsidian-${packageMetadata.version}.asar`;
 const runManifest = {
-  schemaVersion: 3,
+  schemaVersion: 4,
+  scenarioId,
   createdAt: new Date().toISOString(),
-  bridgeVersion: releaseManifest.bridgeVersion,
+  blackglassVersion: releaseManifest.blackglassVersion,
   rendererVersion: packageMetadata.version,
   adapterFileName,
   compatibilityAsarSha256: createHash("sha256").update(adapterBytes).digest("hex"),
-  releaseManifestFileName: "bridge-release-manifest.json",
+  releaseManifestFileName: "blackglass-release-manifest.json",
   releaseManifestSha256,
   reproducibilityEvidenceFileName: "client-reproducibility.json",
   reproducibilityEvidenceSha256: createHash("sha256")
@@ -261,7 +268,7 @@ await writeFile(
   { flag: "wx", mode: 0o600 },
 );
 
-const clients = ["client-a", "client-b"] as const;
+const clients = ["client-a", "client-b", "client-c"] as const;
 for (const client of clients) {
   const userData = resolve(root, client, "user-data");
   const vault = resolve(root, client, "vault");
@@ -297,6 +304,16 @@ const environment = {
   password: `pw-${randomBytes(18).toString("base64url")}`,
   token: randomBytes(32).toString("base64url"),
   e2ePassword: `vault-${randomBytes(18).toString("base64url")}`,
+  secondary: {
+    email: "e2e-secondary@example.test",
+    password: `pw-${randomBytes(18).toString("base64url")}`,
+    name: "E2E secondary user",
+  },
+  outsider: {
+    email: "e2e-outsider@example.test",
+    password: `pw-${randomBytes(18).toString("base64url")}`,
+    name: "E2E unrelated user",
+  },
 };
 await writeFile(
   resolve(root, "credentials.json"),
@@ -318,6 +335,10 @@ console.log(
       clientB: {
         userData: resolve(root, "client-b/user-data"),
         vault: resolve(root, "client-b/vault"),
+      },
+      clientC: {
+        userData: resolve(root, "client-c/user-data"),
+        vault: resolve(root, "client-c/vault"),
       },
     },
     null,

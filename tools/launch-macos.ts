@@ -9,6 +9,7 @@ import {
   realpath,
   rename,
   rmdir,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -42,7 +43,7 @@ import {
   pathExists,
   pathsEqual,
 } from "./path-safety";
-import { readBridgeReleaseManifest } from "./release-manifest";
+import { readBlackglassReleaseManifest } from "./release-manifest";
 import { isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
 
@@ -56,17 +57,22 @@ const flags = parseStrictFlags(flagArguments, {
     "--app",
     "--blackglass-home",
     "--debug-port",
+    "--debug-readiness-timeout-ms",
     "--e2e-tls-metadata",
     "--identity-out",
   ],
   booleanFlags: ["--replace-adapter", "--prepare-only", "--allow-upstream-wrapper"],
 });
 const debugPortValue = flags.values.get("--debug-port");
+const debugReadinessTimeoutValue = flags.values.get("--debug-readiness-timeout-ms");
 const tlsMetadataArgument = flags.values.get("--e2e-tls-metadata");
 const identityArgument = flags.values.get("--identity-out");
 const blackglassHomeArgument = flags.values.get("--blackglass-home");
 const prepareOnly = flags.booleans.has("--prepare-only");
 const e2eRequested = Boolean(debugPortValue || tlsMetadataArgument || identityArgument);
+const debugReadinessTimeoutMs = debugReadinessTimeoutValue
+  ? parseDebugReadinessTimeout(debugReadinessTimeoutValue)
+  : 30_000;
 if (
   e2eRequested &&
   (!debugPortValue || !tlsMetadataArgument || !identityArgument || prepareOnly)
@@ -78,12 +84,15 @@ if (
 if (e2eRequested && blackglassHomeArgument) {
   throw new Error("Prepared E2E launches allocate BLACKGLASS_HOME automatically");
 }
+if (debugReadinessTimeoutValue && !e2eRequested) {
+  throw new Error("--debug-readiness-timeout-ms is available only for E2E launches");
+}
 
 const asar = await canonicalExistingPath(asarArgument, "Compatibility ASAR", "file");
 const profile = await canonicalExistingPath(profileArgument, "Client profile", "directory");
 const vault = await canonicalExistingPath(vaultArgument, "Client vault", "directory");
 const appBundle = await canonicalExistingPath(
-  flags.values.get("--app") ?? "/Applications/Blackglass Bridge.app",
+  flags.values.get("--app") ?? "/Applications/Blackglass.app",
   "macOS app bundle",
   "directory",
 );
@@ -108,8 +117,8 @@ assertNonOverlappingPaths([
     path: resolve(homedir(), "Library/Application Support/obsidian"),
   },
   {
-    label: "Blackglass Bridge normal profile",
-    path: resolve(homedir(), "Library/Application Support/Blackglass Bridge"),
+    label: "Blackglass normal profile",
+    path: resolve(homedir(), "Library/Application Support/Blackglass"),
   },
 ]);
 
@@ -127,15 +136,15 @@ const adapterSha256 = await fileSha256(asar);
 const infoPlist = join(appBundle, "Contents/Info.plist");
 const bundleIdentifier = plistString(infoPlist, "CFBundleIdentifier");
 if (
-  bundleIdentifier !== "com.blackglass.bridge" &&
+  bundleIdentifier !== "com.blackglass.app" &&
   !flags.booleans.has("--allow-upstream-wrapper")
 ) {
   throw new Error(
     `Refusing non-Blackglass app ${bundleIdentifier}; pass --allow-upstream-wrapper only for isolated compatibility testing`,
   );
 }
-if (e2eRequested && bundleIdentifier !== "com.blackglass.bridge") {
-  throw new Error("Prepared E2E launches require the Blackglass Bridge bundle identity");
+if (e2eRequested && bundleIdentifier !== "com.blackglass.app") {
+  throw new Error("Prepared E2E launches require the Blackglass bundle identity");
 }
 const executableName = plistString(infoPlist, "CFBundleExecutable");
 const executable = await canonicalExistingPath(
@@ -145,19 +154,19 @@ const executable = await canonicalExistingPath(
 );
 const executableSha256 = await fileSha256(executable);
 const appArtifact =
-  bundleIdentifier === "com.blackglass.bridge"
+  bundleIdentifier === "com.blackglass.app"
     ? await inspectMacOSArtifact(appBundle)
     : undefined;
 if (appArtifact && appArtifact.embeddedAsarSha256 !== adapterSha256) {
   throw new Error(
-    "Blackglass Bridge always loads its embedded renderer; the supplied ASAR must match it",
+    "Blackglass always loads its embedded renderer; the supplied ASAR must match it",
   );
 }
 assertProfileNotInUse(appBundle, profile);
 if (!e2eRequested && !blackglassHomeArgument) {
-  assertNoSharedHomeBridgeProcess(appBundle);
-  if (await pathExists(join(homedir(), appArtifact?.cliSocketName ?? ".blackglass-b.sock"))) {
-    throw new Error("The login-home Bridge CLI socket is already owned or stale");
+  assertNoSharedHomeBlackglassProcess(appBundle);
+  if (await pathExists(join(homedir(), appArtifact?.cliSocketName ?? ".blackglass-c.sock"))) {
+    throw new Error("The login-home Blackglass CLI socket is already owned or stale");
   }
 }
 
@@ -173,7 +182,7 @@ if (!e2eRequested && process.env[BLACKGLASS_HOME_ENVIRONMENT] && !blackglassHome
 if (blackglassHomeArgument) {
   launchHome = await validateBlackglassHome(
     blackglassHomeArgument,
-    appArtifact?.cliSocketName ?? ".blackglass-b.sock",
+    appArtifact?.cliSocketName ?? ".blackglass-c.sock",
   );
   if (pathsEqual(launchHome, homedir())) {
     throw new Error("--blackglass-home must be distinct from the native login home");
@@ -185,8 +194,8 @@ if (blackglassHomeArgument) {
     { label: "macOS app bundle", path: appBundle },
     { label: "Compatibility ASAR", path: asar },
   ]);
-  if (await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-b.sock"))) {
-    throw new Error("BLACKGLASS_HOME already contains a Bridge CLI socket");
+  if (await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-c.sock"))) {
+    throw new Error("BLACKGLASS_HOME already contains a Blackglass CLI socket");
   }
 }
 let launchBinding:
@@ -249,7 +258,7 @@ if (e2eRequested) {
   if ((await fileSha256(releaseManifestPath)) !== run.manifest.releaseManifestSha256) {
     throw new Error("Prepared release manifest no longer matches the run manifest");
   }
-  const { manifest: releaseManifest } = await readBridgeReleaseManifest(releaseManifestPath);
+  const { manifest: releaseManifest } = await readBlackglassReleaseManifest(releaseManifestPath);
   if (
     stableJson(releaseManifest.macOS) !== stableJson(publicMacOSArtifact(appArtifact)) ||
     releaseManifest.renderer.patchedSha256 !== adapterSha256 ||
@@ -340,9 +349,9 @@ if (prepareOnly) {
 
 assertProfileNotInUse(appBundle, profile);
 if (!launchBinding && !blackglassHomeArgument) {
-  assertNoSharedHomeBridgeProcess(appBundle);
-  if (await pathExists(join(homedir(), appArtifact?.cliSocketName ?? ".blackglass-b.sock"))) {
-    throw new Error("The login-home Bridge CLI socket became occupied before launch");
+  assertNoSharedHomeBlackglassProcess(appBundle);
+  if (await pathExists(join(homedir(), appArtifact?.cliSocketName ?? ".blackglass-c.sock"))) {
+    throw new Error("The login-home Blackglass CLI socket became occupied before launch");
   }
 }
 if (launchBinding && await pathExists(launchBinding.resetLockPath)) {
@@ -350,9 +359,9 @@ if (launchBinding && await pathExists(launchBinding.resetLockPath)) {
 }
 if (
   blackglassHomeArgument &&
-  await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-b.sock"))
+  await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-c.sock"))
 ) {
-  throw new Error("BLACKGLASS_HOME gained a Bridge CLI socket before launch");
+  throw new Error("BLACKGLASS_HOME gained a Blackglass CLI socket before launch");
 }
 
 let shortHomeRoot: string | undefined;
@@ -374,7 +383,13 @@ try {
     stderr: "inherit",
   });
 } catch (error) {
-  if (shortHomeRoot) await removeShortBlackglassHome(shortHomeRoot, launchHome);
+  if (shortHomeRoot) {
+    await removeShortBlackglassHome(
+      shortHomeRoot,
+      launchHome,
+      appArtifact?.cliSocketName ?? ".blackglass-c.sock",
+    );
+  }
   throw error;
 }
 if (launchBinding && debugPort) {
@@ -382,7 +397,12 @@ if (launchBinding && debugPort) {
   const publicArtifact = publicMacOSArtifact(appArtifact);
   let debugBinding: Awaited<ReturnType<typeof waitForDebugBinding>> | undefined;
   try {
-    debugBinding = await waitForDebugBinding(debugPort, child.pid, child);
+    debugBinding = await waitForDebugBinding(
+      debugPort,
+      child.pid,
+      child,
+      debugReadinessTimeoutMs,
+    );
     if (
       debugBinding.nativeHomePath !== nativeHomePath ||
       debugBinding.blackglassHomePath !== launchHome ||
@@ -401,6 +421,7 @@ if (launchBinding && debugPort) {
       profile,
       shortHomeRoot,
       launchHome,
+      appArtifact.cliSocketName,
     );
   }
   if (!debugBinding) throw new Error("Client launch lost its DevTools binding");
@@ -455,6 +476,7 @@ if (launchBinding && debugPort) {
       profile,
       shortHomeRoot,
       launchHome,
+      appArtifact.cliSocketName,
     );
   }
 } else {
@@ -465,12 +487,16 @@ if (shortHomeRoot) {
   if (!await waitForClientProcessesExit(appBundle, profile, 5_000)) {
     throw new Error("Client helpers survived after the launched main process exited");
   }
-  await removeShortBlackglassHome(shortHomeRoot, launchHome);
+  await removeShortBlackglassHome(
+    shortHomeRoot,
+    launchHome,
+    appArtifact?.cliSocketName ?? ".blackglass-c.sock",
+  );
 } else if (blackglassHomeArgument) {
   if (!await waitForClientProcessesExit(appBundle, profile, 5_000)) {
     throw new Error("Client helpers survived after the launched main process exited");
   }
-  if (await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-b.sock"))) {
+  if (await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-c.sock"))) {
     throw new Error("Client retained its dedicated CLI socket after shutdown");
   }
 }
@@ -520,7 +546,7 @@ async function createShortBlackglassHome(): Promise<{ root: string; home: string
   ) {
     throw new Error("Short BLACKGLASS_HOME is not a private real directory");
   }
-  if (Buffer.byteLength(join(home, ".blackglass-b.sock"), "utf8") > 103) {
+  if (Buffer.byteLength(join(home, ".blackglass-c.sock"), "utf8") > 103) {
     throw new Error("Short BLACKGLASS_HOME still exceeds the macOS socket limit");
   }
   return { root, home };
@@ -557,7 +583,7 @@ async function waitForCliSocket(
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
-      throw new Error("Blackglass Bridge exited before creating its CLI socket");
+      throw new Error("Blackglass exited before creating its CLI socket");
     }
     const socketStat = await lstat(socketPath).catch(() => undefined);
     if (socketStat?.isSocket()) {
@@ -571,7 +597,11 @@ async function waitForCliSocket(
   throw new Error("Launched client did not create its isolated CLI socket");
 }
 
-async function removeShortBlackglassHome(root: string, home: string): Promise<void> {
+async function removeShortBlackglassHome(
+  root: string,
+  home: string,
+  expectedSocketName: string,
+): Promise<void> {
   if (
     !/^\/private\/tmp\/blackglass-client-[A-Za-z0-9]{6}$/u.test(root) ||
     home !== join(root, "h")
@@ -600,6 +630,14 @@ async function removeShortBlackglassHome(root: string, home: string): Promise<vo
     await Bun.sleep(100);
     homeEntries = await readdir(home);
   }
+  if (
+    homeEntries.length === 1 &&
+    homeEntries[0] === expectedSocketName &&
+    (await lstat(join(home, expectedSocketName))).isSocket()
+  ) {
+    await unlink(join(home, expectedSocketName));
+    homeEntries = await readdir(home);
+  }
   if (homeEntries.length !== 0) {
     throw new Error(
       `BLACKGLASS_HOME retained runtime artifacts after shutdown: ${homeEntries.join(", ")}`,
@@ -619,6 +657,7 @@ async function rethrowAfterFailedLaunch(
   profile: string,
   shortHomeRoot: string | undefined,
   launchHome: string,
+  expectedSocketName: string,
 ): Promise<never> {
   const cleanupErrors: Error[] = [];
   try {
@@ -641,7 +680,7 @@ async function rethrowAfterFailedLaunch(
   }
   try {
     if (shortHomeRoot) {
-      await removeShortBlackglassHome(shortHomeRoot, launchHome);
+      await removeShortBlackglassHome(shortHomeRoot, launchHome, expectedSocketName);
     }
   } catch (error) {
     cleanupErrors.push(asError(error));
@@ -695,9 +734,9 @@ function assertProfileNotInUse(appBundle: string, profile: string): void {
   }
 }
 
-function assertNoSharedHomeBridgeProcess(appBundle: string): void {
+function assertNoSharedHomeBlackglassProcess(appBundle: string): void {
   const result = Bun.spawnSync(["/bin/ps", "-ww", "-axo", "pid=", "-o", "command="]);
-  if (result.exitCode !== 0) throw new Error("Unable to inspect Bridge process isolation");
+  if (result.exitCode !== 0) throw new Error("Unable to inspect Blackglass process isolation");
   const existing = result.stdout.toString("utf8").split("\n").flatMap((line) => {
     const match = /^\s*(\d+)\s+(.+)$/u.exec(line);
     return match && match[2]!.startsWith(`${appBundle}/Contents/`)
@@ -706,7 +745,7 @@ function assertNoSharedHomeBridgeProcess(appBundle: string): void {
   });
   if (existing.length !== 0) {
     throw new Error(
-      "Another Bridge process already owns the login-home CLI socket; " +
+      "Another Blackglass process already owns the login-home CLI socket; " +
         "use a distinct --blackglass-home: " + existing.join("; "),
     );
   }
@@ -725,10 +764,22 @@ function parseDebugPort(value: string): number {
   return port;
 }
 
+function parseDebugReadinessTimeout(value: string): number {
+  if (!/^\d+$/u.test(value)) {
+    throw new Error("--debug-readiness-timeout-ms must be numeric");
+  }
+  const timeoutMs = Number(value);
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 30_000 || timeoutMs > 300_000) {
+    throw new Error("--debug-readiness-timeout-ms must be between 30000 and 300000");
+  }
+  return timeoutMs;
+}
+
 async function waitForDebugBinding(
   port: number,
   launchedPid: number,
   child: ReturnType<typeof Bun.spawn>,
+  timeoutMs: number,
 ): Promise<{
   listenerPid: number;
   listenerCommand: string;
@@ -737,10 +788,12 @@ async function waitForDebugBinding(
   nativeHomePath: string;
   blackglassHomePath: string;
 }> {
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + timeoutMs;
+  let lastError: Error | undefined;
+  const failureCounts = new Map<string, number>();
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
-      throw new Error(`Blackglass Bridge exited before DevTools became ready: ${child.exitCode}`);
+      throw new Error(`Blackglass exited before DevTools became ready: ${child.exitCode}`);
     }
     try {
       const targets = await fetch(`http://127.0.0.1:${port}/json/list`, {
@@ -788,10 +841,21 @@ async function waitForDebugBinding(
         nativeHomePath: runtimeHome.nativeHomePath,
         blackglassHomePath: runtimeHome.blackglassHomePath,
       };
-    } catch {}
+    } catch (error) {
+      lastError = asError(error);
+      failureCounts.set(lastError.message, (failureCounts.get(lastError.message) ?? 0) + 1);
+    }
     await Bun.sleep(100);
   }
-  throw new Error("Timed out binding DevTools to the launched Blackglass process");
+  throw new Error(
+    "Timed out binding DevTools to the launched Blackglass process" +
+      (failureCounts.size > 0
+        ? ": " + [...failureCounts.entries()]
+          .map(([message, count]) => `${message} (${count})`)
+          .join("; ")
+        : ""),
+    { cause: lastError },
+  );
 }
 
 async function readRendererRuntimeHome(webSocketDebuggerUrl: string): Promise<{
@@ -917,8 +981,10 @@ function plistString(infoPlist: string, key: string): string {
 function usage(): never {
   console.error(
     "Usage: bun run tools/launch-macos.ts <patched.asar> <existing-profile> <existing-vault> " +
-      "[--app <Blackglass Bridge.app>] [--replace-adapter] [--prepare-only] " +
-      "[--allow-upstream-wrapper] [--debug-port <port> --e2e-tls-metadata <metadata.json> " +
+      "[--app <Blackglass.app>] [--replace-adapter] [--prepare-only] " +
+      "[--allow-upstream-wrapper] [--debug-port <port> " +
+      "--debug-readiness-timeout-ms <30000..300000> " +
+      "--e2e-tls-metadata <metadata.json> " +
       "--identity-out <identity.json>]",
   );
   process.exit(2);

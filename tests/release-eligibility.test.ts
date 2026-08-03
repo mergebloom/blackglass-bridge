@@ -27,7 +27,7 @@ describe("current release qualification selection", () => {
           join(
             root,
             "docs/validation",
-            `blackglass-bridge-0.1.1-obsidian-${rendererVersion}-qualification.json`,
+            `blackglass-0.1.1-obsidian-${rendererVersion}-qualification.json`,
           ),
           "{}\n",
         );
@@ -49,7 +49,7 @@ describe("current release qualification selection", () => {
       await writeFile(
         join(
           root,
-          "docs/validation/blackglass-bridge-0.1.1-obsidian-1.12.7-qualification.json",
+          "docs/validation/blackglass-0.1.1-obsidian-1.12.7-qualification.json",
         ),
         "{}\n",
       );

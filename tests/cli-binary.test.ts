@@ -11,15 +11,15 @@ test("patches both universal CLI socket literals without changing size", () => {
   const generated = patchCliBinary(upstream);
   expect(generated.buffer.length).toBe(upstream.length);
   expect(generated.buffer.toString("utf8")).toBe(
-    `x86:.blackglass-b.sock\0arm:.blackglass-b.sock\0`,
+    `x86:.blackglass-c.sock\0arm:.blackglass-c.sock\0`,
   );
   expect(generated.report).toMatchObject({
-    patchFormatVersion: 1,
+    patchFormatVersion: 2,
     incisionCount: 2,
-    socketName: ".blackglass-b.sock",
+    socketName: ".blackglass-c.sock",
   });
   expect(inspectPatchedCliBinary(generated.buffer)).toMatchObject({
-    socketName: ".blackglass-b.sock",
+    socketName: ".blackglass-c.sock",
     socketOccurrences: 2,
   });
 });
@@ -30,6 +30,6 @@ test("fails closed on missing, extra, or previously patched socket literals", ()
     patchCliBinary(Buffer.from(".obsidian-cli.sock.obsidian-cli.sock.obsidian-cli.sock")),
   ).toThrow("found 3");
   expect(() =>
-    patchCliBinary(Buffer.from(".blackglass-b.sock.blackglass-b.sock")),
+    patchCliBinary(Buffer.from(".blackglass-c.sock.blackglass-c.sock")),
   ).toThrow("already contains");
 });

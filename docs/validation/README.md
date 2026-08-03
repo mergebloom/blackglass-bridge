@@ -4,7 +4,7 @@ This directory contains sanitized, non-proprietary release summaries. Raw
 profiles, vaults, screenshots, credentials, databases, patched ASARs, and app
 bundles stay under ignored `.data/` storage and must never be committed.
 
-A current release record is valid only when it names the bound Bridge release
+A current release record is valid only when it names the bound Blackglass release
 manifest plus the exact renderer, wrapper, packaged app, endpoint, patcher, and
 server artifact identities, including the official DMG and complete source and
 packaged application tree hashes. It also binds the clean Git revision and

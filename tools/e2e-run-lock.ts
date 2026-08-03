@@ -2,7 +2,7 @@ import { readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { canonicalOutputPath, pathExists } from "./path-safety";
 
-export type PreparedClientName = "client-a" | "client-b";
+export type PreparedClientName = "client-a" | "client-b" | "client-c";
 
 export function sourceLossResetLockPath(runRoot: string): string {
   return join(runRoot, ".source-loss-reset.lock");
@@ -44,7 +44,7 @@ export async function releasePreparedClientLease(leasePath: string): Promise<voi
   if (
     lease.schemaVersion !== 1 ||
     lease.pid !== process.pid ||
-    (lease.clientName !== "client-a" && lease.clientName !== "client-b")
+    !["client-a", "client-b", "client-c"].includes(lease.clientName)
   ) {
     throw new Error("Refusing to remove a changed prepared-client launch lease");
   }
@@ -65,7 +65,7 @@ export async function acquireSourceLossResetLock(
     { flag: "wx", mode: 0o600 },
   );
   try {
-    await assertNoPreparedClientLeases(runRoot, ["client-a", "client-b"]);
+    await assertNoPreparedClientLeases(runRoot, ["client-a", "client-b", "client-c"]);
   } catch (error) {
     await releaseSourceLossResetLock(lockPath, runManifestSha256);
     throw error;

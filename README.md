@@ -1,6 +1,6 @@
-# Blackglass Bridge
+# Blackglass
 
-Blackglass Bridge is desktop compatibility tooling for using the built-in
+Blackglass is desktop compatibility tooling for using the built-in
 Obsidian Sync experience with a self-hosted Blackglass Server.
 
 It analyzes an authorized desktop release, changes the control and data
@@ -24,13 +24,13 @@ The long-term target is the existing app experience with no loss of
 functionality while its services are self-hosted. The supported table below
 states what has been implemented and requalified so far.
 
-Bridge uses six fixed-length client-ASAR incisions: three adapt the control and
+Blackglass uses six fixed-length client-ASAR incisions: three adapt the control and
 Sync endpoints, while three isolate the macOS CLI runtime root, socket, and
 registration name. Two fixed-length incisions apply the same socket name to the
 universal CLI binary. Three fail-closed wrapper incisions isolate Blackglass
 state with mode-`0700` enforcement, disable the upstream package updater, and
 force the embedded qualified renderer. The GUI keeps the native `HOME` needed
-by macOS secure storage; a private `BLACKGLASS_HOME` selects Bridge state. The
+by macOS secure storage; a private `BLACKGLASS_HOME` selects Blackglass state. The
 exact artifacts are requalified with end-to-end tests so future Obsidian
 updates remain a small, repeatable maintenance task.
 
@@ -46,7 +46,7 @@ findings are accepted only when backed by deterministic tooling and tests.
    Sync-operation, and message-shape inventories.
 3. Generate a deterministic compatibility ASAR for the chosen server URLs.
 4. Patch the copied wrapper to isolate state, disable updates, and pin the embedded renderer.
-5. Package and sign two independent `Blackglass Bridge.app` outputs, then require
+5. Package and sign two independent `Blackglass.app` outputs, then require
    distinct invocation receipts plus matching manifests and artifact identities.
 6. Bind that reproducibility proof while qualifying the exact client and server
    artifact pair with multipart Sync and recovery E2E.
@@ -60,7 +60,7 @@ as `../blackglass-server`.
 | Area | Current support |
 | --- | --- |
 | Platform | macOS on Apple Silicon |
-| Renderer | Obsidian 1.12.7 |
+| Renderer | Obsidian 1.12.7 and 1.13.4 |
 | Client behavior | Built-in sign-in; remote-vault create/list/access; E2EE Sync including multipart attachments; source-loss recovery UI |
 | Packaging | Separate app identity, ad-hoc local signing, updates disabled |
 | Server | Blackglass Server over loopback or HTTPS/WSS |
@@ -81,19 +81,19 @@ bun run analyze:release -- \
   --resources '/Volumes/Obsidian/Obsidian.app/Contents/Resources'
 bun run patch:client -- \
   '/Volumes/Obsidian/Obsidian.app/Contents/Resources/obsidian.asar' \
-  /tmp/blackglass-bridge.asar \
+  /tmp/blackglass.asar \
   --resources '/Volumes/Obsidian/Obsidian.app/Contents/Resources' \
   --control-origin http://127.0.0.1:3000 \
   --data-host 127.0.0.1:3003
 bun run package:macos -- \
   '/Volumes/Obsidian/Obsidian.app' \
-  /tmp/blackglass-bridge.asar \
-  '/path/to/Blackglass Bridge.app' \
+  /tmp/blackglass.asar \
+  '/path/to/Blackglass.app' \
   --control-origin http://127.0.0.1:3000 \
   --data-host 127.0.0.1:3003 \
   --official-dmg /path/to/Obsidian.dmg \
-  --manifest /path/to/blackglass-bridge-release.json \
-  --receipt /path/to/blackglass-bridge-package-receipt.json
+  --manifest /path/to/blackglass-release.json \
+  --receipt /path/to/blackglass-package-receipt.json
 bun run check
 ```
 
@@ -101,6 +101,10 @@ Before E2E qualification, repeat the package command into a different output
 directory and run `package:macos:verify-reproducibility` with both invocation
 receipts as shown in the E2E guide. Preparation refuses an app without that
 bound two-build evidence.
+
+For release work, `release:candidate:create` freezes the exact clean client and
+server revisions, and `release:run` provides a resumable doctor/check/build/
+package preparation path. See the E2E guide for the compact command.
 
 For a real deployment, use HTTPS/WSS endpoints and follow the
 [deployment guide](docs/deployment.md). Run the packaged-client qualification in
@@ -133,12 +137,18 @@ Blackglass redirects the built-in account and Sync traffic; it is not a general
 network sandbox for Obsidian. Features such as Help, community plugins, embeds,
 and other upstream integrations may still contact their own external services.
 
-The copied app uses bundle identifier `com.blackglass.bridge`, does not register
+The copied app uses bundle identifier `com.blackglass.app`, does not register
 Obsidian's URL scheme or iCloud container, and uses a dedicated profile so it
 can coexist with an ordinary Obsidian installation. Its outer app filename and
-display name are Blackglass Bridge, while the upstream `Obsidian` bundle name,
+display name are Blackglass, while the upstream `Obsidian` bundle name,
 main executable, and Electron helper topology remain unchanged for runtime
 compatibility.
+
+Blackglass sets its Electron application name before profile initialization,
+so macOS stores its encryption key as `Blackglass Safe Storage` instead of
+requesting access to Obsidian's keychain item. It does not migrate an existing
+Obsidian profile or login: the first Blackglass launch starts clean and requires
+sign-in, while the Obsidian profile remains untouched.
 
 ## Validation
 

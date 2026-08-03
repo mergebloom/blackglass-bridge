@@ -11,7 +11,7 @@ import {
 } from "../packages/client-adapter/src/wrapper";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import {
-  BRIDGE_CLI_SOCKET_NAME,
+  BLACKGLASS_CLI_SOCKET_NAME,
   CLI_BINARY_INCISION_COUNT,
   CLI_BINARY_PATCH_FORMAT_VERSION,
 } from "./cli-binary";
@@ -22,7 +22,7 @@ import {
 } from "./macos-code-inventory";
 import { assertMacOSRootMetadata } from "./macos-root-metadata";
 import type { MacOSArtifact } from "./macos-artifact";
-import type { BridgeReleaseManifest } from "./release-manifest";
+import type { BlackglassReleaseManifest } from "./release-manifest";
 import type { ServerArtifact } from "./server-artifact";
 import {
   assertMacOSPackagingToolchain,
@@ -43,17 +43,17 @@ import {
   type MacOSReproducibilityEvidence,
 } from "./verify-macos-reproducibility";
 
-export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 11;
+export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 12;
 
 type PublicMacOSArtifact = Omit<MacOSArtifact, "appPath">;
 type PublicServerArtifact = Omit<ServerArtifact, "binaryPath">;
 
 export interface ReleaseQualification {
-  schemaVersion: 8;
+  schemaVersion: 9;
   qualifiedAt: string;
   passed: true;
   platform: "macOS Apple Silicon";
-  bridgeVersion: string;
+  blackglassVersion: string;
   rendererVersion: string;
   endpoints: AdapterOptions;
   toolingSource: ToolingSourceIdentity;
@@ -115,14 +115,14 @@ export interface ReleaseValidationRecord {
   generatedBy: "tools/write-validation-record.ts";
   validatedAt: string;
   passed: true;
-  bridgeVersion: string;
+  blackglassVersion: string;
   rendererVersion: string;
-  compatibilityBaseline: BridgeReleaseManifest["compatibilityBaseline"];
-  source: BridgeReleaseManifest["source"];
+  compatibilityBaseline: BlackglassReleaseManifest["compatibilityBaseline"];
+  source: BlackglassReleaseManifest["source"];
   endpoints: AdapterOptions;
   toolingSource: ToolingSourceIdentity;
   packagingToolchain: MacOSPackagingToolchain;
-  patcher: BridgeReleaseManifest["patcher"];
+  patcher: BlackglassReleaseManifest["patcher"];
   artifacts: {
     compatibilityAsarSha256: string;
     releaseManifestSha256: string;
@@ -141,20 +141,20 @@ export interface ReleaseValidationRecord {
 }
 
 export function releaseValidationRecordFileName(
-  bridgeVersion: string,
+  blackglassVersion: string,
   rendererVersion: string,
 ): string {
   if (
-    !isSupportedSemver(bridgeVersion) ||
+    !isSupportedSemver(blackglassVersion) ||
     !isSupportedStableSemver(rendererVersion)
   ) {
     throw new Error("Cannot name a validation record for invalid release versions");
   }
-  return `blackglass-bridge-${bridgeVersion}-obsidian-${rendererVersion}-qualification.json`;
+  return `blackglass-${blackglassVersion}-obsidian-${rendererVersion}-qualification.json`;
 }
 
 export function buildReleaseValidationRecord(input: {
-  manifest: BridgeReleaseManifest;
+  manifest: BlackglassReleaseManifest;
   qualification: ReleaseQualification;
   qualificationSha256: string;
 }): ReleaseValidationRecord {
@@ -165,7 +165,7 @@ export function buildReleaseValidationRecord(input: {
     generatedBy: "tools/write-validation-record.ts",
     validatedAt: qualification.qualifiedAt,
     passed: true,
-    bridgeVersion: manifest.bridgeVersion,
+    blackglassVersion: manifest.blackglassVersion,
     rendererVersion: manifest.rendererVersion,
     compatibilityBaseline: manifest.compatibilityBaseline,
     source: manifest.source,
@@ -195,14 +195,14 @@ export function buildReleaseValidationRecord(input: {
 
 export function assertReleaseQualification(
   value: unknown,
-  manifest: BridgeReleaseManifest,
+  manifest: BlackglassReleaseManifest,
 ): asserts value is ReleaseQualification {
   if (
     !isRecord(value) ||
-    value.schemaVersion !== 8 ||
+    value.schemaVersion !== 9 ||
     value.passed !== true ||
     value.platform !== "macOS Apple Silicon" ||
-    value.bridgeVersion !== manifest.bridgeVersion ||
+    value.blackglassVersion !== manifest.blackglassVersion ||
     value.rendererVersion !== manifest.rendererVersion ||
     !isIsoDate(value.qualifiedAt) ||
     !same(value.endpoints, manifest.endpoints) ||
@@ -231,7 +231,7 @@ export function assertReleaseQualification(
   assertMacOSReproducibilityEvidenceBindsRelease(
     value.evidence.clientReproducibility,
     {
-      bridgeVersion: manifest.bridgeVersion,
+      blackglassVersion: manifest.blackglassVersion,
       rendererVersion: manifest.rendererVersion,
       releaseManifestSha256: value.artifacts.releaseManifestSha256,
       artifact: value.artifacts.client,
@@ -250,7 +250,7 @@ export function assertReleaseValidationRecord(
     value.generatedBy !== "tools/write-validation-record.ts" ||
     value.passed !== true ||
     !isIsoDate(value.validatedAt) ||
-    !isSupportedSemver(value.bridgeVersion) ||
+    !isSupportedSemver(value.blackglassVersion) ||
     !isSupportedStableSemver(value.rendererVersion) ||
     !isRecord(value.compatibilityBaseline) ||
     value.compatibilityBaseline.schemaVersion !== 5 ||
@@ -324,18 +324,18 @@ export function assertReleaseValidationRecord(
   assertMacOSRootMetadata(macOS.rootMetadata);
   if (
     macOS.schemaVersion !== 8 ||
-    macOS.appBundleName !== "Blackglass Bridge.app" ||
-    macOS.bundleIdentifier !== "com.blackglass.bridge" ||
+    macOS.appBundleName !== "Blackglass.app" ||
+    macOS.bundleIdentifier !== "com.blackglass.app" ||
     macOS.bundleName !== "Obsidian" ||
-    macOS.displayName !== "Blackglass Bridge" ||
+    macOS.displayName !== "Blackglass" ||
     macOS.executableName !== "Obsidian" ||
     macOS.cliExecutableName !== "obsidian-cli" ||
-    macOS.cliSocketName !== BRIDGE_CLI_SOCKET_NAME ||
+    macOS.cliSocketName !== BLACKGLASS_CLI_SOCKET_NAME ||
     macOS.cliSocketOccurrences !== CLI_BINARY_INCISION_COUNT ||
     macOS.rendererRuntimeHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
     macOS.rendererCliRuntimeRootValidated !== true ||
     macOS.version !== value.rendererVersion ||
-    macOS.profileDirectory !== "Blackglass Bridge" ||
+    macOS.profileDirectory !== "Blackglass" ||
     macOS.profileMode !== 448 ||
     macOS.profilePathCanonicalAtSetup !== true ||
     macOS.explicitUserDataDirHonored !== true ||
@@ -378,7 +378,7 @@ export function assertReleaseValidationRecord(
   assertMacOSReproducibilityEvidenceBindsRelease(
     value.packagedClientE2E.evidence.clientReproducibility,
     {
-      bridgeVersion: value.bridgeVersion,
+      blackglassVersion: value.blackglassVersion,
       rendererVersion: value.rendererVersion,
       releaseManifestSha256: value.artifacts.releaseManifestSha256,
       artifact: macOS as PublicMacOSArtifact,

@@ -35,12 +35,12 @@ application copy:
 bun run package:macos -- \
   '/Volumes/Obsidian/Obsidian.app' \
   /path/to/generated-compatibility.asar \
-  '/path/to/Blackglass Bridge.app' \
+  '/path/to/Blackglass.app' \
   --control-origin https://sync-control.example.com \
   --data-host sync-data.example.com \
   --official-dmg /path/to/official-Obsidian.dmg \
-  --manifest /path/to/blackglass-bridge-release.json \
-  --receipt /path/to/blackglass-bridge-package-receipt.json
+  --manifest /path/to/blackglass-release.json \
+  --receipt /path/to/blackglass-package-receipt.json
 ```
 
 The packager verifies the DMG digest and complete extracted application tree
@@ -48,11 +48,11 @@ against the reviewed baseline, builds in a private staging directory, and only
 publishes the app, manifest, and path-free invocation receipt after every check
 passes. The output is ad-hoc
 signed for local authorized use; it is not notarized for
-redistribution. Its bundle identifier is `com.blackglass.bridge`; the packager
+redistribution. Its bundle identifier is `com.blackglass.app`; the packager
 removes upstream URL-scheme and iCloud-container registrations so it can coexist
 with normal Obsidian. Consequently, `obsidian://` deep links and registered
 Obsidian iCloud-container behavior are outside the current parity target. The
-outer filename and display name are Blackglass Bridge, but the upstream
+outer filename and display name are Blackglass, but the upstream
 `Obsidian` bundle name, main executable, and Electron helper topology are
 deliberately preserved. Ad-hoc signing reapplies the exact reviewed entitlement
 and hardened-runtime contracts to the outer app, patched CLI, helpers, framework
@@ -86,12 +86,12 @@ bun run client:launch -- \
   /path/to/generated-compatibility.asar \
   /path/to/dedicated-profile \
   /path/to/vault \
-  --app '/path/to/Blackglass Bridge.app' \
+  --app '/path/to/Blackglass.app' \
   --blackglass-home /private/tmp/blackglass-runtime
 ```
 
 The packaged wrapper selects
-`${BLACKGLASS_HOME:-$HOME}/Library/Application Support/Blackglass Bridge`, so
+`${BLACKGLASS_HOME:-$HOME}/Library/Application Support/Blackglass`, so
 ordinary Finder launches retain the standard macOS location while the launcher
 can supply a distinct private, canonical, owner-only `BLACKGLASS_HOME`. Create that
 directory at mode `0700`; its full CLI-socket path must fit macOS's 103-byte
@@ -102,10 +102,14 @@ upstream package updater and refuses downloaded renderer overrides, including
 Finder launches. An explicit `--user-data-dir` remains available for disposable
 isolated test clients. The launcher requires existing profile and vault
 directories and refuses Obsidian's normal profile. The embedded main process
-also uses a dedicated `.blackglass-b.sock` under `BLACKGLASS_HOME`, so it can
+also uses a dedicated `.blackglass-c.sock` under `BLACKGLASS_HOME`, so it can
 coexist with normal Obsidian without unlinking Obsidian's endpoint. Only the
 packaged CLI subprocess receives that path as `HOME`, which is the interface
 the upstream CLI binary expects.
+
+Blackglass uses its own `Blackglass Safe Storage` keychain item and does not
+migrate Obsidian credentials. Users sign in once after installing Blackglass;
+ordinary upgrades keep using the Blackglass profile and keychain namespace.
 If `--blackglass-home` is omitted, the launcher uses the login-home socket and
 therefore refuses to start while any other instance of the same generated app
 is running. Supplying distinct validated runtime homes permits isolated

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
-import { BRIDGE_CLI_SOCKET_NAME } from "./cli-binary";
+import { BLACKGLASS_CLI_SOCKET_NAME } from "./cli-binary";
 import {
   inspectMacOSArtifact,
   publicMacOSArtifact,
@@ -18,6 +18,7 @@ import {
   pathsEqual,
 } from "./path-safety";
 import { stableJson } from "./stable-json";
+import type { PreparedClientName } from "./e2e-run-lock";
 
 export interface ClientLaunchIdentity {
   schemaVersion: 4;
@@ -73,7 +74,7 @@ export async function resolvePreparedClientLayout(
 ): Promise<{
   run: Awaited<ReturnType<typeof readPreparedE2ERun>>;
   clientRoot: string;
-  clientName: "client-a" | "client-b";
+  clientName: PreparedClientName;
 }> {
   if (basename(profile) !== "user-data" || basename(vault) !== "vault") {
     throw new Error("Prepared E2E client paths must end in user-data and vault");
@@ -83,8 +84,8 @@ export async function resolvePreparedClientLayout(
     throw new Error("Prepared E2E profile and vault must belong to the same client");
   }
   const clientName = basename(clientRoot);
-  if (clientName !== "client-a" && clientName !== "client-b") {
-    throw new Error("Prepared E2E client must be client-a or client-b");
+  if (!["client-a", "client-b", "client-c"].includes(clientName)) {
+    throw new Error("Prepared E2E client must be client-a, client-b, or client-c");
   }
   const run = await readPreparedE2ERun(dirname(clientRoot));
   const expectedProfile = join(run.root, clientName, "user-data");
@@ -94,7 +95,7 @@ export async function resolvePreparedClientLayout(
   }
   await assertNoSymlinkSegments(run.root, profile, "Prepared E2E profile");
   await assertNoSymlinkSegments(run.root, vault, "Prepared E2E vault");
-  return { run, clientRoot, clientName };
+  return { run, clientRoot, clientName: clientName as PreparedClientName };
 }
 
 export function assertPreparedClientAdapterPath(
@@ -174,13 +175,13 @@ export function assertClientLaunchIdentity(
     value.blackglassHomeMode !== 0o700 ||
     value.blackglassHomeCanonical !== true ||
     value.cliSocketPath !==
-      join(value.blackglassHomePath as string, BRIDGE_CLI_SOCKET_NAME) ||
+      join(value.blackglassHomePath as string, BLACKGLASS_CLI_SOCKET_NAME) ||
     value.nativeHomeEnvironmentPreserved !== true ||
     !/^\/private\/tmp\/blackglass-client-[A-Za-z0-9]{6}\/h$/u.test(
       value.blackglassHomePath as string,
     ) ||
     Buffer.byteLength(
-      join(value.blackglassHomePath as string, ".blackglass-b.sock"),
+      join(value.blackglassHomePath as string, ".blackglass-c.sock"),
       "utf8",
     ) > 103 ||
     value.nativeHomePath === value.blackglassHomePath ||

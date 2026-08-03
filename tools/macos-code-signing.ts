@@ -100,7 +100,7 @@ export function signMacOSAppAdHoc(
   inventory: MacOSCodeInventory,
 ): MacOSCodeSigningEvidence {
   assertMacOSCodeInventory(inventory);
-  const basePackagedTargets = targetPaths(appPath, "com.blackglass.bridge");
+  const basePackagedTargets = targetPaths(appPath, "com.blackglass.app");
   if (source.targets.length !== basePackagedTargets.length) {
     throw new Error("Source macOS code-signing target inventory is incomplete");
   }
@@ -161,7 +161,7 @@ export function signMacOSAppAdHoc(
     ...target,
     identifier:
       target.path === "Contents/MacOS/Obsidian"
-        ? "com.blackglass.bridge"
+        ? "com.blackglass.app"
         : target.identifier,
   }));
   if (
@@ -177,7 +177,7 @@ export function inspectPackagedMacOSCodeSigning(
   inventory: MacOSCodeInventory,
 ): MacOSCodeSigningEvidence {
   verifyMacOSCodeInventorySignatures(appPath, inventory);
-  const signatures = targetPaths(appPath, "com.blackglass.bridge").map(
+  const signatures = targetPaths(appPath, "com.blackglass.app").map(
     (target) => inspectApprovedCodeSignature(target, true),
   );
   const inventoryMachOTargets = inspectInventoryMachOSigningTargets(
@@ -229,7 +229,7 @@ export function assertMacOSCodeSigningEvidence(
   ) {
     throw new Error("Invalid macOS hardened-runtime evidence");
   }
-  const expectedTargets = targetDefinitions("com.blackglass.bridge");
+  const expectedTargets = targetDefinitions("com.blackglass.app");
   if (value.targets.length !== expectedTargets.length) {
     throw new Error("Invalid macOS code-signing target inventory");
   }

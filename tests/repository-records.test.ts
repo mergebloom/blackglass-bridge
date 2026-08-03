@@ -98,7 +98,7 @@ describe("committed release records", () => {
         computeToolingSourceIdentityAtRevision(root, gitRevision()),
       ),
     ).toBe(true);
-    expect(validation.bridgeVersion).toBe(packageMetadata.version);
+    expect(validation.blackglassVersion).toBe(packageMetadata.version);
     expect(validation.rendererVersion).toBe(loaded.baseline.rendererVersion);
     expect(loaded.baseline.officialDmgSha256).toBe(validation.source.officialDmgSha256);
     expect(loaded.baseline.sourceAppTree).toEqual(validation.source.appTree);
@@ -129,8 +129,8 @@ describe("committed release records", () => {
       },
     });
     expect(canonicalAdapterOptions(validation.endpoints)).toEqual({
-      controlOrigin: "https://blackglass.example.com",
-      dataHost: "blackglass-data.example.com",
+      controlOrigin: "https://sync-control.example.com",
+      dataHost: "sync-data.example.com",
     });
     for (const hash of [
       validation.artifacts.compatibilityAsarSha256,
@@ -145,7 +145,7 @@ describe("committed release records", () => {
     expect(validation.artifacts.server).toMatchObject({
       schemaVersion: 2,
       name: "blackglass-server",
-      version: "0.2.2",
+      version: "0.3.0",
       sourceRevision: expect.stringMatching(/^[a-f0-9]{40}$/u),
       binaryName: "blackglass-server",
       architecture: "arm64",

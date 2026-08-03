@@ -15,6 +15,8 @@ import {
   type E2ENetworkEvidence,
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
+import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
+import { preparedE2EScenarioId } from "./e2e-scenario";
 import {
   inspectServerArtifact,
   publicServerArtifact,
@@ -25,7 +27,7 @@ import {
   publicMacOSArtifact,
   type MacOSArtifact,
 } from "./macos-artifact";
-import { parseBridgeReleaseManifest } from "./release-manifest";
+import { parseBlackglassReleaseManifest } from "./release-manifest";
 import { isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
 import {
@@ -43,7 +45,7 @@ const preparedRun = await readPreparedE2ERun(rootArgument);
 const root = preparedRun.root;
 const runManifest = preparedRun.manifest as typeof preparedRun.manifest & {
   schemaVersion: number;
-  bridgeVersion: string;
+  blackglassVersion: string;
   rendererVersion: string;
   adapterFileName: string;
   compatibilityAsarSha256: string;
@@ -53,9 +55,9 @@ const runManifest = preparedRun.manifest as typeof preparedRun.manifest & {
   explicitUserDataDirHonored: boolean;
 };
 if (
-  runManifest.schemaVersion !== 3 ||
+  runManifest.schemaVersion !== 4 ||
   !isRendererAdapterFileName(runManifest.adapterFileName) ||
-  runManifest.releaseManifestFileName !== "bridge-release-manifest.json" ||
+  runManifest.releaseManifestFileName !== "blackglass-release-manifest.json" ||
   !/^[a-f0-9]{64}$/u.test(runManifest.releaseManifestSha256) ||
   runManifest.explicitUserDataDirHonored !== true
 ) {
@@ -75,11 +77,11 @@ function isRendererAdapterFileName(value: unknown): value is string {
 const releaseManifestPath = resolve(root, runManifest.releaseManifestFileName);
 const releaseManifestBytes = Buffer.from(await Bun.file(releaseManifestPath).arrayBuffer());
 if (sha256(releaseManifestBytes) !== runManifest.releaseManifestSha256) {
-  throw new Error("The bound Bridge release manifest changed after E2E preparation");
+  throw new Error("The bound Blackglass release manifest changed after E2E preparation");
 }
-const releaseManifest = parseBridgeReleaseManifest(releaseManifestBytes);
+const releaseManifest = parseBlackglassReleaseManifest(releaseManifestBytes);
 if (
-  releaseManifest.bridgeVersion !== runManifest.bridgeVersion ||
+  releaseManifest.blackglassVersion !== runManifest.blackglassVersion ||
   releaseManifest.rendererVersion !== runManifest.rendererVersion ||
   releaseManifest.renderer.patchedSha256 !==
     runManifest.compatibilityAsarSha256 ||
@@ -92,7 +94,7 @@ if (
   releaseManifest.wrapper.dedicatedHomeValidated !== true ||
   releaseManifest.wrapper.nativeHomeFallbackPreserved !== true
 ) {
-  throw new Error("E2E run manifest is inconsistent with the Bridge release manifest");
+  throw new Error("E2E run manifest is inconsistent with the Blackglass release manifest");
 }
 const recordedServer = JSON.parse(
   await readFile(resolve(root, "server-artifact.json"), "utf8"),
@@ -158,7 +160,7 @@ if (
   JSON.stringify(publicMacOSArtifact(recordedClient)) !==
   JSON.stringify(releaseManifest.macOS)
 ) {
-  throw new Error("The E2E client does not match the bound Bridge release manifest");
+  throw new Error("The E2E client does not match the bound Blackglass release manifest");
 }
 const reproducibilityPath = resolve(
   root,
@@ -582,7 +584,7 @@ for (const checkpoint of uiCheckpoints) {
   const binding = liveClientBindings.get(checkpoint.client)!;
   const identity = binding.identity;
   if (
-    state.schemaVersion !== 2 ||
+    state.schemaVersion !== E2E_UI_EVIDENCE_SCHEMA_VERSION ||
     typeof state.observedAt !== "string" ||
     typeof state.debugPort !== "number" ||
     !Number.isInteger(state.debugPort) ||
@@ -673,10 +675,11 @@ if (process.platform !== "win32" && (databaseMode !== 0o600 || stagingMode !== 0
 
 const report = {
   schemaVersion: 2,
+  scenarioId: preparedE2EScenarioId(runManifest.scenarioId),
   generatedAt: new Date().toISOString(),
   passed: true,
   referenceClient: {
-    bridgeVersion: releaseManifest.bridgeVersion,
+    blackglassVersion: releaseManifest.blackglassVersion,
     version: runManifest.rendererVersion,
     platform: "macOS Apple Silicon",
     compatibilityAsarSha256: clientAsarHashes[0],
