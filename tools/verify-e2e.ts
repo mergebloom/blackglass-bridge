@@ -15,6 +15,7 @@ import {
   type E2ENetworkEvidence,
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
+import { assertNoObservationPublicationResidue } from "./observation-publication";
 import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
 import { preparedE2EScenarioId } from "./e2e-scenario";
 import {
@@ -345,6 +346,7 @@ const observationSpecifications = [
 ] as const;
 const observations = [];
 const observationHashes: Record<string, string> = {};
+await assertNoObservationPublicationResidue(root);
 for (const specification of observationSpecifications) {
   const path = resolve(root, "observations", specification.file);
   const observationBytes = await readFile(path);

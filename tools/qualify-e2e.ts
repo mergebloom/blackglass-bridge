@@ -24,6 +24,7 @@ import {
 } from "./macos-launch-smoke";
 import { readVerifiedE2ETls } from "./e2e-tls";
 import { pathExists } from "./path-safety";
+import { assertNoObservationPublicationResidue } from "./observation-publication";
 import {
   assertCanonicalRecoveryCorpusIdentity,
   assertCanonicalRecoveryCorpusManifest,
@@ -254,6 +255,7 @@ const observationNames = [
 ] as const;
 const observationHashes: Record<string, string> = {};
 let latestObservationAt = 0;
+await assertNoObservationPublicationResidue(root);
 for (const name of observationNames) {
   const bytes = await readFile(resolve(root, "observations", name));
   const value = JSON.parse(bytes.toString("utf8")) as any;

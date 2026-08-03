@@ -226,7 +226,15 @@ must use the required checkpoint stems below. The recovery client uses port
 `9323` and the same bound helpers.
 
 Use `e2e:observe` for the three allowed proof transfers and one deletion. The
-first A-to-B transfer occurs before stopping the initial server. Restart the
+observer waits five minutes by default and accepts a bounded `--timeout-ms`
+override from 1,000 through 600,000 milliseconds. It writes an owner-only,
+run-bound intent before mutating a proof; if the deadline expires, rerunning the
+exact command resumes that same marker and original database snapshot rather
+than making the run unrecoverable. A changed proof, intent, client direction,
+or run fails closed. Interrupted evidence publication resumes from its validated
+intent or pending file, while verification and qualification reject every
+unpublished residue. The first A-to-B transfer occurs before stopping the
+initial server. Restart the
 same binary as `server-restarted.json`, with the same
 `--expected-server-source-revision`; the remaining observations occur after it
 is ready. Explicitly pause/resume Sync once on each client after readiness so
