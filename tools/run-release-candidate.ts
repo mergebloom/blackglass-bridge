@@ -20,6 +20,7 @@ import {
   parseReleaseCandidate,
   releaseCandidateSha256,
 } from "./release-candidate";
+import { releaseStageResumeDecision } from "./release-stage-resume";
 
 const PIPELINE_STATE_SCHEMA_VERSION = 3;
 
@@ -337,12 +338,18 @@ if (parsed.booleans.has("--prepare-client")) {
 
 for (const stage of stages) {
   await assertReleaseCandidateMatchesCheckouts({ candidate, clientRoot, serverRoot });
-  if (isComplete(state, stage) && !stage.revalidateOnResume) {
+  const decision = releaseStageResumeDecision({
+    hasReceipt: isComplete(state, stage),
+    revalidateOnResume: stage.revalidateOnResume === true,
+  });
+  if (decision !== "run-new") {
     await assertCompletedStageUnchanged(state, stage);
+  }
+  if (decision === "resume") {
     console.log(`[resume] ${stage.name}`);
     continue;
   }
-  await assertNoUnboundOutputs(stage);
+  if (decision === "run-new") await assertNoUnboundOutputs(stage);
   await run(stage);
   if (!isComplete(state, stage)) {
     state.completed.push({

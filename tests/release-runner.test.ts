@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { releaseStageResumeDecision } from "../tools/release-stage-resume";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -24,6 +25,15 @@ describe("immutable release runner", () => {
     expect(source).toContain('join(workRoot, "pipeline.lock")');
     expect(source).toContain('flag: "wx"');
     expect(source).toContain("Refusing to remove a changed release pipeline lock");
+  });
+
+  test("revalidates a receipted stage without misclassifying its exact output", () => {
+    expect(releaseStageResumeDecision({ hasReceipt: true, revalidateOnResume: true }))
+      .toBe("revalidate");
+    expect(releaseStageResumeDecision({ hasReceipt: true, revalidateOnResume: false }))
+      .toBe("resume");
+    expect(releaseStageResumeDecision({ hasReceipt: false, revalidateOnResume: true }))
+      .toBe("run-new");
   });
 
   test("prepares two independent packages and reproducibility evidence", async () => {
