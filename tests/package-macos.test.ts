@@ -135,14 +135,25 @@ async function syntheticFixture(): Promise<Fixture> {
     "main.js": wrapperFixture.source,
     "package.json": Buffer.from('{"name":"obsidian"}'),
   });
+  const cliSource = join(root, "obsidian-cli.c");
+  await writeFile(
+    cliSource,
+    '__attribute__((used)) static const char socket1[]=".obsidian-cli.sock";\n' +
+      '__attribute__((used)) static const char socket2[]=".obsidian-cli.sock";\n' +
+      "int main(void){return socket1[0]==socket2[0]?0:1;}\n",
+  );
+  run([
+    "/usr/bin/xcrun", "clang", "-arch", "arm64", "-Wl,-no_adhoc_codesign",
+    cliSource, "-o", join(macos, "obsidian-cli"),
+  ]);
   await Promise.all([
     writeFile(join(resources, "obsidian.asar"), sourceAsar),
     writeFile(join(resources, "app.asar"), wrapperAsar),
     copyFile("/usr/bin/true", join(macos, "Obsidian")),
-    writeFile(join(macos, "obsidian-cli"), ".obsidian-cli.sock .obsidian-cli.sock"),
     writeFile(join(sourceApp, "Contents/Info.plist"), sourceInfoPlist()),
   ]);
   await chmod(join(macos, "Obsidian"), 0o755);
+  await chmod(join(macos, "obsidian-cli"), 0o755);
   run(["/usr/bin/codesign", "--force", "--deep", "--sign", "-", "--timestamp=none", sourceApp]);
   const dmg = join(root, "Obsidian-1.12.7.dmg");
   await writeFile(dmg, "synthetic official DMG");

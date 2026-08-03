@@ -15,7 +15,7 @@ import { inspectMacOSCodeInventory, macOSCodeInventoriesEqual } from "./macos-co
 import { assertNonOverlappingPaths, canonicalExistingPath, canonicalOutputPath, pathExists } from "./path-safety";
 import { computeTreeIdentity } from "./tree-identity";
 import { stableJson } from "./stable-json";
-import { patchCliBinary } from "./cli-binary";
+import { writeSignedPatchedCliBinary } from "./cli-binary";
 import { BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT } from "../packages/client-adapter/src/patch";
 
 export const BRIDGE_RUNTIME_RECEIPT_SCHEMA_VERSION = 1;
@@ -467,13 +467,20 @@ async function sha256File(path: string): Promise<string> {
 
 export async function prepareLocalCli(config: BridgeLaunchConfig, profile: string): Promise<string> {
   const upstream = join(config.officialAppPath, "Contents/MacOS/obsidian-cli");
-  const generated = patchCliBinary(await readFile(upstream));
   const target = join(profile, "blackglass-cli");
   if (await pathExists(target)) await assertOwnedRegularFile(target, "Blackglass local CLI");
-  if (!(await pathExists(target)) || await sha256File(target) !== generated.report.patchedSha256) {
-    const temporary = `${target}.next-${process.pid}-${randomUUID()}`;
-    await writeFile(temporary, generated.buffer, { flag: "wx", mode: 0o700 });
-    await rename(temporary, target);
+  const temporary = `${target}.next-${process.pid}-${randomUUID()}`;
+  try {
+    const generated = await writeSignedPatchedCliBinary(await readFile(upstream), temporary);
+    if (!(await pathExists(target)) || await sha256File(target) !== generated.executableSha256) {
+      if (await pathExists(target)) await unlink(target);
+      await rename(temporary, target);
+    } else {
+      await unlink(temporary);
+    }
+  } catch (error) {
+    if (await pathExists(temporary)) await unlink(temporary);
+    throw error;
   }
   await chmod(target, 0o700);
   return target;

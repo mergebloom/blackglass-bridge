@@ -13,7 +13,7 @@ import {
 } from "./launcher-config";
 import { MACOS_PACKAGING_EXECUTABLES } from "./packaging-toolchain";
 import { computeTreeIdentity, type TreeIdentity } from "./tree-identity";
-import { BLACKGLASS_CLI_SOCKET_NAME, patchCliBinary } from "./cli-binary";
+import { BLACKGLASS_CLI_SOCKET_NAME, signedPatchedCliBinarySha256 } from "./cli-binary";
 
 export interface MacOSLauncherSigningEvidence {
   signature: "ad-hoc";
@@ -115,7 +115,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   }
   const adapterSha256 = await sha256File(join(appPath, "Contents/Resources", config.adapterFileName));
   if (adapterSha256 !== config.adapterSha256) throw new Error("Embedded adapter does not match launch contract");
-  const generatedCli = patchCliBinary(
+  const generatedCliSha256 = await signedPatchedCliBinarySha256(
     await readFile(join(config.officialAppPath, "Contents/MacOS/obsidian-cli")),
   );
   const codeInventory = await inspectMacOSCodeInventory(appPath, "strict-all-architectures");
@@ -135,7 +135,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     infoPlistSha256: await sha256File(infoPlist),
     executableSha256: await sha256File(executable),
     cliExecutableName: "blackglass-cli",
-    cliExecutableSha256: generatedCli.report.patchedSha256,
+    cliExecutableSha256: generatedCliSha256,
     cliSocketName: BLACKGLASS_CLI_SOCKET_NAME,
     embeddedAsarSha256: adapterSha256,
     launchConfigSha256: sha256(configBytes),
