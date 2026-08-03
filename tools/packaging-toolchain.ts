@@ -9,7 +9,7 @@ import {
 } from "./tree-identity";
 
 export const PINNED_BUN_VERSION = "1.3.8";
-export const MACOS_PACKAGING_TOOLCHAIN_FORMAT_VERSION = 3;
+export const MACOS_PACKAGING_TOOLCHAIN_FORMAT_VERSION = 4;
 const FIXED_XCRUN_EXECUTABLE = "/usr/bin/xcrun";
 
 export const MACOS_PACKAGING_EXECUTABLES = {
@@ -31,7 +31,7 @@ export const MACOS_PACKAGING_EXECUTABLES = {
 } as const;
 
 type MacOSPackagingExecutableName = keyof typeof MACOS_PACKAGING_EXECUTABLES;
-type MacOSPackagingToolName = "bun" | "git" | MacOSPackagingExecutableName;
+type MacOSPackagingToolName = "bun" | "blackglass-bridge" | "git" | MacOSPackagingExecutableName;
 type ReleaseRuntimeDependencyName = "playwright-core" | "typescript";
 
 export const RELEASE_RUNTIME_DEPENDENCY_IMPORTS = [
@@ -56,6 +56,7 @@ export interface MacOSPackagingToolchain {
   platform: "darwin";
   architecture: "arm64";
   bunVersion: typeof PINNED_BUN_VERSION;
+  executionMode: "development" | "standalone";
   operatingSystem: {
     productVersion: string;
     buildVersion: string;
@@ -118,13 +119,18 @@ export function assertPinnedBunVersion(): void {
   }
 }
 
-export async function inspectMacOSPackagingToolchain(): Promise<MacOSPackagingToolchain> {
+export async function inspectMacOSPackagingToolchain(options: {
+  standaloneExecutable?: string;
+} = {}): Promise<MacOSPackagingToolchain> {
   assertPinnedBunVersion();
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new Error("macOS packaging requires Apple Silicon macOS");
   }
   const tools: MacOSPackagingToolchain["tools"] = [
-    { name: "bun", sha256: await sha256File(process.execPath) },
+    {
+      name: options.standaloneExecutable ? "blackglass-bridge" : "bun",
+      sha256: await sha256File(options.standaloneExecutable ?? process.execPath),
+    },
   ];
   for (const [name, path] of Object.entries(MACOS_PACKAGING_EXECUTABLES) as Array<
     [MacOSPackagingExecutableName, string]
@@ -156,6 +162,7 @@ export async function inspectMacOSPackagingToolchain(): Promise<MacOSPackagingTo
     platform: "darwin",
     architecture: "arm64",
     bunVersion: PINNED_BUN_VERSION,
+    executionMode: options.standaloneExecutable ? "standalone" : "development",
     operatingSystem: {
       productVersion: runText([
         MACOS_PACKAGING_EXECUTABLES.sw_vers,
@@ -172,7 +179,9 @@ export async function inspectMacOSPackagingToolchain(): Promise<MacOSPackagingTo
       gitVersion: gitMatch[1]!,
     },
     tools,
-    runtimeDependencies: await inspectReleaseRuntimeDependencies(),
+    runtimeDependencies: options.standaloneExecutable
+      ? []
+      : await inspectReleaseRuntimeDependencies(),
   };
   assertMacOSPackagingToolchain(value);
   return value;
@@ -187,6 +196,7 @@ export function assertMacOSPackagingToolchain(
     value.platform !== "darwin" ||
     value.architecture !== "arm64" ||
     value.bunVersion !== PINNED_BUN_VERSION ||
+    (value.executionMode !== "development" && value.executionMode !== "standalone") ||
     !isRecord(value.operatingSystem) ||
     typeof value.operatingSystem.productVersion !== "string" ||
     !/^\d+(?:\.\d+){1,2}$/u.test(value.operatingSystem.productVersion) ||
@@ -207,7 +217,7 @@ export function assertMacOSPackagingToolchain(
     throw new Error("Invalid macOS packaging toolchain evidence");
   }
   const expectedNames = [
-    "bun",
+    value.executionMode === "standalone" ? "blackglass-bridge" : "bun",
     "git",
     ...Object.keys(MACOS_PACKAGING_EXECUTABLES),
   ].sort((left, right) => Buffer.from(left).compare(Buffer.from(right)));
@@ -224,19 +234,19 @@ export function assertMacOSPackagingToolchain(
       throw new Error("Invalid macOS packaging tool identity");
     }
   }
-  if (
-    value.runtimeDependencies.length !==
-    RELEASE_RUNTIME_DEPENDENCY_IMPORTS.length
-  ) {
+  const expectedRuntimeDependencies = value.executionMode === "standalone"
+    ? []
+    : RELEASE_RUNTIME_DEPENDENCY_IMPORTS;
+  if (value.runtimeDependencies.length !== expectedRuntimeDependencies.length) {
     throw new Error("Invalid release runtime dependency inventory");
   }
   for (
     let index = 0;
-    index < RELEASE_RUNTIME_DEPENDENCY_IMPORTS.length;
+    index < expectedRuntimeDependencies.length;
     index += 1
   ) {
     const dependency = value.runtimeDependencies[index];
-    const expected = RELEASE_RUNTIME_DEPENDENCY_IMPORTS[index]!;
+    const expected = expectedRuntimeDependencies[index]!;
     if (
       !isRecord(dependency) ||
       dependency.name !== expected.name ||

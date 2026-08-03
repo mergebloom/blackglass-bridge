@@ -18,7 +18,9 @@ describe("immutable release runner", () => {
     expect(source).toContain("Release pipeline state is malformed or belongs to another candidate");
     expect(source).toContain("BLACKGLASS_TESTED_SOURCE_REVISION");
     expect(source).toContain("revalidateOnResume: true");
-    expect(source).toContain("has partial outputs");
+    expect(source).toContain("without an exact completed-stage receipt");
+    expect(source).toContain("outputs changed after their receipt was written");
+    expect(source).toContain("computeTreeIdentity");
     expect(source).toContain('join(workRoot, "pipeline.lock")');
     expect(source).toContain('flag: "wx"');
     expect(source).toContain("Refusing to remove a changed release pipeline lock");

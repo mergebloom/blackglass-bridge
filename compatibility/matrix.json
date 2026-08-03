@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "requiredScenarios": [
+    "E2E-RELEASE-SYNC-RECOVERY",
+    "E2E-P3-TENANCY",
+    "E2E-P4-CUSTOM-E2EE",
+    "E2E-P4-MANAGED-ENCRYPTION"
+  ],
+  "entries": []
+}

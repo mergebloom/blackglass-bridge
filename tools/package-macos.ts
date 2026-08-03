@@ -59,6 +59,10 @@ import {
 } from "./release-manifest";
 import { computeTreeIdentity } from "./tree-identity";
 import { computeToolingSourceIdentity } from "./tooling-source";
+import {
+  assertToolingSourceIdentity,
+  type ToolingSourceIdentity,
+} from "./tooling-source";
 import { withPackageStaging } from "./package-staging";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
@@ -78,6 +82,9 @@ const parsedFlags = parseStrictFlags(flags, {
     "--receipt",
     "--baseline",
     "--official-dmg",
+    "--tooling-source",
+    "--blackglass-version",
+    "--standalone-executable",
   ],
 });
 const controlOrigin = parsedFlags.values.get("--control-origin");
@@ -86,7 +93,10 @@ const manifestArgument = parsedFlags.values.get("--manifest");
 const receiptArgument = parsedFlags.values.get("--receipt");
 const baselineArgument = parsedFlags.values.get("--baseline");
 const officialDmgArgument = parsedFlags.values.get("--official-dmg");
-if (!controlOrigin || !dataHost || !manifestArgument || !officialDmgArgument) {
+const toolingSourceArgument = parsedFlags.values.get("--tooling-source");
+const blackglassVersionArgument = parsedFlags.values.get("--blackglass-version");
+const standaloneExecutableArgument = parsedFlags.values.get("--standalone-executable");
+if (!controlOrigin || !dataHost || !manifestArgument) {
   usage();
 }
 const packageInvocationId = randomUUID();
@@ -102,11 +112,15 @@ const patchedAsar = await canonicalExistingPath(
   "Patched ASAR",
   "file",
 );
-const officialDmg = await canonicalExistingPath(
-  officialDmgArgument,
-  "Official release DMG",
-  "file",
-);
+const officialDmg = officialDmgArgument
+  ? await canonicalExistingPath(officialDmgArgument, "Official release DMG", "file")
+  : undefined;
+const toolingSourcePath = toolingSourceArgument
+  ? await canonicalExistingPath(toolingSourceArgument, "Tooling source identity", "file")
+  : undefined;
+const standaloneExecutable = standaloneExecutableArgument
+  ? await canonicalExistingPath(standaloneExecutableArgument, "Standalone Bridge executable", "file")
+  : undefined;
 const baselinePath = baselineArgument
   ? await canonicalExistingPath(
     baselineArgument,
@@ -149,12 +163,18 @@ if (dirname(receiptPath) !== dirname(outputApp)) {
 assertNonOverlappingPaths([
   { label: "Source app", path: sourceApp },
   { label: "Patched ASAR", path: patchedAsar },
-  { label: "Official release DMG", path: officialDmg },
+  ...(officialDmg ? [{ label: "Official release DMG", path: officialDmg }] : []),
   { label: "Output app", path: outputApp },
   { label: "Release manifest", path: manifestPath },
   { label: "Package invocation receipt", path: receiptPath },
   ...(baselinePath
     ? [{ label: "Compatibility baseline", path: baselinePath }]
+    : []),
+  ...(toolingSourcePath
+    ? [{ label: "Tooling source identity", path: toolingSourcePath }]
+    : []),
+  ...(standaloneExecutable
+    ? [{ label: "Standalone Bridge executable", path: standaloneExecutable }]
     : []),
 ]);
 
@@ -168,8 +188,12 @@ const generatedCli = patchCliBinary(sourceCliBytes);
 const patchedAsarBytes = await readFile(patchedAsar);
 const sourceArchive = AsarArchive.fromBuffer(sourceAsarBytes);
 const patchedArchive = AsarArchive.fromBuffer(patchedAsarBytes);
-const toolingSource = await computeToolingSourceIdentity();
-const packagingToolchain = await inspectMacOSPackagingToolchain();
+const toolingSource = toolingSourcePath
+  ? await readToolingSourceIdentity(toolingSourcePath)
+  : await computeToolingSourceIdentity();
+const packagingToolchain = await inspectMacOSPackagingToolchain({
+  ...(standaloneExecutable ? { standaloneExecutable } : {}),
+});
 const sourceVersion = readVersion(sourceArchive);
 const patchedVersion = readVersion(patchedArchive);
 patchedArchive.read("app.js");
@@ -182,10 +206,8 @@ const qualification = await qualifyRendererRelease(
   baselinePath,
   unpackedJavaScriptFiles,
 );
-const officialDmgSha256 = await sha256File(officialDmg);
-if (
-  officialDmgSha256 !== qualification.loadedBaseline.baseline.officialDmgSha256
-) {
+const officialDmgSha256 = officialDmg ? await sha256File(officialDmg) : undefined;
+if (officialDmgSha256 && officialDmgSha256 !== qualification.loadedBaseline.baseline.officialDmgSha256) {
   throw new Error(
     "Official release DMG does not match the reviewed compatibility baseline",
   );
@@ -218,7 +240,7 @@ if (
 const reproducedRenderer = patchAsar(sourceAsarBytes, {
   controlOrigin,
   dataHost,
-});
+}, qualification.loadedBaseline.baseline.patchIncisions);
 if (!reproducedRenderer.buffer.equals(patchedAsarBytes)) {
   throw new Error(
     "Adapter ASAR is not the byte-identical result of the reviewed source, endpoints, and current patcher",
@@ -245,7 +267,6 @@ if (sourceVersion !== patchedVersion || sourceVersion !== bundleVersion) {
 }
 
 const sourceWrapperBytes = await readFile(sourceWrapperAsar);
-inspectEmbeddedRendererDevModeContract(sourceAsarBytes, sourceWrapperBytes);
 if (
   generatedSha256(sourceWrapperBytes) !==
     qualification.loadedBaseline.baseline.sourceWrapperAsarSha256
@@ -338,10 +359,14 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   if ((await sha256File(packagedAsar)) !== patchedAsarSha256) {
     throw new Error("Packaged renderer hash does not match the adapter input");
   }
-  const generatedWrapper = patchMacOSWrapperAsar(sourceWrapperBytes);
+  const generatedWrapper = patchMacOSWrapperAsar(
+    sourceWrapperBytes,
+    qualification.loadedBaseline.baseline.wrapperIncisions,
+  );
   inspectEmbeddedRendererDevModeContract(
     patchedAsarBytes,
     generatedWrapper.buffer,
+    qualification.loadedBaseline.baseline.runtimeContract,
   );
   const packagedWrapperAsar = join(stagedApp, "Contents/Resources/app.asar");
   await writeFile(packagedWrapperAsar, generatedWrapper.buffer);
@@ -444,7 +469,10 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   if (!macOSCodeInventoriesEqual(macOSArtifact.codeInventory, sourceMacOSCodeInventory)) {
     throw new Error("Packaged macOS code inventory does not match the reviewed source");
   }
-  const blackglassVersion = await readBlackglassVersion();
+  const blackglassVersion = blackglassVersionArgument ?? await readBlackglassVersion();
+  if (!isSupportedSemver(blackglassVersion)) {
+    throw new Error("Blackglass package has no semantic version");
+  }
   const publicArtifact = publicMacOSArtifact(macOSArtifact);
   const releaseManifest: BlackglassReleaseManifest = {
     schemaVersion: BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION,
@@ -452,7 +480,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     rendererVersion: sourceVersion,
     compatibilityBaseline: qualification.report.baseline,
     source: {
-      officialDmgSha256,
+      officialDmgSha256: qualification.loadedBaseline.baseline.officialDmgSha256,
       appTree: sourceAppTree,
       rendererAsarSha256: sourceAsarSha256,
       wrapperAsarSha256: generatedWrapper.report.upstreamSha256,
@@ -484,7 +512,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     cli: generatedCli.report,
     macOS: publicArtifact,
     reproduction: {
-      officialDmgMatchedBaseline: true,
+      officialDmgMatchedBaseline: officialDmgSha256 !== undefined,
       sourceAppTreeMatchedBaseline: true,
       stagedCopyTreeMatchedSource: true,
       reviewedSourceRenderer: true,
@@ -680,6 +708,15 @@ async function readBlackglassVersion(): Promise<string> {
   return metadata.version;
 }
 
+async function readToolingSourceIdentity(path: string): Promise<ToolingSourceIdentity> {
+  const value = JSON.parse(await readFile(path, "utf8")) as unknown;
+  assertToolingSourceIdentity(value);
+  if (value.worktreeClean !== true || value.gitRevision === null) {
+    throw new Error("Standalone packaging requires a clean source-bound tooling identity");
+  }
+  return value;
+}
+
 async function publishAtomically(
   stagedApp: string,
   outputApp: string,
@@ -738,8 +775,10 @@ function usage(): never {
       "<patched.asar> <output.app> --control-origin <origin> " +
       "--data-host <host[:port]> --manifest <release-manifest.json> " +
       "[--receipt <package-receipt.json>] " +
-      "--official-dmg <official-release.dmg> " +
-      "[--baseline <reviewed-baseline.json>]",
+      "[--official-dmg <official-release.dmg>] " +
+      "[--baseline <reviewed-baseline.json>] " +
+      "[--tooling-source <source-identity.json> --blackglass-version <version>] " +
+      "[--standalone-executable <blackglass-bridge>]",
   );
   process.exit(2);
 }

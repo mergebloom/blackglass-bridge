@@ -5,38 +5,13 @@ import {
   UPSTREAM_CLI_SOCKET_NAME,
 } from "../../../tools/cli-binary";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "./runtime-home";
+import type { RendererIncision, RendererReplacement } from "./incision";
 
-const CONTROL_ORIGIN_EXPRESSION =
-  '"https://"+[String.fromCharCode(97,112,105),"obsidian","md"].join(".")';
-const DATA_HOST_CONDITIONS = [
-  '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h',
-  '!tne.call(h,".obsidian.md")&&"127.0.0.1"!==h',
-] as const;
-const CLI_VARIANTS = [
-  {
-    runtimeRoot: "!U&&process.env.XDG_RUNTIME_DIR||ce.homedir()",
-    homeCall: "ce.homedir()",
-    pathBinding: "D",
-    registration:
-      'let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";',
-    registrationReplacement:
-      'let g=u+"/obsidian-cli";if(h.existsSync(g)){let w="/usr/local/bin/blackglass";',
-  },
-  {
-    runtimeRoot: "!W&&process.env.XDG_RUNTIME_DIR||de.homedir()",
-    homeCall: "de.homedir()",
-    pathBinding: "C",
-    registration:
-      'let g=C.join(d,"obsidian-cli");if(m.existsSync(g)){let S="/usr/local/bin/obsidian";',
-    registrationReplacement:
-      'let g=d+"/obsidian-cli";if(m.existsSync(g)){let S="/usr/local/bin/blackglass";',
-  },
-] as const;
 export { BLACKGLASS_CLI_SOCKET_NAME } from "../../../tools/cli-binary";
 export const BLACKGLASS_CLI_COMMAND_NAME = "blackglass";
 export const BLACKGLASS_CLI_COMMAND_PATH = "/usr/local/bin/blackglass";
 
-export const RENDERER_PATCH_FORMAT_VERSION = 7;
+export const RENDERER_PATCH_FORMAT_VERSION = 8;
 export const RENDERER_INCISION_COUNT = 6;
 
 export interface AdapterOptions {
@@ -66,128 +41,32 @@ export interface AdapterReport {
 export function patchRenderer(
   renderer: Buffer,
   options: AdapterOptions,
+  incisions: readonly RendererIncision[],
 ): Buffer {
   const canonical = canonicalAdapterOptions(options);
-  const source = renderer.toString("utf8");
-  const dataHostCondition = selectExactlyOneVariant(
-    source,
-    DATA_HOST_CONDITIONS,
-    "Sync hostname condition",
-  );
-  const controlReplacement = paddedExpression(
-    JSON.stringify(canonical.controlOrigin),
-    CONTROL_ORIGIN_EXPRESSION.length,
-    "control origin",
-  );
-  const data = parseDataHost(canonical.dataHost);
-  const dataReplacement = paddedExpression(
-    `u.host!==${JSON.stringify(data.host)}`,
-    dataHostCondition.length,
-    "data host",
-  );
-
-  let patched = replaceExactlyOnce(
-    source,
-    CONTROL_ORIGIN_EXPRESSION,
-    controlReplacement,
-    "control origin expression",
-  );
-  patched = replaceExactlyOnce(
-    patched,
-    dataHostCondition,
-    dataReplacement,
-    "Sync hostname condition",
-  );
-
-  const output = Buffer.from(patched, "utf8");
-  if (output.length !== renderer.length) {
-    throw new Error("Renderer patch unexpectedly changed the byte length");
-  }
-  return output;
+  return applyReviewedIncisions(renderer, incisions, canonical);
 }
 
 export function patchStarterRenderer(
   starter: Buffer,
   options: AdapterOptions,
+  incisions: readonly RendererIncision[],
 ): Buffer {
-  const canonical = canonicalAdapterOptions(options);
-  const source = starter.toString("utf8");
-  const controlReplacement = paddedExpression(
-    JSON.stringify(canonical.controlOrigin),
-    CONTROL_ORIGIN_EXPRESSION.length,
-    "starter control origin",
-  );
-  const patched = replaceExactlyOnce(
-    source,
-    CONTROL_ORIGIN_EXPRESSION,
-    controlReplacement,
-    "starter control origin expression",
-  );
-  const output = Buffer.from(patched, "utf8");
-  if (output.length !== starter.length) {
-    throw new Error("Starter patch unexpectedly changed the byte length");
-  }
-  return output;
+  return applyReviewedIncisions(starter, incisions, canonicalAdapterOptions(options));
 }
 
-export function patchMainProcess(main: Buffer): Buffer {
+export function patchMainProcess(
+  main: Buffer,
+  incisions: readonly RendererIncision[],
+): Buffer {
   if (UPSTREAM_CLI_SOCKET_NAME.length !== BLACKGLASS_CLI_SOCKET_NAME.length) {
     throw new Error("CLI socket replacement must preserve byte length");
   }
-  const source = main.toString("utf8");
-  const variant = selectExactlyOneCliVariant(source);
-  const blackglassRuntimeRoot =
-    `process.env.${BLACKGLASS_HOME_ENVIRONMENT}||${variant.homeCall}`;
-  const blackglassSocketConstruction =
-    `${variant.pathBinding}.join(${blackglassRuntimeRoot.padEnd(variant.runtimeRoot.length, " ")},` +
-    `"${BLACKGLASS_CLI_SOCKET_NAME}")`;
-  let patched = replaceExactlyOnce(
-    source,
-    UPSTREAM_CLI_SOCKET_NAME,
-    BLACKGLASS_CLI_SOCKET_NAME,
-    "CLI socket name",
-  );
-  patched = replaceExactlyOnce(
-    patched,
-    variant.runtimeRoot,
-    paddedSource(
-      blackglassRuntimeRoot,
-      variant.runtimeRoot.length,
-      "CLI runtime home",
-    ),
-    "CLI runtime home",
-  );
-  patched = replaceExactlyOnce(
-    patched,
-    variant.registration,
-    paddedSource(
-      variant.registrationReplacement,
-      variant.registration.length,
-      "CLI registration",
-    ),
-    "CLI registration target",
-  );
-  const output = Buffer.from(patched, "utf8");
-  if (output.length !== main.length) {
-    throw new Error("Main-process patch unexpectedly changed the byte length");
-  }
-  inspectPatchedMainProcess(output, {
-    blackglassRuntimeRoot,
-    blackglassSocketConstruction,
-    upstreamRuntimeRoot: variant.runtimeRoot,
-    upstreamRegistration: variant.registration,
-  });
-  return output;
+  return applyReviewedIncisions(main, incisions, undefined);
 }
 
 export function inspectPatchedMainProcess(
   main: Buffer,
-  expected?: {
-    blackglassRuntimeRoot: string;
-    blackglassSocketConstruction: string;
-    upstreamRuntimeRoot: string;
-    upstreamRegistration: string;
-  },
 ): {
   cliSocketName: typeof BLACKGLASS_CLI_SOCKET_NAME;
   runtimeHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
@@ -195,28 +74,17 @@ export function inspectPatchedMainProcess(
   runtimeRootValidated: true;
 } {
   const source = main.toString("utf8");
-  const contract = expected ?? selectExactlyOnePatchedCliVariant(source);
   try {
     new Function(source);
   } catch (error) {
     throw new Error(`Patched renderer main.js is not valid JavaScript: ${String(error)}`);
   }
   requireExactlyOnce(source, BLACKGLASS_CLI_SOCKET_NAME, "patched CLI socket name");
-  requireExactlyOnce(source, contract.blackglassRuntimeRoot, "patched CLI runtime root");
-  requireExactlyOnce(
-    source,
-    contract.blackglassSocketConstruction,
-    "patched CLI socket construction",
-  );
-  const blackglassRegistration = CLI_VARIANTS.find(
-    (variant) => variant.runtimeRoot === contract.upstreamRuntimeRoot,
-  )?.registrationReplacement;
-  if (!blackglassRegistration) throw new Error("Unknown patched CLI variant");
-  requireExactlyOnce(source, blackglassRegistration, "patched CLI registration");
+  requireExactlyOnce(source, `process.env.${BLACKGLASS_HOME_ENVIRONMENT}`, "patched CLI runtime root");
+  requireExactlyOnce(source, BLACKGLASS_CLI_COMMAND_PATH, "patched CLI registration");
   if (
     source.includes(UPSTREAM_CLI_SOCKET_NAME) ||
-    source.includes(contract.upstreamRuntimeRoot) ||
-    source.includes(contract.upstreamRegistration)
+    source.includes("/usr/local/bin/obsidian")
   ) {
     throw new Error("Patched renderer main.js retains an upstream CLI anchor");
   }
@@ -228,65 +96,30 @@ export function inspectPatchedMainProcess(
   };
 }
 
-function selectExactlyOneCliVariant(source: string): (typeof CLI_VARIANTS)[number] {
-  const matches = CLI_VARIANTS.filter((variant) => source.includes(variant.runtimeRoot));
-  if (matches.length !== 1) {
-    throw new Error(`CLI runtime home must match exactly once (found ${matches.length})`);
-  }
-  return matches[0]!;
-}
-
-function selectExactlyOnePatchedCliVariant(source: string): {
-  blackglassRuntimeRoot: string;
-  blackglassSocketConstruction: string;
-  upstreamRuntimeRoot: string;
-  upstreamRegistration: string;
-} {
-  const matches = CLI_VARIANTS.flatMap((variant) => {
-    const blackglassRuntimeRoot =
-      `process.env.${BLACKGLASS_HOME_ENVIRONMENT}||${variant.homeCall}`;
-    const blackglassSocketConstruction =
-      `${variant.pathBinding}.join(${blackglassRuntimeRoot.padEnd(variant.runtimeRoot.length, " ")},` +
-      `"${BLACKGLASS_CLI_SOCKET_NAME}")`;
-    return source.includes(blackglassSocketConstruction)
-      ? [{
-          blackglassRuntimeRoot,
-          blackglassSocketConstruction,
-          upstreamRuntimeRoot: variant.runtimeRoot,
-          upstreamRegistration: variant.registration,
-        }]
-      : [];
-  });
-  if (matches.length !== 1) {
-    throw new Error(`patched CLI socket construction must match exactly once (found ${matches.length})`);
-  }
-  return matches[0]!;
-}
-
-function selectExactlyOneVariant<T extends string>(
-  source: string,
-  variants: readonly T[],
-  label: string,
-): T {
-  const matches = variants.filter((variant) => source.includes(variant));
-  if (matches.length !== 1) {
-    throw new Error(`${label} must match exactly once (found ${matches.length})`);
-  }
-  return matches[0]!;
-}
-
 export function patchAsar(
   upstream: Buffer,
   options: AdapterOptions,
+  incisions: readonly RendererIncision[],
 ): { buffer: Buffer; report: AdapterReport } {
   const canonical = canonicalAdapterOptions(options);
   const archive = AsarArchive.fromBuffer(upstream);
   const rendererBefore = archive.read("app.js");
   const starterBefore = archive.read("starter.js");
   const mainBefore = archive.read("main.js");
-  const rendererAfter = patchRenderer(rendererBefore, canonical);
-  const starterAfter = patchStarterRenderer(starterBefore, canonical);
-  const mainAfter = patchMainProcess(mainBefore);
+  const rendererAfter = patchRenderer(
+    rendererBefore,
+    canonical,
+    incisions.filter((incision) => incision.file === "app.js"),
+  );
+  const starterAfter = patchStarterRenderer(
+    starterBefore,
+    canonical,
+    incisions.filter((incision) => incision.file === "starter.js"),
+  );
+  const mainAfter = patchMainProcess(
+    mainBefore,
+    incisions.filter((incision) => incision.file === "main.js"),
+  );
   const rendererOutput = replacePackedAsarEntry(upstream, "app.js", rendererAfter);
   const starterOutput = replacePackedAsarEntry(rendererOutput, "starter.js", starterAfter);
   const output = replacePackedAsarEntry(starterOutput, "main.js", mainAfter);
@@ -325,6 +158,69 @@ export function patchAsar(
       mainAfterSha256: sha256(mainAfter),
     },
   };
+}
+
+function applyReviewedIncisions(
+  source: Buffer,
+  incisions: readonly RendererIncision[],
+  options: AdapterOptions | undefined,
+): Buffer {
+  if (incisions.length === 0) throw new Error("Reviewed incision plan is empty");
+  const output = Buffer.from(source);
+  const ranges = [...incisions].sort((left, right) => left.offset - right.offset);
+  let previousEnd = 0;
+  for (const incision of ranges) {
+    if (
+      !Number.isSafeInteger(incision.offset) ||
+      !Number.isSafeInteger(incision.length) ||
+      incision.offset < previousEnd ||
+      incision.length < 1 ||
+      incision.offset + incision.length > source.length ||
+      !/^[a-f0-9]{64}$/u.test(incision.sha256)
+    ) {
+      throw new Error(`Invalid or overlapping reviewed incision: ${incision.id}`);
+    }
+    const original = source.subarray(incision.offset, incision.offset + incision.length);
+    if (sha256(original) !== incision.sha256) {
+      throw new Error(`Reviewed incision hash mismatch: ${incision.id}`);
+    }
+    const replacement = rendererReplacement(incision.replacement, original, incision.length, options);
+    replacement.copy(output, incision.offset);
+    previousEnd = incision.offset + incision.length;
+  }
+  if (output.length !== source.length) throw new Error("Incision changed source byte length");
+  return output;
+}
+
+function rendererReplacement(
+  kind: RendererReplacement,
+  original: Buffer,
+  length: number,
+  options: AdapterOptions | undefined,
+): Buffer {
+  let replacement: string;
+  if (kind === "control-origin") {
+    if (!options) throw new Error("Control-origin incision requires endpoint options");
+    replacement = JSON.stringify(options.controlOrigin);
+  } else if (kind === "data-host-guard") {
+    if (!options) throw new Error("Data-host incision requires endpoint options");
+    replacement = `u.host!==${JSON.stringify(parseDataHost(options.dataHost).host)}`;
+  } else if (kind === "cli-socket") {
+    replacement = BLACKGLASS_CLI_SOCKET_NAME;
+  } else if (kind === "cli-runtime-home") {
+    const source = original.toString("utf8");
+    const matches = [...source.matchAll(/([A-Za-z_$][\w$]*)\.homedir\(\)/gu)];
+    if (matches.length !== 1) throw new Error("Reviewed CLI runtime incision has an unknown shape");
+    replacement = `process.env.${BLACKGLASS_HOME_ENVIRONMENT}||${matches[0]![1]}.homedir()`;
+  } else if (kind === "cli-registration") {
+    const source = original.toString("utf8");
+    const match = /^let ([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\.join\(([A-Za-z_$][\w$]*),"obsidian-cli"\);if\(([A-Za-z_$][\w$]*)\.existsSync\(\1\)\)\{let ([A-Za-z_$][\w$]*)="\/usr\/local\/bin\/obsidian";$/u.exec(source);
+    if (!match) throw new Error("Reviewed CLI registration incision has an unknown shape");
+    replacement = `let ${match[1]}=${match[3]}+"/obsidian-cli";if(${match[4]}.existsSync(${match[1]})){let ${match[5]}="${BLACKGLASS_CLI_COMMAND_PATH}";`;
+  } else {
+    throw new Error(`Unknown renderer incision replacement: ${kind satisfies never}`);
+  }
+  return Buffer.from(paddedSource(replacement, length, kind), "utf8");
 }
 
 export function canonicalAdapterOptions(options: AdapterOptions): AdapterOptions {

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { readFileSync, unlinkSync } from "node:fs";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseStrictFlags } from "./cli-flags";
+import { computeTreeIdentity } from "./tree-identity";
 import {
   DEFAULT_E2E_SCENARIO,
   parseE2EScenarioId,
@@ -20,12 +21,23 @@ import {
   releaseCandidateSha256,
 } from "./release-candidate";
 
-const PIPELINE_STATE_SCHEMA_VERSION = 2;
+const PIPELINE_STATE_SCHEMA_VERSION = 3;
+
+interface OutputIdentity {
+  path: string;
+  kind: "file" | "directory";
+  sha256: string;
+}
 
 interface PipelineState {
   schemaVersion: typeof PIPELINE_STATE_SCHEMA_VERSION;
   candidateSha256: string;
-  completed: Array<{ stage: string; key: string; completedAt: string }>;
+  completed: Array<{
+    stage: string;
+    key: string;
+    completedAt: string;
+    outputs: OutputIdentity[];
+  }>;
 }
 
 interface Stage {
@@ -326,26 +338,23 @@ if (parsed.booleans.has("--prepare-client")) {
 for (const stage of stages) {
   await assertReleaseCandidateMatchesCheckouts({ candidate, clientRoot, serverRoot });
   if (isComplete(state, stage) && !stage.revalidateOnResume) {
-    await assertOutputsComplete(stage);
+    await assertCompletedStageUnchanged(state, stage);
     console.log(`[resume] ${stage.name}`);
     continue;
   }
-  if (
-    !stage.revalidateOnResume &&
-    stage.outputs &&
-    (await outputsPresent(stage.outputs)) === "complete"
-  ) {
-    console.log(`[recover] ${stage.name}`);
-  } else {
-    await assertNoPartialOutputs(stage);
-    await run(stage);
-  }
+  await assertNoUnboundOutputs(stage);
+  await run(stage);
   if (!isComplete(state, stage)) {
     state.completed.push({
       stage: stage.name,
       key: stageResumeKey(stage),
       completedAt: new Date().toISOString(),
+      outputs: await outputIdentities(stage),
     });
+  } else {
+    const entry = completedEntry(state, stage);
+    entry.completedAt = new Date().toISOString();
+    entry.outputs = await outputIdentities(stage);
   }
   await writeState(statePath, state);
 }
@@ -412,7 +421,13 @@ async function readState(path: string, expectedCandidate: string): Promise<Pipel
       typeof entry?.stage !== "string" ||
       typeof entry.key !== "string" ||
       typeof entry.completedAt !== "string" ||
-      !Number.isFinite(Date.parse(entry.completedAt))
+      !Number.isFinite(Date.parse(entry.completedAt)) ||
+      !Array.isArray(entry.outputs) ||
+      entry.outputs.some((output) =>
+        typeof output?.path !== "string" ||
+        (output.kind !== "file" && output.kind !== "directory") ||
+        !/^[a-f0-9]{64}$/u.test(output.sha256)
+      )
     )
   ) {
     throw new Error("Release pipeline state is malformed or belongs to another candidate");
@@ -435,6 +450,12 @@ function isComplete(state: PipelineState, stage: Stage): boolean {
   return state.completed.some((entry) => entry.key === stageResumeKey(stage));
 }
 
+function completedEntry(state: PipelineState, stage: Stage): PipelineState["completed"][number] {
+  const entries = state.completed.filter((entry) => entry.key === stageResumeKey(stage));
+  if (entries.length !== 1) throw new Error(`Release stage state is duplicated: ${stage.name}`);
+  return entries[0]!;
+}
+
 function stageResumeKey(stage: Stage): string {
   return stage.resumeKey ?? stage.name;
 }
@@ -452,16 +473,39 @@ async function outputsPresent(paths: string[]): Promise<"missing" | "partial" | 
   return "partial";
 }
 
-async function assertOutputsComplete(stage: Stage): Promise<void> {
-  if (stage.outputs && (await outputsPresent(stage.outputs)) !== "complete") {
-    throw new Error(`Completed stage ${stage.name} has missing or partial outputs`);
+async function assertNoUnboundOutputs(stage: Stage): Promise<void> {
+  if (!stage.outputs) return;
+  const present = await outputsPresent(stage.outputs);
+  if (present !== "missing") {
+    throw new Error(
+      `Stage ${stage.name} has ${present} outputs without an exact completed-stage receipt; ` +
+        "preserve them for diagnosis and use a new candidate run",
+    );
   }
 }
 
-async function assertNoPartialOutputs(stage: Stage): Promise<void> {
-  if (stage.outputs && (await outputsPresent(stage.outputs)) === "partial") {
-    throw new Error(`Stage ${stage.name} has partial outputs; preserve them for diagnosis and use a new candidate run`);
+async function assertCompletedStageUnchanged(state: PipelineState, stage: Stage): Promise<void> {
+  const expected = completedEntry(state, stage).outputs;
+  const actual = await outputIdentities(stage);
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`Completed stage ${stage.name} outputs changed after their receipt was written`);
   }
+}
+
+async function outputIdentities(stage: Stage): Promise<OutputIdentity[]> {
+  const identities: OutputIdentity[] = [];
+  for (const path of stage.outputs ?? []) {
+    const metadata = await lstat(path);
+    if (metadata.isSymbolicLink()) throw new Error(`Stage output must not be a symlink: ${path}`);
+    if (metadata.isFile()) {
+      identities.push({ path, kind: "file", sha256: await sha256File(path) });
+    } else if (metadata.isDirectory()) {
+      identities.push({ path, kind: "directory", sha256: (await computeTreeIdentity(path)).sha256 });
+    } else {
+      throw new Error(`Unsupported stage output type: ${path}`);
+    }
+  }
+  return identities;
 }
 
 async function sha256File(path: string): Promise<string> {

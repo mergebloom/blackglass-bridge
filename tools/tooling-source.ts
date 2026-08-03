@@ -246,6 +246,80 @@ export function assertValidationOnlyDescendant(
   }
 }
 
+export function assertQualificationBundleDescendant(
+  rootArgument: string,
+  sourceRevision: string,
+  descendantRevision: string,
+  expectedFiles: ReadonlyMap<string, Uint8Array>,
+): void {
+  assertGitRevision(sourceRevision, "Tooling source revision");
+  assertGitRevision(descendantRevision, "Qualified tag revision");
+  if (expectedFiles.size < 3) {
+    throw new Error("Qualification bundle must contain records and both matrix files");
+  }
+  const normalized = new Map<string, Uint8Array>();
+  for (const [rawPath, bytes] of expectedFiles) {
+    const path = normalizedGitPath(rawPath);
+    if (
+      !isGeneratedValidationRecordPath(path) &&
+      path !== "compatibility/matrix.json" &&
+      path !== "compatibility/MATRIX.md"
+    ) {
+      throw new Error(`Unexpected qualification bundle path: ${path}`);
+    }
+    if (normalized.has(path)) throw new Error(`Duplicate qualification bundle path: ${path}`);
+    normalized.set(path, bytes);
+  }
+  if (
+    !normalized.has("compatibility/matrix.json") ||
+    !normalized.has("compatibility/MATRIX.md") ||
+    ![...normalized.keys()].some(isGeneratedValidationRecordPath)
+  ) {
+    throw new Error("Qualification bundle is missing records or generated matrix files");
+  }
+
+  const ancestor = Bun.spawnSync([
+    resolveReleaseGitExecutable(), "-C", rootArgument, "merge-base", "--is-ancestor",
+    sourceRevision, descendantRevision,
+  ]);
+  if (ancestor.exitCode !== 0) {
+    throw new Error("Qualified tag revision is not a descendant of the tooling source");
+  }
+  const history = runGitText(resolve(rootArgument), [
+    "rev-list", "--reverse", "--ancestry-path", "--parents",
+    `${sourceRevision}..${descendantRevision}`,
+  ]).split("\n").filter(Boolean);
+  if (history.length !== 1) {
+    throw new Error("Qualified tag must be exactly one linear qualification-bundle commit after the tooling source");
+  }
+  const [commit, ...parents] = history[0]!.split(" ");
+  if (commit !== descendantRevision || parents.length !== 1 || parents[0] !== sourceRevision) {
+    throw new Error("Qualified tag history must be a linear descendant of the tooling source");
+  }
+  const root = resolve(rootArgument);
+  const changed = gitPathList(root, ["diff", "--name-only", "-z", sourceRevision, descendantRevision, "--"]);
+  const expectedPaths = [...normalized.keys()].sort(compareCodeUnitStrings);
+  if (changed === null || JSON.stringify(changed.sort(compareCodeUnitStrings)) !== JSON.stringify(expectedPaths)) {
+    throw new Error("Qualified tag commit must change only the exact qualification bundle");
+  }
+  for (const [path, bytes] of normalized) {
+    const sourceEntry = gitTreeEntry(root, sourceRevision, path);
+    if (isGeneratedValidationRecordPath(path) && sourceEntry !== null) {
+      throw new Error("Qualified validation record path must not exist at the tooling source revision");
+    }
+    const entry = gitTreeEntry(root, descendantRevision, path);
+    if (entry?.mode !== "100644" || entry.type !== "blob") {
+      throw new Error(`Qualified bundle path must be a regular file: ${path}`);
+    }
+    const committed = Bun.spawnSync([
+      resolveReleaseGitExecutable(), "-C", root, "cat-file", "blob", entry.object,
+    ]);
+    if (committed.exitCode !== 0 || !Buffer.from(committed.stdout).equals(Buffer.from(bytes))) {
+      throw new Error(`Qualified bundle bytes differ from the verified file: ${path}`);
+    }
+  }
+}
+
 export function assertToolingSourceIdentity(
   value: unknown,
 ): asserts value is ToolingSourceIdentity {
@@ -281,6 +355,9 @@ export function toolingSourceTreeEqual(
 
 export function isToolingSourcePath(path: string): boolean {
   const normalized = path.split(sep).join("/").replace(/^\.\//u, "");
+  if (normalized === "compatibility/matrix.json" || normalized === "compatibility/MATRIX.md") {
+    return false;
+  }
   if (TOOLING_SOURCE_FILES.includes(normalized as (typeof TOOLING_SOURCE_FILES)[number])) {
     return true;
   }

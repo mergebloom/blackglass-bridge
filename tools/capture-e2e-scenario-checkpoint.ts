@@ -1,5 +1,5 @@
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { readPreparedE2ERun } from "./e2e-network";
 import {
   assertScenarioToolingSourceBound,
@@ -10,6 +10,11 @@ import {
   e2eScenarioCheckpointDefinition,
   e2eScenarioDefinition,
 } from "./e2e-scenario";
+import {
+  fileExists,
+  prepareCheckpointPublication,
+  publishCheckpoint,
+} from "./checkpoint-publication";
 
 const [rootArgument, checkpoint, portArgument, ...extra] = Bun.argv.slice(2);
 const debugPort = Number(portArgument);
@@ -41,17 +46,13 @@ if (checkpointIndex > 0) {
   );
 }
 const paths = scenarioCheckpointPaths(run.root, checkpoint);
-await mkdir(dirname(paths.screenshot), { recursive: true, mode: 0o700 });
-const [screenshotExists, stateExists, proofExists] = await Promise.all([
-  fileExists(paths.screenshot),
-  fileExists(paths.state),
-  fileExists(paths.proof),
-]);
-if (proofExists) throw new Error(`Refusing to overwrite checkpoint proof: ${paths.proof}`);
-if (screenshotExists !== stateExists) {
-  throw new Error("Checkpoint has a partial screenshot/state pair; use a new run");
-}
-if (!screenshotExists) {
+await prepareCheckpointPublication(paths, run.root, checkpoint);
+const staging = await mkdtemp(join(dirname(paths.screenshot), ".checkpoint-capture-"));
+const stagedScreenshot = join(staging, "capture.png");
+const stagedState = join(staging, "capture.json");
+const stagedProof = join(staging, "capture.proof.json");
+let published = false;
+try {
   const child = Bun.spawn(
     [
       process.execPath,
@@ -59,34 +60,59 @@ if (!screenshotExists) {
       new URL("./e2e-ui.mjs", import.meta.url).pathname,
       String(debugPort),
       "snapshot",
-      paths.screenshot,
-      paths.state,
+      stagedScreenshot,
+      stagedState,
     ],
     { cwd: new URL("..", import.meta.url).pathname, stdout: "inherit", stderr: "inherit" },
   );
   const exitCode = await child.exited;
   if (exitCode !== 0) throw new Error(`UI checkpoint capture failed with exit code ${exitCode}`);
-}
+
+const state = JSON.parse(await readFile(stagedState, "utf8")) as Record<string, unknown>;
+state.screenshotPath = paths.screenshot;
+await writeFile(stagedState, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
 
 const evidence = await buildScenarioCheckpointEvidence({
   root: run.root,
   run: run.manifest,
   runManifestSha256: run.manifestSha256,
   checkpoint,
+  capturePaths: { screenshot: stagedScreenshot, state: stagedState },
 });
-await writeFile(paths.proof, `${JSON.stringify(evidence, null, 2)}\n`, {
+await writeFile(stagedProof, `${JSON.stringify(evidence, null, 2)}\n`, {
   flag: "wx",
   mode: 0o600,
 });
-await Promise.all([chmod(paths.screenshot, 0o600), chmod(paths.state, 0o600)]);
+await Promise.all([chmod(stagedScreenshot, 0o600), chmod(stagedState, 0o600)]);
+await publishCheckpoint(
+  { screenshot: stagedScreenshot, state: stagedState, proof: stagedProof },
+  paths,
+);
+published = true;
 console.log(JSON.stringify({ scenarioId: scenario.id, checkpoint, proof: paths.proof }, null, 2));
+} catch (error) {
+  if (!published) await preserveFailedCapture(staging, run.root, checkpoint, error);
+  throw error;
+} finally {
+  if (published) await rm(staging, { recursive: true, force: false });
+}
 
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await readFile(path);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw error;
-  }
+async function preserveFailedCapture(
+  staging: string,
+  root: string,
+  checkpoint: string,
+  error: unknown,
+): Promise<void> {
+  await writeFile(
+    join(staging, "failure.txt"),
+    `${String(error)}\n`,
+    { flag: "wx", mode: 0o600 },
+  );
+  const failedRoot = join(root, "evidence", "failed-attempts");
+  await mkdir(failedRoot, { recursive: true, mode: 0o700 });
+  const destination = join(
+    failedRoot,
+    `${checkpoint.replaceAll("/", "-")}-${basename(staging)}`,
+  );
+  await rename(staging, destination);
 }

@@ -83,10 +83,11 @@ const rootMetadata = {
   sha256: createHash("sha256").update(stableJson(rootMetadataIdentity)).digest("hex"),
 };
 const packagingToolchain: MacOSPackagingToolchain = {
-  formatVersion: 3 as const,
+  formatVersion: 4 as const,
   platform: "darwin" as const,
   architecture: "arm64" as const,
   bunVersion: "1.3.8" as const,
+  executionMode: "development" as const,
   operatingSystem: { productVersion: "26.5.2", buildVersion: "25F84" },
   developerTools: {
     xcodeVersion: "26.6",
@@ -264,7 +265,7 @@ function manifest(): BlackglassReleaseManifest {
     rendererVersion: "1.12.7",
     compatibilityBaseline: {
       id: "obsidian-macos-1.12.7",
-      schemaVersion: 5,
+      schemaVersion: 6,
       sha256: digest("8"),
     },
     source: {
@@ -276,8 +277,8 @@ function manifest(): BlackglassReleaseManifest {
       macOSCodeInventory: codeInventory,
     },
     patcher: {
-      renderer: { formatVersion: 7, incisions: 6 },
-      wrapper: { formatVersion: 5, incisions: 3 },
+      renderer: { formatVersion: 8, incisions: 6 },
+      wrapper: { formatVersion: 6, incisions: 3 },
       cli: { formatVersion: 2, incisions: 2 },
     },
     endpoints: {
@@ -287,7 +288,7 @@ function manifest(): BlackglassReleaseManifest {
     packagingToolchain,
     toolingSource,
     renderer: {
-      patchFormatVersion: 7,
+      patchFormatVersion: 8,
       incisionCount: 6,
       controlOrigin: "https://blackglass.example.com",
       dataHost: "blackglass-data.example.com",
@@ -305,7 +306,7 @@ function manifest(): BlackglassReleaseManifest {
       mainAfterSha256: digest("5"),
     },
     wrapper: {
-      patchFormatVersion: 5,
+      patchFormatVersion: 6,
       incisionCount: 3,
       profileDirectory: "Blackglass",
       applicationName: "Blackglass",
@@ -418,6 +419,7 @@ function qualification(): ReleaseQualification {
   };
   return {
     schemaVersion: 9,
+    scenarioId: "E2E-RELEASE-SYNC-RECOVERY",
     qualifiedAt: "2026-07-28T12:00:00.000Z",
     passed: true,
     platform: "macOS Apple Silicon",

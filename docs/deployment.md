@@ -13,35 +13,23 @@ Use two public TLS names:
 - `https://sync-control.example.com` -> `127.0.0.1:3000`
 - `wss://sync-data.example.com` -> `127.0.0.1:3003`
 
-Set `SELFHOST_DATA_HOST=sync-data.example.com` and generate the adapter with:
+Set `SELFHOST_DATA_HOST=sync-data.example.com`. End users should use the
+standalone Bridge release; it requires no Bun or source checkout:
 
 ```sh
-bun run patch:client -- \
-  '/Volumes/Obsidian/Obsidian.app/Contents/Resources/obsidian.asar' \
-  /path/to/generated-compatibility.asar \
-  --resources '/Volumes/Obsidian/Obsidian.app/Contents/Resources' \
+blackglass-bridge-vVERSION-macos-arm64 adapt \
+  --dmg /path/to/official-Obsidian.dmg \
   --control-origin https://sync-control.example.com \
-  --data-host sync-data.example.com
+  --data-host sync-data.example.com \
+  --output "$HOME/Desktop/Blackglass-output"
 ```
 
 ## Client rollout and upgrades
 
-Generate one adapter per upstream release and endpoint pair. The adapter is not
-the application: the official app wrapper remains installed and untouched. If
-a fresh wrapper already embeds the same renderer version, create a separate
-application copy:
-
-```sh
-bun run package:macos -- \
-  '/Volumes/Obsidian/Obsidian.app' \
-  /path/to/generated-compatibility.asar \
-  '/path/to/Blackglass.app' \
-  --control-origin https://sync-control.example.com \
-  --data-host sync-data.example.com \
-  --official-dmg /path/to/official-Obsidian.dmg \
-  --manifest /path/to/blackglass-release.json \
-  --receipt /path/to/blackglass-package-receipt.json
-```
+Generate one adapted app per upstream release and endpoint pair. The official
+app remains untouched. Source contributors may use `patch:client` and
+`package:macos` separately for analysis and qualification; that development
+workflow requires the pinned Bun toolchain.
 
 The packager verifies the DMG digest and complete extracted application tree
 against the reviewed baseline, builds in a private staging directory, and only

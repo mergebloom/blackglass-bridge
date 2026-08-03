@@ -6,7 +6,7 @@ import {
 } from "./release-validation";
 import {
   assertGitRevision,
-  assertValidationOnlyDescendant,
+  assertQualificationBundleDescendant,
   computeToolingSourceIdentity,
   computeToolingSourceIdentityAtRevision,
   toolingSourceTreeEqual,
@@ -14,7 +14,7 @@ import {
 
 export interface QualifiedToolingVerification {
   validated: true;
-  validationRecord: string;
+  validationRecords: string[];
   sourceRevision: string;
   tagRevision: string;
   toolingTreeSha256: string;
@@ -23,14 +23,17 @@ export interface QualifiedToolingVerification {
 }
 
 export async function verifyQualifiedTooling(
-  recordArgument: string,
+  recordArguments: string[],
   tagRevision: string,
   rootArgument = resolve(import.meta.dir, ".."),
 ): Promise<QualifiedToolingVerification> {
   assertGitRevision(tagRevision, "Qualified tag revision");
 
   const root = resolve(rootArgument);
+  if (recordArguments.length === 0) throw new Error("Qualification requires validation records");
   const expectedDirectory = resolve(root, "docs/validation");
+  const records = [];
+  for (const recordArgument of recordArguments) {
   const recordPath = resolve(root, recordArgument);
   if (dirname(recordPath) !== expectedDirectory) {
     throw new Error("Validation record must be directly under docs/validation");
@@ -53,8 +56,13 @@ export async function verifyQualifiedTooling(
     throw new Error(`Validation record must be named ${expectedName}`);
   }
 
-  const sourceRevision = record.toolingSource.gitRevision;
+  records.push({ recordPath, recordBytes, record });
+  }
+  const sourceRevision = records[0]!.record.toolingSource.gitRevision;
   if (!sourceRevision) throw new Error("Validation record has no tooling source revision");
+  if (records.some(({ record }) => record.toolingSource.gitRevision !== sourceRevision)) {
+    throw new Error("Qualification records bind different tooling source revisions");
+  }
   const current = await computeToolingSourceIdentity(root);
   if (current.worktreeClean !== true || current.gitRevision !== tagRevision) {
     throw new Error("Qualified tooling verification requires a clean exact tag checkout");
@@ -62,23 +70,24 @@ export async function verifyQualifiedTooling(
   const source = computeToolingSourceIdentityAtRevision(root, sourceRevision);
   const tag = computeToolingSourceIdentityAtRevision(root, tagRevision);
   if (
-    !toolingSourceTreeEqual(record.toolingSource, source) ||
-    !toolingSourceTreeEqual(record.toolingSource, tag) ||
-    !toolingSourceTreeEqual(record.toolingSource, current)
+    records.some(({ record }) => !toolingSourceTreeEqual(record.toolingSource, source)) ||
+    records.some(({ record }) => !toolingSourceTreeEqual(record.toolingSource, tag)) ||
+    records.some(({ record }) => !toolingSourceTreeEqual(record.toolingSource, current))
   ) {
     throw new Error("Qualified tag tooling tree differs from the packaged and tested source");
   }
-  assertValidationOnlyDescendant(
-    root,
-    sourceRevision,
-    tagRevision,
-    `docs/validation/${expectedName}`,
-    recordBytes,
-  );
+  const bundle = new Map<string, Uint8Array>();
+  for (const { recordPath, recordBytes } of records) {
+    bundle.set(`docs/validation/${basename(recordPath)}`, recordBytes);
+  }
+  for (const path of ["compatibility/matrix.json", "compatibility/MATRIX.md"]) {
+    bundle.set(path, await readFile(resolve(root, path)));
+  }
+  assertQualificationBundleDescendant(root, sourceRevision, tagRevision, bundle);
 
   return {
     validated: true,
-    validationRecord: recordPath,
+    validationRecords: records.map(({ recordPath }) => recordPath),
     sourceRevision,
     tagRevision,
     toolingTreeSha256: current.treeSha256,
@@ -88,16 +97,16 @@ export async function verifyQualifiedTooling(
 }
 
 if (import.meta.main) {
-  const [recordArgument, tagRevision, ...extra] = Bun.argv.slice(2);
-  if (!recordArgument || !tagRevision || extra.length !== 0) usage();
-  const result = await verifyQualifiedTooling(recordArgument, tagRevision);
+  const [tagRevision, ...recordArguments] = Bun.argv.slice(2);
+  if (!tagRevision || recordArguments.length === 0) usage();
+  const result = await verifyQualifiedTooling(recordArguments, tagRevision);
   console.log(JSON.stringify(result, null, 2));
 }
 
 function usage(): never {
   console.error(
     "Usage: bun run tools/verify-qualified-tooling.ts " +
-      "<docs/validation/*-qualification.json> <full-tag-commit>",
+      "<full-tag-commit> <docs/validation/*-qualification.json>...",
   );
   process.exit(2);
 }

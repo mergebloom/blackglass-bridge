@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { expect, test } from "bun:test";
 import { patchAsar } from "../packages/client-adapter/src/patch";
+import type { RendererIncision, WrapperIncision } from "../packages/client-adapter/src/incision";
 import { inspectMacOSArtifact } from "../tools/macos-artifact";
 import { inspectMacOSCodeInventory } from "../tools/macos-code-inventory";
 import {
@@ -20,7 +21,7 @@ import {
   approvedMacOSEntitlementsPlist,
   inspectSourceMacOSCodeSigning,
 } from "../tools/macos-code-signing";
-import { asarHeaderSha256 } from "../tools/asar";
+import { AsarArchive, asarHeaderSha256 } from "../tools/asar";
 import { assertBlackglassReleaseManifest } from "../tools/release-manifest";
 import {
   discoverRendererRelease,
@@ -50,15 +51,20 @@ test("macOS packaging gives Blackglass an independent identity", async () => {
     ]);
 
     const sourceAsar = makeRendererArchive();
+    const wrapperFixture = sourceWrapperFixture();
     const sourceWrapperAsar = makeArchive({
-      "main.js": Buffer.from(sourceWrapperMain()),
+      "main.js": wrapperFixture.source,
       "package.json": Buffer.from(JSON.stringify({ name: "obsidian" })),
     });
     const endpoints = {
       controlOrigin: "http://127.0.0.1:3000",
       dataHost: "127.0.0.1:3003",
     };
-    const patchedAsar = patchAsar(sourceAsar, endpoints).buffer;
+    const patchedAsar = patchAsar(
+      sourceAsar,
+      endpoints,
+      rendererPatchIncisions(sourceAsar),
+    ).buffer;
     const sourceWrapperSha256 = asarHeaderSha256(sourceWrapperAsar);
     const patchedPath = join(directory, "patched.asar");
     const baselinePath = join(directory, "compatibility.json");
@@ -129,6 +135,7 @@ test("macOS packaging gives Blackglass an independent identity", async () => {
     const compatibilityBaseline = await testCompatibilityBaseline(
       sourceAsar,
       sourceWrapperAsar,
+      wrapperFixture.incisions,
       sourceApp,
       officialDmgPath,
     );
@@ -216,8 +223,8 @@ test("macOS packaging gives Blackglass an independent identity", async () => {
       rendererVersion: "1.12.7",
       endpoints,
       patcher: {
-        renderer: { formatVersion: 7, incisions: 6 },
-        wrapper: { formatVersion: 5, incisions: 3 },
+        renderer: { formatVersion: 8, incisions: 6 },
+        wrapper: { formatVersion: 6, incisions: 3 },
         cli: { formatVersion: 2, incisions: 2 },
       },
       reproduction: {
@@ -267,7 +274,7 @@ test("macOS packaging gives Blackglass an independent identity", async () => {
       passed: true,
       separateOutputs: true,
       independentPackageInvocations: true,
-      blackglassVersion: "0.2.0",
+      blackglassVersion: "0.3.0",
       rendererVersion: "1.12.7",
       applicationTreeSha256: report.releaseManifest.macOS.applicationTreeSha256,
       codeInventorySha256: report.releaseManifest.macOS.codeInventory.sha256,
@@ -543,23 +550,24 @@ test("macOS packaging gives Blackglass an independent identity", async () => {
 }, 120_000);
 
 function makeRendererArchive(): Buffer {
-  const controlExpression =
-    '"https://"+[String.fromCharCode(97,112,105),"obsidian","md"].join(".")';
-  const hostnameCondition =
-    '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h';
+  const controlRange = "false".padEnd(64, " ");
+  const dataRange = "true".padEnd(64, " ");
+  const runtime = "hm.homedir()".padEnd(48, " ");
+  const registration =
+    'let aa=pp.join(rr,"obsidian-cli");if(ff.existsSync(aa)){let cc="/usr/local/bin/obsidian";';
   return makeArchive({
     "app.js": Buffer.from(
-      `var dw=${controlExpression},mw=window.fetch;` +
+      `var dw=${controlRange},mw=window.fetch;` +
         'function gw(path){return mw(dw+path,{method:"POST"})}' +
-        `if(${hostnameCondition})throw Error();` +
+        `if(${dataRange})throw Error();` +
         'gw("/user/signin");new WebSocket(url);socket.send({op:"ping"});' +
         'x.prototype.onMessage=function(e){var t=e.op;if("ready"===t)return};',
     ),
     "main.js": Buffer.from(
-      'module.exports=function(c,i,l){const socket=D.join(!U&&process.env.XDG_RUNTIME_DIR||ce.homedir(),".obsidian-cli.sock");let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";ipcMain.on("is-dev",t=>{t.returnValue=l})}}',
+      `module.exports=function(){const home=${runtime};const socket=".obsidian-cli.sock";${registration}}}`,
     ),
     "starter.js": Buffer.from(
-      `var sa=${controlExpression};gw("/user/signin");`,
+      `var sa=${controlRange};gw("/user/signin");`,
     ),
     "index.html": Buffer.from('<script src="app.js"></script>'),
     "package.json": Buffer.from(JSON.stringify({ version: "1.12.7" })),
@@ -569,35 +577,14 @@ function makeRendererArchive(): Buffer {
 async function testCompatibilityBaseline(
   sourceAsar: Buffer,
   sourceWrapperAsar: Buffer,
+  wrapperIncisions: WrapperIncision[],
   sourceApp: string,
   officialDmgPath: string,
 ): Promise<CompatibilityBaseline> {
-  const anchors: CompatibilityAnchor[] = [
-    {
-      id: "control-origin-constructor",
-      file: "app.js",
-      literal: 'String.fromCharCode(97,112,105),"obsidian","md"',
-      expectedMatches: 1,
-    },
-    {
-      id: "sync-websocket-host-authorization",
-      file: "app.js",
-      literal: '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h',
-      expectedMatches: 1,
-    },
-    {
-      id: "renderer-script-reference",
-      file: "index.html",
-      literal: "app.js",
-      expectedMatches: 1,
-    },
-    {
-      id: "desktop-is-dev-ipc-handler",
-      file: "main.js",
-      literal: 'ipcMain.on("is-dev"',
-      expectedMatches: 1,
-    },
-  ];
+  const incisions = rendererPatchIncisions(sourceAsar);
+  const anchors: CompatibilityAnchor[] = incisions.map(
+    ({ replacement: _replacement, ...range }) => range,
+  );
   const discovered = discoverRendererRelease(sourceAsar, anchors);
   const unpackedJavaScriptFiles = await discoverUnpackedJavaScriptFiles(
     join(sourceApp, "Contents/Resources"),
@@ -608,7 +595,7 @@ async function testCompatibilityBaseline(
     unpackedJavaScriptFiles,
   );
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     id: "synthetic-obsidian-1.12.7",
     rendererVersion: discovered.rendererVersion,
     officialDmgSha256: createHash("sha256")
@@ -631,6 +618,9 @@ async function testCompatibilityBaseline(
       reviewedPaths: Object.keys(discoveredWithUnpacked.unpackedJavaScriptFiles),
     },
     anchors,
+    patchIncisions: incisions,
+    wrapperIncisions,
+    runtimeContract: { wrapperRendererArguments: 2, rendererDevModeArgument: null },
     controlPlaneRoutes: discoveredWithUnpacked.controlPlaneRoutes,
     controlPlaneRouteLocations: discoveredWithUnpacked.controlPlaneRouteLocations,
     controlPlaneRequestHelpers: discoveredWithUnpacked.controlPlaneRequestHelpers,
@@ -916,81 +906,66 @@ function runCommand(arguments_: string[]): void {
   expect(result.exitCode, result.stderr.toString()).toBe(0);
 }
 
-function sourceWrapperMain(): string {
-  return `const {app} = require('electron');
-const path = require('path');
-let currentBaseVersion = app.getVersion();
-let currentPackageVersion = currentBaseVersion;
-let dataPath = app.getPath('userData');
-
-function pad(number) {
-\tif (number < 10) {
-\t\treturn '0' + number;
-\t}
-\treturn number;
+function sourceWrapperFixture(): { source: Buffer; incisions: WrapperIncision[] } {
+  const prefix = "const fs=require('fs'),path=require('path'),util=require('util'),os=require('os');\n";
+  const profile = " ".repeat(1400);
+  const updater = " ".repeat(160);
+  const embedded = " ".repeat(220);
+  const source = Buffer.from(`${prefix}${profile}\n${updater}\n${embedded}`);
+  const ranges = [
+    ["profile", prefix.length, profile.length, "profile-bootstrap"],
+    ["updater", prefix.length + profile.length + 1, updater.length, "disable-updater"],
+    [
+      "renderer",
+      prefix.length + profile.length + 1 + updater.length + 1,
+      embedded.length,
+      "embedded-renderer-only",
+    ],
+  ] as const;
+  return {
+    source,
+    incisions: ranges.map(([id, offset, length, replacement]) => ({
+      id,
+      file: "main.js",
+      offset,
+      length,
+      sha256: createHash("sha256").update(source.subarray(offset, offset + length)).digest("hex"),
+      replacement,
+    })),
+  };
 }
 
-function stamp() {
-\tlet d = new Date();
-\treturn d.getUTCFullYear() +
-\t\t'-' + pad(d.getUTCMonth() + 1) +
-\t\t'-' + pad(d.getUTCDate()) +
-\t\t' ' + pad(d.getUTCHours()) +
-\t\t':' + pad(d.getUTCMinutes()) +
-\t\t':' + pad(d.getUTCSeconds());
-}
-
-function logger(logfile) {
-\tlet fileout = fs.openSync(logfile, 'a');
-\tlet stdout = process.stdout;
-
-\tstdout.on('error', function(e) {
-\t\t// \`write\` failed. Do nothing...
-\t});
-
-\tlet fn = function () {
-\t\tlet data = stamp() + ' ' + util.format.apply(null, arguments) + os.EOL;
-
-\t\ttry {
-\t\t\tfs.writeSync(fileout, data);
-\t\t\t// Don't output to stdout if the app requests silence mode (to avoid polluting CLI outputs)
-\t\t\tif (!silence) stdout.write(data);
-\t\t}
-\t\tcatch (e) {
-\t\t\t// Failed to write to log
-\t\t}
-\t};
-
-\tfn.end = function () {
-\t\tfs.closeSync(fileout);
-\t};
-
-\treturn fn;
-}
-
-let updatePromise = app.whenReady();
-let queueUpdate = (manual) => {
-\tlet fn = () => update(manual);
-\tupdatePromise = updatePromise.then(fn, fn);
-};
-setInterval(queueUpdate, 60 * 60 * 1000);
-queueUpdate();
-let updatedAsarPath = '';
-let version = '';
-let candidateFile = '';
-function loadApp(asarPath) {
-	let fn = require(path.join(asarPath, 'main.js'));
-	if (fn) {
-		fn(asarPath, updateEvents);
-		return true;
-	}
-	return false;
-}
-if (isV2MoreRecent(app.getVersion(), version)) {
-\t\tupdatedAsarPath = path.join(dataPath, candidateFile);
-\t\tupdatedAsarVersion = version;
-\t}
-`;
+function rendererPatchIncisions(sourceAsar: Buffer): RendererIncision[] {
+  const archive = AsarArchive.fromBuffer(sourceAsar);
+  const definitions = [
+    ["control", "app.js", "false".padEnd(64, " "), "control-origin"],
+    ["data", "app.js", "true".padEnd(64, " "), "data-host-guard"],
+    ["starter", "starter.js", "false".padEnd(64, " "), "control-origin"],
+    ["runtime", "main.js", "hm.homedir()".padEnd(48, " "), "cli-runtime-home"],
+    ["socket", "main.js", ".obsidian-cli.sock", "cli-socket"],
+    [
+      "registration",
+      "main.js",
+      'let aa=pp.join(rr,"obsidian-cli");if(ff.existsSync(aa)){let cc="/usr/local/bin/obsidian";',
+      "cli-registration",
+    ],
+  ] as const;
+  return definitions.map(([id, file, value, replacement]) => {
+    const bytes = archive.read(file);
+    const needle = Buffer.from(value);
+    const offset = bytes.indexOf(needle);
+    if (offset < 0 || bytes.indexOf(needle, offset + needle.length) >= 0) {
+      throw new Error(`Synthetic renderer range ${id} is absent or ambiguous`);
+    }
+    return {
+      id,
+      file,
+      offset,
+      length: needle.length,
+      sha256: createHash("sha256").update(needle).digest("hex"),
+      replacement,
+    };
+  });
 }
 
 function sourceInfoPlist(wrapperSha256: string): string {

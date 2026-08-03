@@ -13,6 +13,7 @@ import {
   TOOLING_SOURCE_FILES,
   TOOLING_SOURCE_IDENTITY_FORMAT_VERSION,
   TOOLING_SOURCE_SCOPE,
+  assertQualificationBundleDescendant,
   assertValidationOnlyDescendant,
   computeToolingSourceIdentity,
   computeToolingSourceIdentityAtRevision,
@@ -117,6 +118,39 @@ describe("release-critical tooling source identity", () => {
           record.bytes,
         ),
       ).toThrow(/exactly one linear validation-record commit/u);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("allows one exact multi-renderer qualification bundle commit", async () => {
+    const root = await createRepository();
+    try {
+      const sourceRevision = git(root, "rev-parse", "HEAD");
+      const files = new Map<string, Uint8Array>([
+        [validationRecordPath("0.1.1", "1.12.7"), Buffer.from("first\n")],
+        [validationRecordPath("0.1.1", "1.13.4"), Buffer.from("second\n")],
+        ["compatibility/matrix.json", Buffer.from('{"qualified":true}\n')],
+        ["compatibility/MATRIX.md", Buffer.from("# Qualified\n")],
+      ]);
+      for (const [path, bytes] of files) await writeFile(join(root, path), bytes);
+      git(root, "add", "-A");
+      git(root, "commit", "--quiet", "-m", "qualification bundle");
+      expect(() => assertQualificationBundleDescendant(
+        root,
+        sourceRevision,
+        git(root, "rev-parse", "HEAD"),
+        files,
+      )).not.toThrow();
+
+      const incomplete = new Map(files);
+      incomplete.delete("compatibility/MATRIX.md");
+      expect(() => assertQualificationBundleDescendant(
+        root,
+        sourceRevision,
+        git(root, "rev-parse", "HEAD"),
+        incomplete,
+      )).toThrow(/matrix files/u);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -262,6 +296,8 @@ async function createRepository(): Promise<string> {
   }
   await mkdir(join(root, "docs/validation"), { recursive: true });
   await writeFile(join(root, "docs/validation/README.md"), "generated evidence\n");
+  await writeFile(join(root, "compatibility/matrix.json"), "{}\n");
+  await writeFile(join(root, "compatibility/MATRIX.md"), "# Matrix\n");
   git(root, "add", "-A");
   git(root, "commit", "--quiet", "-m", "qualified source");
   return root;
@@ -280,10 +316,10 @@ async function commitValidationRecord(
   return { path, bytes };
 }
 
-function validationRecordPath(blackglassVersion: string): string {
+function validationRecordPath(blackglassVersion: string, rendererVersion = "1.12.7"): string {
   return (
     `docs/validation/blackglass-${blackglassVersion}-` +
-    "obsidian-1.12.7-qualification.json"
+    `obsidian-${rendererVersion}-qualification.json`
   );
 }
 

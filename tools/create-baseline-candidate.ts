@@ -97,10 +97,10 @@ export interface CompatibilityCandidateReviewReport {
   anchors: Array<{
     id: string;
     file: string;
-    literalSha256: string;
-    expectedMatches: number;
-    actualMatches: number;
-    matched: true;
+    offset: number;
+    length: number;
+    sha256: string;
+    matched: boolean;
   }>;
   identityChanges: {
     rendererVersion: ValueDiff<string>;
@@ -193,7 +193,6 @@ export async function createBaselineCandidate(
     predecessor.baseline.anchors,
     unpackedJavaScriptFiles,
   );
-  assertPredecessorAnchors(predecessor.baseline.anchors, discovery.anchorMatches);
   assertCriticalSemanticInventories(discovery);
 
   const [
@@ -227,6 +226,9 @@ export async function createBaselineCandidate(
       ),
     },
     anchors: sortedAnchors(predecessor.baseline.anchors),
+    patchIncisions: predecessor.baseline.patchIncisions,
+    wrapperIncisions: predecessor.baseline.wrapperIncisions,
+    runtimeContract: predecessor.baseline.runtimeContract,
     controlPlaneRoutes: discovery.controlPlaneRoutes,
     controlPlaneRouteLocations: discovery.controlPlaneRouteLocations,
     controlPlaneRequestHelpers: discovery.controlPlaneRequestHelpers,
@@ -265,10 +267,10 @@ export async function createBaselineCandidate(
     anchors: sortedAnchors(predecessor.baseline.anchors).map((anchor) => ({
       id: anchor.id,
       file: anchor.file,
-      literalSha256: sha256(Buffer.from(anchor.literal)),
-      expectedMatches: anchor.expectedMatches,
-      actualMatches: discovery.anchorMatches[anchor.id]!,
-      matched: true,
+      offset: anchor.offset,
+      length: anchor.length,
+      sha256: anchor.sha256,
+      matched: discovery.anchorMatches[anchor.id] === 1,
     })),
     identityChanges: {
       rendererVersion: valueDiff(
@@ -345,24 +347,6 @@ export async function createBaselineCandidate(
     predecessorRendererVersion: predecessor.baseline.rendererVersion,
     proposedBaselineSha256,
   };
-}
-
-function assertPredecessorAnchors(
-  anchors: CompatibilityAnchor[],
-  actual: Record<string, number>,
-): void {
-  const mismatches = anchors
-    .filter((anchor) => actual[anchor.id] !== anchor.expectedMatches)
-    .map(
-      (anchor) =>
-        `${anchor.id} expected=${anchor.expectedMatches} actual=${actual[anchor.id] ?? 0}`,
-    )
-    .sort(compareCodeUnitStrings);
-  if (mismatches.length > 0) {
-    throw new Error(
-      `Candidate renderer no longer matches predecessor anchors: ${mismatches.join(", ")}`,
-    );
-  }
 }
 
 function assertCriticalSemanticInventories(discovery: ReleaseDiscovery): void {

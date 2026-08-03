@@ -1,88 +1,102 @@
 {
   "anchors": [
     {
-      "expectedMatches": 1,
       "file": "app.js",
       "id": "control-origin-constructor",
-      "literal": "String.fromCharCode(97,112,105),\"obsidian\",\"md\""
+      "length": 47,
+      "offset": 1171184,
+      "sha256": "e0165af1599efaac82e21137d5199dcf60d1b58f5327de78e58fba4eec4c555e"
     },
     {
-      "expectedMatches": 1,
       "file": "app.js",
       "id": "control-request-helper-transport",
-      "literal": "Zw(Jw+e,{method:\"POST\",body:JSON.stringify(t),headers:o})"
+      "length": 57,
+      "offset": 1171776,
+      "sha256": "815208baf464d529908899df1315d6c4ea1a2f508c7eb0c686ba2e7413f2ced4"
     },
     {
-      "expectedMatches": 1,
       "file": "app.js",
       "id": "control-request-preflight-flow",
-      "literal": "r?[4,Zw(Jw+e,{method:\"OPTIONS\",headers:o})]:[3,2]"
+      "length": 49,
+      "offset": 1171646,
+      "sha256": "e1fb83e91d0c0c17b4cf342b07ada9f9469ee37a1304378b4a38cd39096427e8"
     },
     {
-      "expectedMatches": 1,
       "file": "main.js",
       "id": "desktop-cli-registration-target",
-      "literal": "/usr/local/bin/obsidian"
+      "length": 23,
+      "offset": 193489,
+      "sha256": "570acdb87cf981f420342b06f0394d38dd7c6364832dd217a05b8f9b3171b246"
     },
     {
-      "expectedMatches": 1,
       "file": "main.js",
       "id": "desktop-cli-runtime-root",
-      "literal": "!W&&process.env.XDG_RUNTIME_DIR||de.homedir()"
+      "length": 45,
+      "offset": 163729,
+      "sha256": "e01de6244a0665150fcf52b71a500c432c22c0028aa5b6b9d612bc04e0391dc3"
     },
     {
-      "expectedMatches": 1,
       "file": "main.js",
       "id": "desktop-cli-socket",
-      "literal": ".obsidian-cli.sock"
+      "length": 18,
+      "offset": 163776,
+      "sha256": "fe9f398713e8c9086222f9ed51cbacc7cf9316330a0d6baab23aaeb4cf99e5f6"
     },
     {
-      "expectedMatches": 1,
       "file": "main.js",
       "id": "desktop-renderer-export-contract",
-      "literal": "module.exports=function(i,e){"
+      "length": 29,
+      "offset": 162982,
+      "sha256": "484e6f1ae3bb350e80f0b8e79ca741554e7fb174e985413aef947a3adf94dccd"
     },
     {
-      "expectedMatches": 1,
       "file": "app.js",
       "id": "loopback-sync-development-endpoint",
-      "literal": "127.0.0.1:3003"
+      "length": 14,
+      "offset": 3662759,
+      "sha256": "2e4f6310fd5870e033979d7263ad4675600335edf9fe0e537a1d7625e82e1e10"
     },
     {
-      "expectedMatches": 1,
       "file": "index.html",
       "id": "renderer-script-reference",
-      "literal": "app.js"
+      "length": 6,
+      "offset": 1411,
+      "sha256": "e07d531ac040ce3f40e0ce632ac2a059d7cd60f20e61f78268ac3be015b3b28f"
     },
     {
-      "expectedMatches": 1,
       "file": "starter.js",
       "id": "starter-control-origin-constructor",
-      "literal": "String.fromCharCode(97,112,105),\"obsidian\",\"md\""
+      "length": 47,
+      "offset": 11390,
+      "sha256": "e0165af1599efaac82e21137d5199dcf60d1b58f5327de78e58fba4eec4c555e"
     },
     {
-      "expectedMatches": 1,
       "file": "starter.js",
       "id": "starter-control-request-helper-transport",
-      "literal": "l(M+a,{method:\"POST\",body:JSON.stringify(e),headers:i})"
+      "length": 55,
+      "offset": 11942,
+      "sha256": "aaf01b61987b61440c79b6f21a93fd573ea6e423df111bf822994008a6a45b67"
     },
     {
-      "expectedMatches": 1,
       "file": "app.js",
       "id": "sync-network-constructor-bindings",
-      "literal": "Zte=WebSocket,Jte=URL,ene=Object.getOwnPropertyDescriptor(Jte.prototype,\"hostname\").get,tne=String.prototype.endsWith"
+      "length": 117,
+      "offset": 3631725,
+      "sha256": "e735be0a8d1b7602cb84073f36781f0bf7d359962e622a4cc18ad01b01228a33"
     },
     {
-      "expectedMatches": 1,
       "file": "app.js",
       "id": "sync-url-guard-websocket-flow",
-      "literal": "var u=new Jte(e),h=ene.call(u);if(!tne.call(h,\".obsidian.md\")&&\"127.0.0.1\"!==h)return s(new Error(\"Unable to connect to server.\"));var p=!1,d=function(e){p||(p=!0,c.disconnect(),s(e))},f=c.socket=new Zte(u),v=setTimeout"
+      "length": 219,
+      "offset": 3633001,
+      "sha256": "8fd9dbf21e37e96d0f1ac817f89801248359bae2a080b7de7a8c0e6e60db7f52"
     },
     {
-      "expectedMatches": 1,
       "file": "app.js",
       "id": "sync-websocket-host-authorization",
-      "literal": "!tne.call(h,\".obsidian.md\")&&\"127.0.0.1\"!==h"
+      "length": 44,
+      "offset": 3633035,
+      "sha256": "7ac0dbf14c92f6cb079ccb7e6d4c1be9d5356c7c4f47203b8b69272daa75adcb"
     }
   ],
   "controlPlaneRequestHelpers": {
@@ -342,8 +356,62 @@
     "starter.js:call:l[window.fetch]": 2
   },
   "officialDmgSha256": "e84b9595aba5e50221c97e43d3e3f437416edfbf4c4a84c379461e70f854d78f",
+  "patchIncisions": [
+    {
+      "file": "app.js",
+      "id": "control-origin-constructor",
+      "length": 47,
+      "offset": 1171184,
+      "replacement": "control-origin",
+      "sha256": "e0165af1599efaac82e21137d5199dcf60d1b58f5327de78e58fba4eec4c555e"
+    },
+    {
+      "file": "app.js",
+      "id": "sync-websocket-host-authorization",
+      "length": 44,
+      "offset": 3633035,
+      "replacement": "data-host-guard",
+      "sha256": "7ac0dbf14c92f6cb079ccb7e6d4c1be9d5356c7c4f47203b8b69272daa75adcb"
+    },
+    {
+      "file": "starter.js",
+      "id": "starter-control-origin-constructor",
+      "length": 47,
+      "offset": 11390,
+      "replacement": "control-origin",
+      "sha256": "e0165af1599efaac82e21137d5199dcf60d1b58f5327de78e58fba4eec4c555e"
+    },
+    {
+      "file": "main.js",
+      "id": "desktop-cli-socket",
+      "length": 18,
+      "offset": 163776,
+      "replacement": "cli-socket",
+      "sha256": "fe9f398713e8c9086222f9ed51cbacc7cf9316330a0d6baab23aaeb4cf99e5f6"
+    },
+    {
+      "file": "main.js",
+      "id": "desktop-cli-runtime-root",
+      "length": 45,
+      "offset": 163729,
+      "replacement": "cli-runtime-home",
+      "sha256": "e01de6244a0665150fcf52b71a500c432c22c0028aa5b6b9d612bc04e0391dc3"
+    },
+    {
+      "file": "main.js",
+      "id": "desktop-cli-registration",
+      "length": 83,
+      "offset": 193431,
+      "replacement": "cli-registration",
+      "sha256": "bbc04c12a781df55db16179ee7666226f1ff0f0bbbbd565542f59dcf14440430"
+    }
+  ],
   "rendererVersion": "1.13.4",
-  "schemaVersion": 5,
+  "runtimeContract": {
+    "rendererDevModeArgument": null,
+    "wrapperRendererArguments": 2
+  },
+  "schemaVersion": 6,
   "sourceAppTree": {
     "directories": 322,
     "entries": 614,
@@ -632,10 +700,36 @@
     }
   },
   "unpackedJavaScriptReview": {
-    "status": "reviewed",
     "reviewedPaths": [
       "app.asar.unpacked/node_modules/btime/index.js",
       "app.asar.unpacked/node_modules/get-fonts/index.js"
-    ]
-  }
+    ],
+    "status": "reviewed"
+  },
+  "wrapperIncisions": [
+    {
+      "file": "main.js",
+      "id": "wrapper-profile-bootstrap",
+      "length": 1022,
+      "offset": 996,
+      "replacement": "profile-bootstrap",
+      "sha256": "e3136fcfce4c5cc87edafb0d211ccc729010be525e77b63684a0a05a9023c369"
+    },
+    {
+      "file": "main.js",
+      "id": "wrapper-updater-disable",
+      "length": 111,
+      "offset": 2487,
+      "replacement": "disable-updater",
+      "sha256": "6eba3945839fcbc7bcb6eff441771136f6f4de00a2879b293d2de915da42eb6c"
+    },
+    {
+      "file": "main.js",
+      "id": "wrapper-embedded-renderer",
+      "length": 172,
+      "offset": 12432,
+      "replacement": "embedded-renderer-only",
+      "sha256": "8b7693e5a09af7e0565b0d631da921d1e6b6f8acb0c2a91641d3359303dfe748"
+    }
+  ]
 }

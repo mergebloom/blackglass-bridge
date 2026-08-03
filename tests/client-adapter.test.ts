@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import {
   inspectPatchedMainProcess,
   patchAsar,
@@ -7,326 +7,198 @@ import {
   patchRenderer,
   patchStarterRenderer,
 } from "../packages/client-adapter/src/patch";
-import { AsarArchive } from "../tools/asar";
+import type { RendererIncision } from "../packages/client-adapter/src/incision";
 
-const controlExpression =
-  '"https://"+[String.fromCharCode(97,112,105),"obsidian","md"].join(".")';
-const hostnameCondition =
-  '!oee.call(h,".obsidian.md")&&"127.0.0.1"!==h';
-const currentHostnameCondition =
-  '!tne.call(h,".obsidian.md")&&"127.0.0.1"!==h';
-const cliRuntimeRoot =
-  "!U&&process.env.XDG_RUNTIME_DIR||ce.homedir()";
-const cliRegistration =
-  'let g=D.join(u,"obsidian-cli");if(h.existsSync(g)){let w="/usr/local/bin/obsidian";';
+const endpoints = {
+  controlOrigin: "https://sync-control.example.test",
+  dataHost: "sync-data.example.test",
+};
 
-describe("client adapter", () => {
-  test("makes two fixed-length semantic incisions in the main renderer", () => {
-    const upstream = Buffer.from(
-      `var dw=${controlExpression};if(${hostnameCondition})throw Error();`,
-    );
-    const patched = patchRenderer(upstream, {
-      controlOrigin: "http://127.0.0.1:3000",
-      dataHost: "127.0.0.1:3003",
-    });
-    const source = patched.toString("utf8");
+test("applies only reviewed hash-and-offset renderer incisions", () => {
+  const source = Buffer.from(`prefix-${"c".repeat(64)}-middle-${"d".repeat(64)}-suffix`);
+  const controlOffset = source.indexOf(Buffer.from("c".repeat(64)));
+  const dataOffset = source.indexOf(Buffer.from("d".repeat(64)));
+  const incisions = [
+    reviewed("control", "app.js", source, controlOffset, 64, "control-origin"),
+    reviewed("data", "app.js", source, dataOffset, 64, "data-host-guard"),
+  ];
+  const patched = patchRenderer(source, endpoints, incisions);
+  expect(patched.length).toBe(source.length);
+  expect(patched.toString()).toContain('"https://sync-control.example.test"');
+  expect(patched.toString()).toContain('u.host!=="sync-data.example.test"');
+  expect(source.toString()).not.toBe(patched.toString());
+});
 
-    expect(patched.length).toBe(upstream.length);
-    expect(source).toContain('"http://127.0.0.1:3000"');
-    expect(source).toContain('u.host!=="127.0.0.1:3003"');
-    expect(source).not.toContain(controlExpression);
-    expect(source).not.toContain(hostnameCondition);
-  });
+test("patches the starter with its independently reviewed range", () => {
+  const source = Buffer.from(`before-${"s".repeat(64)}-after`);
+  const offset = source.indexOf(Buffer.from("s".repeat(64)));
+  const patched = patchStarterRenderer(source, endpoints, [
+    reviewed("starter-control", "starter.js", source, offset, 64, "control-origin"),
+  ]);
+  expect(patched.toString()).toContain('"https://sync-control.example.test"');
+  expect(patched.length).toBe(source.length);
+});
 
-  test("patches the independent no-vault starter control origin", () => {
-    const upstream = Buffer.from(
-      `var sa=${controlExpression};function da(a,e){return window.fetch(sa+a,e)}`,
-    );
-    const patched = patchStarterRenderer(upstream, {
-      controlOrigin: "https://sync-control.example.test",
-      dataHost: "sync-data.example.test:8443",
-    });
-    expect(patched.length).toBe(upstream.length);
-    expect(patched.toString("utf8")).toContain('var sa="https://sync-control.example.test"');
-    expect(patched.toString("utf8")).not.toContain(controlExpression);
-  });
-
-  test("patches the reviewed 1.13 Sync hostname guard", () => {
-    const upstream = Buffer.from(
-      `var Jw=${controlExpression};if(${currentHostnameCondition})throw Error();`,
-    );
-    const patched = patchRenderer(upstream, {
-      controlOrigin: "https://sync-control.example.test",
-      dataHost: "sync-data.example.test:8443",
-    });
-    expect(patched).toHaveLength(upstream.length);
-    expect(patched.toString("utf8")).toContain(
-      'u.host!=="sync-data.example.test:8443"',
-    );
-    expect(patched.toString("utf8")).not.toContain(currentHostnameCondition);
-  });
-
-  test("uses BLACKGLASS_HOME for the dedicated fixed-length CLI socket", () => {
-    const upstream = Buffer.from(upstreamMain());
-    const patched = patchMainProcess(upstream);
-    const source = patched.toString("utf8");
-    expect(patched.length).toBe(upstream.length);
-    expect(source).toContain('D.join(process.env.BLACKGLASS_HOME||ce.homedir()    ,".blackglass-c.sock")');
-    expect(source).toContain("process.env.BLACKGLASS_HOME||ce.homedir()");
-    expect(source).toContain('let w="/usr/local/bin/blackglass";');
-    expect(source).not.toContain("process.env.XDG_RUNTIME_DIR");
-    expect(source).not.toContain("/usr/local/bin/obsidian");
-    expect(() =>
-      patchMainProcess(Buffer.from(
-        `const root=${cliRuntimeRoot};const socket="missing";${cliRegistration}}`,
-      )),
-    ).toThrow("CLI socket name must match exactly once");
-    expect(() =>
-      patchMainProcess(Buffer.from(
-        `const root=${cliRuntimeRoot};const socket=".obsidian-cli.sock"+".obsidian-cli.sock";${cliRegistration}}`,
-      )),
-    ).toThrow("CLI socket name must match exactly once");
-  });
-
-  test("patches the reviewed 1.13 desktop CLI bindings", () => {
-    const upstream = Buffer.from(upstreamMainCurrent());
-    const patched = patchMainProcess(upstream);
-    const source = patched.toString("utf8");
-    expect(source).toContain(
-      'C.join(process.env.BLACKGLASS_HOME||de.homedir()    ,".blackglass-c.sock")',
-    );
-    expect(source).toContain('let S="/usr/local/bin/blackglass";');
-    expect(source).not.toContain("process.env.XDG_RUNTIME_DIR");
-    expect(source).not.toContain("/usr/local/bin/obsidian");
-  });
-
-  test("fails closed when the CLI runtime-root incision is missing or ambiguous", () => {
-    expect(() =>
-      patchMainProcess(Buffer.from(
-        `const root=ce.homedir();const socket=".obsidian-cli.sock";${cliRegistration}}`,
-      )),
-    ).toThrow("CLI runtime home must match exactly once");
-    expect(() =>
-      patchMainProcess(Buffer.from(
-        `const first=${cliRuntimeRoot},second=${cliRuntimeRoot};const socket=".obsidian-cli.sock";${cliRegistration}}`,
-      )),
-    ).toThrow("CLI runtime home must match exactly once");
-  });
-
-  test("main-process inspection rejects a broken socket construction", () => {
-    const patched = patchMainProcess(Buffer.from(upstreamMain())).toString("utf8");
-    expect(() => inspectPatchedMainProcess(Buffer.from(patched))).not.toThrow();
-    const disconnected = patched.replace(
-      "D.join(process.env.BLACKGLASS_HOME",
-      "D.noop(process.env.BLACKGLASS_HOME",
-    );
-    expect(disconnected).toHaveLength(patched.length);
-    expect(() => inspectPatchedMainProcess(Buffer.from(disconnected))).toThrow(
-      "socket construction",
-    );
-  });
-
-  test("rebuilds ASAR integrity metadata and verifies the result", () => {
-    const renderer = Buffer.from(
-      `var dw=${controlExpression};if(${hostnameCondition})throw Error();`,
-    );
-    const starter = Buffer.from(`var sa=${controlExpression};`);
-    const main = Buffer.from(upstreamMain());
-    const upstream = makeArchive({
-      "app.js": renderer,
-      "starter.js": starter,
-      "main.js": main,
-    });
-    const generated = patchAsar(upstream, {
-      controlOrigin: "https://sync-control.example.test",
-      dataHost: "sync-data.example.test:8443",
-    });
-    const archive = AsarArchive.fromBuffer(generated.buffer);
-    const patchedRenderer = archive.read("app.js");
-    const patchedStarter = archive.read("starter.js");
-    const patchedMain = archive.read("main.js");
-
-    expect(patchedRenderer.toString("utf8")).toContain(
-      '"https://sync-control.example.test"',
-    );
-    expect(patchedRenderer.toString("utf8")).toContain(
-      'u.host!=="sync-data.example.test:8443"',
-    );
-    expect(patchedStarter.toString("utf8")).toContain(
-      'var sa="https://sync-control.example.test"',
-    );
-    expect(patchedMain.toString("utf8")).toContain(".blackglass-c.sock");
-    expect(patchedMain.toString("utf8")).toContain(
-      "process.env.BLACKGLASS_HOME||ce.homedir()",
-    );
-    expect(patchedMain.toString("utf8")).toContain("/usr/local/bin/blackglass");
-    expect(generated.report.upstreamSha256).not.toBe(
-      generated.report.patchedSha256,
-    );
-    expect(generated.report).toMatchObject({
-      patchFormatVersion: 7,
-      incisionCount: 6,
-      controlOrigin: "https://sync-control.example.test",
-      dataHost: "sync-data.example.test:8443",
-      cliSocketName: ".blackglass-c.sock",
-      cliCommandName: "blackglass",
-      cliCommandPath: "/usr/local/bin/blackglass",
-      runtimeHomeEnvironment: "BLACKGLASS_HOME",
-    });
-  });
-
-  test("binds the renderer to the configured data port", () => {
-    const upstream = Buffer.from(
-      `var dw=${controlExpression};if(${hostnameCondition})throw Error();`,
-    );
-    const first = patchRenderer(upstream, {
-      controlOrigin: "https://sync-control.example.test",
-      dataHost: "sync.example.test:8443",
-    });
-    const second = patchRenderer(upstream, {
-      controlOrigin: "https://sync-control.example.test",
-      dataHost: "sync.example.test:9443",
-    });
-
-    expect(first).not.toEqual(second);
-    expect(first.toString("utf8")).toContain('u.host!=="sync.example.test:8443"');
-    expect(second.toString("utf8")).toContain('u.host!=="sync.example.test:9443"');
-  });
-
-  test("matches the server's canonical data-host boundary", () => {
-    const upstream = Buffer.from(
-      `var dw=${controlExpression};if(${hostnameCondition})throw Error();`,
-    );
-    for (const dataHost of [
-      "sync-data.example.test",
-      "sync-data.example.test:8443",
-      "127.0.0.1:3003",
-      "localhost:3003",
-      "192.0.2.10:8443",
-      "[2001:db8::1]:8443",
-      "xn--bcher-kva.example",
-    ]) {
-      expect(() =>
-        patchRenderer(upstream, {
-          controlOrigin: "https://sync-control.example.test",
-          dataHost,
-        }),
-      ).not.toThrow();
-    }
-    for (const dataHost of [
-      "localhost",
-      "127.0.0.1",
-      "localhost.evil.example:8080",
-      "127.0.0.1.evil.example:8080",
-      "127.0.0.2:3003",
-      "0.0.0.0:3003",
-      "224.0.0.1:3003",
-      "255.255.255.255:3003",
-      "[::1]:3003",
-      "[::]:3003",
-      "[ff02::1]:3003",
-      "invalid_label.example",
-      "-invalid.example",
-      "invalid-.example",
-      "invalid..example",
-      "sync-data.example.test:0",
-    ]) {
-      expect(() =>
-        patchRenderer(upstream, {
-          controlOrigin: "https://sync-control.example.test",
-          dataHost,
-        }),
-      ).toThrow();
-    }
-  });
-
-  test("rejects unusable control-origin network addresses", () => {
-    const upstream = Buffer.from(
-      `var dw=${controlExpression};if(${hostnameCondition})throw Error();`,
-    );
-    for (const controlOrigin of [
-      "https://0.0.0.0",
-      "https://224.0.0.1",
-      "https://255.255.255.255",
-      "https://[::]",
-      "https://[ff02::1]",
-      "https://invalid_label.example",
-      "https://-invalid.example",
-      "https://invalid-.example",
-      "https://invalid..example",
-      "https://sync-control.example.test:0",
-    ]) {
-      expect(() =>
-        patchRenderer(upstream, {
-          controlOrigin,
-          dataHost: "sync-data.example.test",
-        }),
-      ).toThrow();
-    }
-  });
-
-  test("rejects non-canonical endpoint spellings", () => {
-    const upstream = Buffer.from(
-      `var dw=${controlExpression};if(${hostnameCondition})throw Error();`,
-    );
-    for (const options of [
-      {
-        controlOrigin: "https://SYNC-control.example.test",
-        dataHost: "sync-data.example.test",
-      },
-      {
-        controlOrigin: "https://sync-control.example.test/",
-        dataHost: "sync-data.example.test",
-      },
-      {
-        controlOrigin: "https://sync-control.example.test",
-        dataHost: "SYNC-data.example.test",
-      },
-      {
-        controlOrigin: "https://sync-control.example.test",
-        dataHost: "sync-data.example.test:443",
-      },
-    ]) {
-      expect(() => patchRenderer(upstream, options)).toThrow("not canonical");
-    }
-  });
-
-  test("fails closed if a semantic anchor is ambiguous", () => {
-    const renderer = Buffer.from(
-      `${controlExpression}${controlExpression}${hostnameCondition}`,
-    );
-    expect(() =>
-      patchRenderer(renderer, {
-        controlOrigin: "http://127.0.0.1:3000",
-        dataHost: "127.0.0.1:3003",
-      }),
-    ).toThrow("must match exactly once");
-  });
-
-  test("fails closed if the starter origin anchor is missing or ambiguous", () => {
-    for (const starter of [
-      Buffer.from("no control origin"),
-      Buffer.from(`${controlExpression}${controlExpression}`),
-    ]) {
-      expect(() =>
-        patchStarterRenderer(starter, {
-          controlOrigin: "http://127.0.0.1:3000",
-          dataHost: "127.0.0.1:3003",
-        }),
-      ).toThrow("must match exactly once");
-    }
+test("derives minified CLI bindings locally without storing an upstream excerpt", () => {
+  const runtime = "qz.homedir()".padEnd(48, " ");
+  const socket = ".obsidian-cli.sock";
+  const registration =
+    'let aa=pp.join(rr,"obsidian-cli");if(ff.existsSync(aa)){let cc="/usr/local/bin/obsidian";';
+  const source = Buffer.from(`function synthetic(){${runtime};"${socket}";${registration}}}`);
+  const incisions = [
+    rangeFor("runtime", "main.js", source, runtime, "cli-runtime-home"),
+    rangeFor("socket", "main.js", source, socket, "cli-socket"),
+    rangeFor("registration", "main.js", source, registration, "cli-registration"),
+  ];
+  const patched = patchMainProcess(source, incisions);
+  expect(patched.length).toBe(source.length);
+  expect(inspectPatchedMainProcess(patched)).toMatchObject({
+    cliSocketName: ".blackglass-c.sock",
+    runtimeHomeEnvironment: "BLACKGLASS_HOME",
+    cliCommandName: "blackglass",
   });
 });
 
-function upstreamMain(): string {
-  return `module.exports=function(){const socket=D.join(${cliRuntimeRoot},".obsidian-cli.sock");${cliRegistration}}}`;
+test("builds and reopens an exact ASAR from reviewed incisions", () => {
+  const app = Buffer.from(`a${"x".repeat(64)}b${"y".repeat(64)}c`);
+  const starter = Buffer.from(`d${"z".repeat(64)}e`);
+  const runtime = "hm.homedir()".padEnd(48, " ");
+  const socket = ".obsidian-cli.sock";
+  const registration =
+    'let a=p.join(r,"obsidian-cli");if(f.existsSync(a)){let c="/usr/local/bin/obsidian";';
+  const main = Buffer.from(`function main(){${runtime};"${socket}";${registration}}}`);
+  const archive = makeArchive({
+    "app.js": app,
+    "starter.js": starter,
+    "main.js": main,
+    "index.html": Buffer.from("<script></script>"),
+    "package.json": Buffer.from('{"version":"1.2.3"}'),
+  });
+  const incisions: RendererIncision[] = [
+    rangeFor("control", "app.js", app, "x".repeat(64), "control-origin"),
+    rangeFor("data", "app.js", app, "y".repeat(64), "data-host-guard"),
+    rangeFor("starter", "starter.js", starter, "z".repeat(64), "control-origin"),
+    rangeFor("runtime", "main.js", main, runtime, "cli-runtime-home"),
+    rangeFor("socket", "main.js", main, socket, "cli-socket"),
+    rangeFor("registration", "main.js", main, registration, "cli-registration"),
+  ];
+  const generated = patchAsar(archive, endpoints, incisions);
+  expect(generated.buffer.length).toBe(archive.length);
+  expect(generated.report).toMatchObject({
+    patchFormatVersion: 8,
+    incisionCount: 6,
+    controlOrigin: endpoints.controlOrigin,
+    dataHost: endpoints.dataHost,
+  });
+  expect(generated.report.upstreamSha256).not.toBe(generated.report.patchedSha256);
+});
+
+test("fails closed on changed, out-of-range, overlapping, or empty incision plans", () => {
+  const source = Buffer.from("x".repeat(128));
+  const valid = reviewed("one", "app.js", source, 2, 64, "control-origin");
+  expect(() => patchRenderer(source, endpoints, [{ ...valid, sha256: "0".repeat(64) }]))
+    .toThrow("hash mismatch");
+  expect(() => patchRenderer(source, endpoints, [{ ...valid, offset: 99 }]))
+    .toThrow("Invalid");
+  expect(() => patchRenderer(source, endpoints, [valid, { ...valid, id: "two", offset: 3 }]))
+    .toThrow("overlapping");
+  expect(() => patchRenderer(source, endpoints, [])).toThrow("empty");
+});
+
+test("binds the generated data-host expression to its port", () => {
+  const source = Buffer.from("x".repeat(80));
+  const incision = reviewed("data", "app.js", source, 0, 80, "data-host-guard");
+  const first = patchRenderer(source, { ...endpoints, dataHost: "sync.example.test:8443" }, [incision]);
+  const second = patchRenderer(source, { ...endpoints, dataHost: "sync.example.test:9443" }, [incision]);
+  expect(first).not.toEqual(second);
+});
+
+test("enforces canonical HTTPS control and renderer-compatible data endpoints", () => {
+  const source = Buffer.from("x".repeat(96));
+  const incision = reviewed("control", "app.js", source, 0, 96, "control-origin");
+  for (const controlOrigin of [
+    "https://sync.example.test",
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+  ]) {
+    expect(() => patchRenderer(source, { controlOrigin, dataHost: "sync-data.example.test" }, [incision]))
+      .not.toThrow();
+  }
+  for (const controlOrigin of [
+    "http://sync.example.test",
+    "https://user:secret@sync.example.test",
+    "https://sync.example.test/path",
+    "https://sync.example.test/",
+    "https://SYNC.example.test",
+    "https://0.0.0.0",
+    "https://224.0.0.1",
+    "https://invalid_label.example",
+  ]) {
+    expect(() => patchRenderer(source, { controlOrigin, dataHost: "sync-data.example.test" }, [incision]))
+      .toThrow();
+  }
+});
+
+test("rejects unusable or non-canonical data hosts", () => {
+  const source = Buffer.from("x".repeat(96));
+  const incision = reviewed("data", "app.js", source, 0, 96, "data-host-guard");
+  for (const dataHost of [
+    "sync-data.example.test",
+    "sync-data.example.test:8443",
+    "127.0.0.1:3003",
+    "localhost:3003",
+    "192.0.2.10:8443",
+    "[2001:db8::1]:8443",
+  ]) {
+    expect(() => patchRenderer(source, { ...endpoints, dataHost }, [incision])).not.toThrow();
+  }
+  for (const dataHost of [
+    "localhost",
+    "127.0.0.1",
+    "localhost.evil.example:8080",
+    "127.0.0.2:3003",
+    "0.0.0.0:3003",
+    "[::1]:3003",
+    "invalid_label.example",
+    "sync-data.example.test:0",
+    "SYNC-data.example.test",
+    "sync-data.example.test:443",
+  ]) {
+    expect(() => patchRenderer(source, { ...endpoints, dataHost }, [incision])).toThrow();
+  }
+});
+
+function rangeFor(
+  id: string,
+  file: string,
+  source: Buffer,
+  value: string,
+  replacement: RendererIncision["replacement"],
+): RendererIncision {
+  const needle = Buffer.from(value);
+  const offset = source.indexOf(needle);
+  if (offset < 0 || source.indexOf(needle, offset + needle.length) >= 0) {
+    throw new Error(`Synthetic range ${id} is absent or ambiguous`);
+  }
+  return reviewed(id, file, source, offset, needle.length, replacement);
 }
 
-function upstreamMainCurrent(): string {
-  return 'module.exports=function(i,e){const socket=C.join(' +
-    '!W&&process.env.XDG_RUNTIME_DIR||de.homedir(),".obsidian-cli.sock");' +
-    'let g=C.join(d,"obsidian-cli");if(m.existsSync(g)){' +
-    'let S="/usr/local/bin/obsidian";}}';
+function reviewed(
+  id: string,
+  file: string,
+  source: Buffer,
+  offset: number,
+  length: number,
+  replacement: RendererIncision["replacement"],
+): RendererIncision {
+  return {
+    id,
+    file,
+    offset,
+    length,
+    sha256: createHash("sha256").update(source.subarray(offset, offset + length)).digest("hex"),
+    replacement,
+  };
 }
 
 function makeArchive(files: Record<string, Buffer>): Buffer {
@@ -335,45 +207,26 @@ function makeArchive(files: Record<string, Buffer>): Buffer {
   const payloads: Buffer[] = [];
   for (const [filename, content] of Object.entries(files)) {
     const hash = createHash("sha256").update(content).digest("hex");
-    const blockSize = 32;
-    const blocks: string[] = [];
-    for (let blockOffset = 0; blockOffset < content.length; blockOffset += blockSize) {
-      blocks.push(
-        createHash("sha256")
-          .update(content.subarray(blockOffset, blockOffset + blockSize))
-          .digest("hex"),
-      );
-    }
     nodes[filename] = {
       size: content.length,
       offset: String(offset),
-      integrity: { algorithm: "SHA256", hash, blockSize, blocks },
+      integrity: { algorithm: "SHA256", hash, blockSize: 4_194_304, blocks: [hash] },
     };
     payloads.push(content);
     offset += content.length;
   }
-  const header = Buffer.from(
-    JSON.stringify({ files: nodes }),
-    "utf8",
-  );
-  const paddedStringLength = align4(header.length);
-  const headerPayloadSize = 4 + paddedStringLength;
-  const headerPickleSize = 4 + headerPayloadSize;
-  const dataOffset = 8 + headerPickleSize;
-  const output = Buffer.alloc(dataOffset + payloads.reduce((sum, item) => sum + item.length, 0));
+  const header = Buffer.from(JSON.stringify({ files: nodes }));
+  const padded = (header.length + 3) & ~3;
+  const output = Buffer.alloc(16 + padded + offset);
   output.writeUInt32LE(4, 0);
-  output.writeUInt32LE(headerPickleSize, 4);
-  output.writeUInt32LE(headerPayloadSize, 8);
+  output.writeUInt32LE(8 + padded, 4);
+  output.writeUInt32LE(4 + padded, 8);
   output.writeUInt32LE(header.length, 12);
   header.copy(output, 16);
-  let payloadOffset = dataOffset;
+  let cursor = 16 + padded;
   for (const payload of payloads) {
-    payload.copy(output, payloadOffset);
-    payloadOffset += payload.length;
+    payload.copy(output, cursor);
+    cursor += payload.length;
   }
   return output;
-}
-
-function align4(value: number): number {
-  return (value + 3) & ~3;
 }

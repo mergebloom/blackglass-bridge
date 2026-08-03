@@ -24,6 +24,7 @@ import { assertMacOSRootMetadata } from "./macos-root-metadata";
 import type { MacOSArtifact } from "./macos-artifact";
 import type { BlackglassReleaseManifest } from "./release-manifest";
 import type { ServerArtifact } from "./server-artifact";
+import { COMPATIBILITY_BASELINE_SCHEMA_VERSION } from "./release-compatibility";
 import {
   assertMacOSPackagingToolchain,
   type MacOSPackagingToolchain,
@@ -50,6 +51,7 @@ type PublicServerArtifact = Omit<ServerArtifact, "binaryPath">;
 
 export interface ReleaseQualification {
   schemaVersion: 9;
+  scenarioId: "E2E-RELEASE-SYNC-RECOVERY";
   qualifiedAt: string;
   passed: true;
   platform: "macOS Apple Silicon";
@@ -200,10 +202,12 @@ export function assertReleaseQualification(
   if (
     !isRecord(value) ||
     value.schemaVersion !== 9 ||
+    value.scenarioId !== "E2E-RELEASE-SYNC-RECOVERY" ||
     value.passed !== true ||
     value.platform !== "macOS Apple Silicon" ||
     value.blackglassVersion !== manifest.blackglassVersion ||
     value.rendererVersion !== manifest.rendererVersion ||
+    manifest.reproduction.officialDmgMatchedBaseline !== true ||
     !isIsoDate(value.qualifiedAt) ||
     !same(value.endpoints, manifest.endpoints) ||
     !isRecord(value.artifacts) ||
@@ -253,7 +257,7 @@ export function assertReleaseValidationRecord(
     !isSupportedSemver(value.blackglassVersion) ||
     !isSupportedStableSemver(value.rendererVersion) ||
     !isRecord(value.compatibilityBaseline) ||
-    value.compatibilityBaseline.schemaVersion !== 5 ||
+    value.compatibilityBaseline.schemaVersion !== COMPATIBILITY_BASELINE_SCHEMA_VERSION ||
     typeof value.compatibilityBaseline.id !== "string" ||
     !isSha256(value.compatibilityBaseline.sha256) ||
     !isRecord(value.source) ||

@@ -17,7 +17,7 @@ import {
   toolingSourceTreeEqual,
 } from "./tooling-source";
 
-export const E2E_SCENARIO_CHECKPOINT_SCHEMA_VERSION = 1;
+export const E2E_SCENARIO_CHECKPOINT_SCHEMA_VERSION = 2;
 
 interface FileRule {
   group: string;
@@ -64,6 +64,7 @@ export interface ScenarioCheckpointEvidence {
   uiStateSha256: string;
   screenshotPath: string;
   screenshotSha256: string;
+  cleanClientResetSha256: string | null;
   database: ScenarioDatabaseObservation;
   files: ScenarioFileObservation[];
 }
@@ -102,6 +103,7 @@ export async function buildScenarioCheckpointEvidence(options: {
   run: PreparedE2ERunManifest;
   runManifestSha256: string;
   checkpoint: string;
+  capturePaths?: { screenshot: string; state: string };
 }): Promise<ScenarioCheckpointEvidence> {
   const scenario = e2eScenarioDefinition(options.run.scenarioId);
   if (scenario.id === "E2E-RELEASE-SYNC-RECOVERY") {
@@ -109,8 +111,8 @@ export async function buildScenarioCheckpointEvidence(options: {
   }
   const contract = e2eScenarioCheckpointDefinition(scenario.id, options.checkpoint);
   const paths = scenarioCheckpointPaths(options.root, options.checkpoint);
-  const stateBytes = await readFile(paths.state);
-  const screenshotBytes = await readFile(paths.screenshot);
+  const stateBytes = await readFile(options.capturePaths?.state ?? paths.state);
+  const screenshotBytes = await readFile(options.capturePaths?.screenshot ?? paths.screenshot);
   const state = JSON.parse(stateBytes.toString("utf8")) as Record<string, any>;
   const launch = await verifyLiveClientLaunchBinding(String(state.launchIdentityPath ?? ""));
   const expectedProfile = resolve(options.root, contract.client, "user-data");
@@ -153,6 +155,9 @@ export async function buildScenarioCheckpointEvidence(options: {
   assertDatabaseContract(scenario.id, options.checkpoint, database);
   const files = await observeFiles(options.root, scenario.id, options.checkpoint);
   assertFileContract(files);
+  const cleanClientResetSha256 = options.checkpoint.endsWith("cold-bootstrap")
+    ? await assertCleanClientLifecycle(options.root, options.runManifestSha256, launch.identity)
+    : null;
   const checkpointIndex = scenario.checkpoints.indexOf(options.checkpoint);
   const previousCheckpoint = scenario.checkpoints[checkpointIndex - 1];
   const previousCheckpointProofSha256 = checkpointIndex === 0
@@ -175,6 +180,7 @@ export async function buildScenarioCheckpointEvidence(options: {
     uiStateSha256: sha256(stateBytes),
     screenshotPath: paths.screenshot,
     screenshotSha256: sha256(screenshotBytes),
+    cleanClientResetSha256,
     database,
     files,
   };
@@ -210,6 +216,9 @@ export async function assertScenarioCheckpointEvidence(
     : previousCheckpoint
       ? sha256(await readFile(scenarioCheckpointPaths(options.root, previousCheckpoint).proof))
       : (() => { throw new Error("Scenario checkpoint order is malformed"); })();
+  const expectedCleanClientResetSha256 = options.checkpoint.endsWith("cold-bootstrap")
+    ? await assertCleanClientLifecycle(options.root, options.runManifestSha256, identity)
+    : null;
   if (
     proof.schemaVersion !== E2E_SCENARIO_CHECKPOINT_SCHEMA_VERSION ||
     proof.scenarioId !== scenario.id ||
@@ -223,6 +232,7 @@ export async function assertScenarioCheckpointEvidence(
     proof.uiStateSha256 !== sha256(stateBytes) ||
     proof.screenshotPath !== paths.screenshot ||
     proof.screenshotSha256 !== sha256(screenshotBytes) ||
+    proof.cleanClientResetSha256 !== expectedCleanClientResetSha256 ||
     proof.launchIdentitySha256 !== sha256(identityBytes) ||
     state.launchIdentityPath !== proof.launchIdentityPath ||
     state.schemaVersion !== E2E_UI_EVIDENCE_SCHEMA_VERSION ||
@@ -291,6 +301,31 @@ export async function assertScenarioCheckpointEvidence(
     }
   }
   return proof;
+}
+
+async function assertCleanClientLifecycle(
+  root: string,
+  runManifestSha256: string,
+  launch: { startedAt: string; profilePath: string; vaultPath: string },
+): Promise<string> {
+  const path = resolve(root, "client-b-clean-reset.json");
+  const bytes = await readFile(path);
+  const record = JSON.parse(bytes.toString("utf8")) as Record<string, unknown>;
+  if (
+    record.schemaVersion !== 1 || record.client !== "client-b" ||
+    record.runManifestSha256 !== runManifestSha256 ||
+    record.freshProfilePath !== resolve(root, "client-b", "user-data") ||
+    record.freshVaultPath !== resolve(root, "client-b", "vault") ||
+    record.initialVaultFiles !== 0 || record.initialVaultBytes !== 0 ||
+    typeof record.resetAt !== "string" || !Number.isFinite(Date.parse(record.resetAt)) ||
+    Date.parse(launch.startedAt) <= Date.parse(record.resetAt) ||
+    launch.profilePath !== record.freshProfilePath || launch.vaultPath !== record.freshVaultPath ||
+    typeof record.priorLaunchIdentitySha256 !== "string" ||
+    !isSha256(record.priorLaunchIdentitySha256)
+  ) {
+    throw new Error("Cold-bootstrap checkpoint lacks a bound clean-client lifecycle transition");
+  }
+  return sha256(bytes);
 }
 
 export async function observeScenarioDatabase(

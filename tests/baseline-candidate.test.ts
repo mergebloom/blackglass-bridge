@@ -24,14 +24,16 @@ import {
   loadCompatibilityBaseline,
 } from "../tools/release-compatibility";
 import { inspectMacOSCodeInventory } from "../tools/macos-code-inventory";
+import type { RendererIncision, WrapperIncision } from "../packages/client-adapter/src/incision";
 
 const repositoryRoot = resolve(import.meta.dir, "..");
 const anchors = [
   {
     id: "control-anchor",
     file: "app.js",
-    literal: "CONTROL_ANCHOR",
-    expectedMatches: 1,
+    offset: 0,
+    length: Buffer.byteLength("CONTROL_ANCHOR"),
+    sha256: digest("CONTROL_ANCHOR"),
   },
 ];
 const predecessorSource =
@@ -84,7 +86,7 @@ describe("future-release compatibility candidates", () => {
         },
         promotionTarget: "compatibility/obsidian-1.12.8.json",
         proposedBaseline: {
-          schemaVersion: 5,
+          schemaVersion: 6,
           id: "obsidian-macos-1.12.8",
           rendererVersion: "1.12.8",
           unpackedJavaScriptReview: {
@@ -117,8 +119,8 @@ describe("future-release compatibility candidates", () => {
         anchors: [
           {
             id: "control-anchor",
-            expectedMatches: 1,
-            actualMatches: 1,
+            offset: 0,
+            length: Buffer.byteLength("CONTROL_ANCHOR"),
             matched: true,
           },
         ],
@@ -151,7 +153,7 @@ describe("future-release compatibility candidates", () => {
     }
   });
 
-  test("fails before output when a predecessor anchor no longer matches", async () => {
+  test("records a changed predecessor range as untrusted review work", async () => {
     if (process.platform !== "darwin") return;
     const root = await mkdtemp(join(tmpdir(), "blackglass-candidate-anchor-"));
     try {
@@ -159,10 +161,13 @@ describe("future-release compatibility candidates", () => {
         root,
         candidateSource.replace("CONTROL_ANCHOR", "CHANGED_ANCHOR"),
       );
-      await expect(createBaselineCandidate(fixture, root)).rejects.toThrow(
-        "no longer matches predecessor anchors",
-      );
-      await expect(lstat(join(root, ".data"))).rejects.toMatchObject({ code: "ENOENT" });
+      const result = await createBaselineCandidate(fixture, root);
+      const report = JSON.parse(await readFile(result.reviewPath, "utf8")) as
+        CompatibilityCandidateReviewReport;
+      expect(report.anchors).toContainEqual(expect.objectContaining({
+        id: "control-anchor",
+        matched: false,
+      }));
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -229,7 +234,7 @@ async function createFixture(
   await chmod(join(executableDirectory, "Obsidian"), 0o755);
   signSyntheticApp(sourceApp);
   const baseline: CompatibilityBaseline = {
-    schemaVersion: 5,
+    schemaVersion: 6,
     id: "synthetic-predecessor",
     rendererVersion: predecessorDiscovery.rendererVersion,
     officialDmgSha256: "a".repeat(64),
@@ -253,6 +258,20 @@ async function createFixture(
     unpackedJavaScriptFiles: {},
     unpackedJavaScriptReview: { status: "reviewed", reviewedPaths: [] },
     anchors,
+    patchIncisions: [
+      incision("control-a", "app.js", "control-origin", 0),
+      incision("control-b", "starter.js", "control-origin", 1),
+      incision("data", "app.js", "data-host-guard", 2),
+      incision("socket", "main.js", "cli-socket", 3),
+      incision("runtime", "main.js", "cli-runtime-home", 4),
+      incision("registration", "main.js", "cli-registration", 5),
+    ],
+    wrapperIncisions: [
+      wrapperIncision("profile", "profile-bootstrap", 0),
+      wrapperIncision("updater", "disable-updater", 1),
+      wrapperIncision("renderer", "embedded-renderer-only", 2),
+    ],
+    runtimeContract: { wrapperRendererArguments: 2, rendererDevModeArgument: null },
     controlPlaneRoutes: predecessorDiscovery.controlPlaneRoutes,
     controlPlaneRouteLocations: predecessorDiscovery.controlPlaneRouteLocations,
     controlPlaneRequestHelpers: predecessorDiscovery.controlPlaneRequestHelpers,
@@ -265,6 +284,23 @@ async function createFixture(
   };
   await writeFile(predecessorBaseline, `${JSON.stringify(baseline)}\n`);
   return { officialDmg, sourceApp, predecessorBaseline };
+}
+
+function incision(
+  id: string,
+  file: string,
+  replacement: RendererIncision["replacement"],
+  offset: number,
+): RendererIncision {
+  return { id, file, replacement, offset, length: 1, sha256: "d".repeat(64) };
+}
+
+function wrapperIncision(
+  id: string,
+  replacement: WrapperIncision["replacement"],
+  offset: number,
+): WrapperIncision {
+  return { id, file: "main.js", replacement, offset, length: 1, sha256: "e".repeat(64) };
 }
 
 function sourceInfoPlist(): string {

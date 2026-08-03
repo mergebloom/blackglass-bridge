@@ -50,7 +50,11 @@ const qualification = await qualifyRendererRelease(
   baselinePath,
   unpackedJavaScriptFiles,
 );
-const generated = patchAsar(upstream, { controlOrigin, dataHost });
+const generated = patchAsar(
+  upstream,
+  { controlOrigin, dataHost },
+  qualification.loadedBaseline.baseline.patchIncisions,
+);
 await writeFile(output, generated.buffer, { flag: "wx", mode: 0o600 });
 console.log(
   JSON.stringify(

@@ -9,7 +9,9 @@ Blackglass owns the desktop compatibility boundary:
    unpacked resource trees, plus request helpers, network constructors, control
    routes, and inbound and outbound Sync operations/message shapes;
 3. require exact source hashes and exact inventory/semantic-anchor matches;
-4. replace them without changing the surrounding renderer logic;
+4. verify reviewed hash-and-offset incision ranges, derive only the necessary
+   local binding names from the user-supplied artifact, and replace those
+   ranges without retaining the proprietary bytes;
 5. patch the copied Electron wrapper to select an isolated canonical profile
    from `BLACKGLASS_HOME` at mode `0700`, while preserving the GUI's native
    `HOME`, disabling its upstream package updater, and pinning the embedded
@@ -65,11 +67,12 @@ upstream fallbacks, handled every qualified lifecycle phase.
 
 Packaging also records a deterministic identity for the Git-tracked
 release-critical source, configuration, tests, workflows, and documentation.
-Ignored files and generated validation JSON do not affect that tree identity,
+Ignored files and generated qualification records/matrix outputs do not affect that tree identity,
 while a relevant untracked or modified file makes the packaging source dirty.
 The release-tag gate requires the tested source commit to be an ancestor and
-permits only a linear sequence of generated qualification-record commits after
-it; the tooling tree at the tag must remain byte-identical.
+permits exactly one generated qualification-bundle commit after it. That commit
+may contain only the exact per-renderer records and both matrix files; the
+tooling tree at the tag must remain byte-identical.
 
 ## Safety boundaries
 

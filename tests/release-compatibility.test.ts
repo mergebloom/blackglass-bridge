@@ -14,19 +14,22 @@ import {
 } from "../tools/release-compatibility";
 import type { MacOSCodeInventory } from "../tools/macos-code-inventory";
 import { stableJson } from "../tools/stable-json";
+import type { RendererIncision, WrapperIncision } from "../packages/client-adapter/src/incision";
 
 const anchors: CompatibilityAnchor[] = [
   {
     id: "control-anchor",
     file: "app.js",
-    literal: "CONTROL_ANCHOR",
-    expectedMatches: 1,
+    offset: 0,
+    length: Buffer.byteLength("CONTROL_ANCHOR"),
+    sha256: createHash("sha256").update("CONTROL_ANCHOR").digest("hex"),
   },
   {
     id: "renderer-script",
     file: "index.html",
-    literal: "app.js",
-    expectedMatches: 1,
+    offset: 13,
+    length: Buffer.byteLength("app.js"),
+    sha256: createHash("sha256").update("app.js").digest("hex"),
   },
 ];
 
@@ -375,8 +378,9 @@ describe("release compatibility baseline", () => {
       {
         id: "starter-control",
         file: "starter.js",
-        literal: "STARTER_CONTROL_ANCHOR",
-        expectedMatches: 1,
+        offset: 0,
+        length: Buffer.byteLength("STARTER_CONTROL_ANCHOR"),
+        sha256: createHash("sha256").update("STARTER_CONTROL_ANCHOR").digest("hex"),
       },
     ]);
     expect(discovered.anchorMatches["starter-control"]).toBe(1);
@@ -551,7 +555,7 @@ function baselineFor(
     unpackedJavaScriptFiles,
   );
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     id: "synthetic-release",
     rendererVersion: discovered.rendererVersion,
     officialDmgSha256: "c".repeat(64),
@@ -575,6 +579,9 @@ function baselineFor(
       reviewedPaths: Object.keys(discovered.unpackedJavaScriptFiles),
     },
     anchors,
+    patchIncisions: syntheticRendererIncisions(),
+    wrapperIncisions: syntheticWrapperIncisions(),
+    runtimeContract: { wrapperRendererArguments: 2, rendererDevModeArgument: null },
     controlPlaneRoutes: discovered.controlPlaneRoutes,
     controlPlaneRouteLocations: discovered.controlPlaneRouteLocations,
     controlPlaneRequestHelpers: discovered.controlPlaneRequestHelpers,
@@ -594,6 +601,37 @@ function syntheticMacOSCodeInventory(): MacOSCodeInventory {
     sha256: createHash("sha256").update(stableJson(entries)).digest("hex"),
     entries: entries.map((entry) => ({ ...entry, architectures: [...entry.architectures] })),
   };
+}
+
+function syntheticRendererIncisions(): RendererIncision[] {
+  const replacements: RendererIncision["replacement"][] = [
+    "control-origin",
+    "control-origin",
+    "data-host-guard",
+    "cli-socket",
+    "cli-runtime-home",
+    "cli-registration",
+  ];
+  return replacements.map((replacement, offset) => ({
+    id: `renderer-${offset}`,
+    file: offset === 1 ? "starter.js" : offset < 3 ? "app.js" : "main.js",
+    offset,
+    length: 1,
+    sha256: "a".repeat(64),
+    replacement,
+  }));
+}
+
+function syntheticWrapperIncisions(): WrapperIncision[] {
+  return (["profile-bootstrap", "disable-updater", "embedded-renderer-only"] as const)
+    .map((replacement, offset) => ({
+      id: `wrapper-${offset}`,
+      file: "main.js",
+      offset,
+      length: 1,
+      sha256: "b".repeat(64),
+      replacement,
+    }));
 }
 
 function rendererArchive(

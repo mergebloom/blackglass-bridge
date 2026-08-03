@@ -71,15 +71,26 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/build-release-artifacts.sh "$GITHUB_SHA" dist/release
+          bash scripts/build-standalone-bridge.sh "$GITHUB_SHA" dist/release
           mkdir -p dist/reproducibility-check
           bash scripts/build-release-artifacts.sh "$GITHUB_SHA" dist/reproducibility-check
+          bash scripts/build-standalone-bridge.sh "$GITHUB_SHA" dist/reproducibility-check
           cmp \
             "dist/release/blackglass-${GITHUB_REF_NAME}-tooling.zip" \
             "dist/reproducibility-check/blackglass-${GITHUB_REF_NAME}-tooling.zip"
+          for suffix in '' .json .sha256 .zip .zip.sha256; do
+            cmp \
+              "dist/release/blackglass-bridge-${GITHUB_REF_NAME}-macos-arm64${suffix}" \
+              "dist/reproducibility-check/blackglass-bridge-${GITHUB_REF_NAME}-macos-arm64${suffix}"
+          done
           (
             cd dist/release
             sha256sum --check \
               "blackglass-${GITHUB_REF_NAME}-tooling.zip.sha256"
+            sha256sum --check \
+              "blackglass-bridge-${GITHUB_REF_NAME}-macos-arm64.sha256"
+            sha256sum --check \
+              "blackglass-bridge-${GITHUB_REF_NAME}-macos-arm64.zip.sha256"
           )
       - name: Create or resume verified GitHub release
         env:
@@ -89,4 +100,9 @@ jobs:
             "$GITHUB_REF_NAME" \
             "Blackglass $GITHUB_REF_NAME" \
             "dist/release/blackglass-${GITHUB_REF_NAME}-tooling.zip" \
-            "dist/release/blackglass-${GITHUB_REF_NAME}-tooling.zip.sha256"
+            "dist/release/blackglass-${GITHUB_REF_NAME}-tooling.zip.sha256" \
+            "dist/release/blackglass-bridge-${GITHUB_REF_NAME}-macos-arm64" \
+            "dist/release/blackglass-bridge-${GITHUB_REF_NAME}-macos-arm64.sha256" \
+            "dist/release/blackglass-bridge-${GITHUB_REF_NAME}-macos-arm64.zip" \
+            "dist/release/blackglass-bridge-${GITHUB_REF_NAME}-macos-arm64.zip.sha256" \
+            "dist/release/blackglass-bridge-${GITHUB_REF_NAME}-macos-arm64.json"

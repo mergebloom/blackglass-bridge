@@ -1,73 +1,169 @@
 {
-  "schemaVersion": 5,
-  "id": "obsidian-macos-1.12.7",
-  "rendererVersion": "1.12.7",
-  "officialDmgSha256": "3b85c13b4ce55512e86e170a7cd2a494e2db695ac888c0601e153cb85b77881b",
-  "sourceAppTree": {
-    "formatVersion": 1,
-    "sha256": "1f45c46181c42bd130b6d0b159f02cb7ff502abe8f6f94123246bb9f55b1dfcd",
-    "entries": 622,
-    "files": 281,
-    "directories": 327,
-    "symlinks": 14,
-    "fileBytes": 504371842
-  },
-  "sourceMacOSCodeInventory": {
-    "formatVersion": 1,
-    "sha256": "ef5c4c29b810f08d7b7afbb8b1f38d00bd61fbc064ca0b83b4c8b1366f04a244",
-    "entries": [
-      { "path": ".", "kind": "bundle", "architectures": [] },
-      { "path": "Contents/Frameworks/Electron Framework.framework", "kind": "bundle", "architectures": [] },
-      { "path": "Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/Electron Framework.framework/Versions/A/Helpers/chrome_crashpad_handler", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libEGL.dylib", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libGLESv2.dylib", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libffmpeg.dylib", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libvk_swiftshader.dylib", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/Mantle.framework", "kind": "bundle", "architectures": [] },
-      { "path": "Contents/Frameworks/Mantle.framework/Versions/A/Mantle", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/Obsidian Helper (GPU).app", "kind": "bundle", "architectures": [] },
-      { "path": "Contents/Frameworks/Obsidian Helper (GPU).app/Contents/MacOS/Obsidian Helper (GPU)", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/Obsidian Helper (Plugin).app", "kind": "bundle", "architectures": [] },
-      { "path": "Contents/Frameworks/Obsidian Helper (Plugin).app/Contents/MacOS/Obsidian Helper (Plugin)", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/Obsidian Helper (Renderer).app", "kind": "bundle", "architectures": [] },
-      { "path": "Contents/Frameworks/Obsidian Helper (Renderer).app/Contents/MacOS/Obsidian Helper (Renderer)", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/Obsidian Helper.app", "kind": "bundle", "architectures": [] },
-      { "path": "Contents/Frameworks/Obsidian Helper.app/Contents/MacOS/Obsidian Helper", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/ReactiveObjC.framework", "kind": "bundle", "architectures": [] },
-      { "path": "Contents/Frameworks/ReactiveObjC.framework/Versions/A/ReactiveObjC", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/Squirrel.framework", "kind": "bundle", "architectures": [] },
-      { "path": "Contents/Frameworks/Squirrel.framework/Versions/A/Resources/ShipIt", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Frameworks/Squirrel.framework/Versions/A/Squirrel", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/MacOS/Obsidian", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/MacOS/obsidian-cli", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Resources/app.asar.unpacked/node_modules/btime/bin/darwin-x64-101/btime.node", "kind": "mach-o", "architectures": ["x86_64"] },
-      { "path": "Contents/Resources/app.asar.unpacked/node_modules/btime/bin/darwin-x64-87/btime.node", "kind": "mach-o", "architectures": ["x86_64"] },
-      { "path": "Contents/Resources/app.asar.unpacked/node_modules/btime/binding.node", "kind": "mach-o", "architectures": ["arm64", "x86_64"] },
-      { "path": "Contents/Resources/app.asar.unpacked/node_modules/get-fonts/bin/darwin-x64-101/get-fonts.node", "kind": "mach-o", "architectures": ["x86_64"] },
-      { "path": "Contents/Resources/app.asar.unpacked/node_modules/get-fonts/binding.node", "kind": "mach-o", "architectures": ["arm64", "x86_64"] }
-    ]
-  },
-  "sourceAsarSha256": "2b2483b2e1246772e0d25367ec055cbc5047ea2f0091b667c35656678f86d712",
-  "sourceWrapperAsarSha256": "d8e392731d32feb97e80dd5fb8938d54c61bb7221f9eff5ff95965f6febeefdb",
-  "keyFiles": {
-    "app.js": {
-      "bytes": 3728534,
-      "sha256": "cc6d0c363cba3935207fb70e7d78736c9f0c2024545787871095288a1b185851"
+  "anchors": [
+    {
+      "file": "app.js",
+      "id": "control-origin-constructor",
+      "length": 47,
+      "offset": 1129325,
+      "sha256": "e0165af1599efaac82e21137d5199dcf60d1b58f5327de78e58fba4eec4c555e"
     },
-    "main.js": {
-      "bytes": 60101,
-      "sha256": "ff7766c6d011657ba95bbf2ead798b8df7f4a4c7cbdf2b0678bfc6f6330fffee"
+    {
+      "file": "app.js",
+      "id": "sync-websocket-host-authorization",
+      "length": 44,
+      "offset": 3546343,
+      "sha256": "f0ca5899b5b6ddddb1f8c90a46d4d7703f49b2f613c3e054dc3ae30d94a2d50f"
     },
-    "index.html": {
-      "bytes": 1445,
-      "sha256": "48b72d620f92677a3dbbc3e91786fc939bbe54d572162eedd3ee938a4f40024f"
+    {
+      "file": "app.js",
+      "id": "control-request-helper-transport",
+      "length": 91,
+      "offset": 1129742,
+      "sha256": "85e6df9c46a3e34fc41e96181a6f9dbe49df5071f6a3632a32448f1810e82276"
     },
-    "package.json": {
-      "bytes": 260,
-      "sha256": "927286d1cfa49b97ea36ff59f95d4270ff7e06d017cb010350c9f2adc5142aab"
+    {
+      "file": "starter.js",
+      "id": "starter-control-origin-constructor",
+      "length": 47,
+      "offset": 28137,
+      "sha256": "e0165af1599efaac82e21137d5199dcf60d1b58f5327de78e58fba4eec4c555e"
+    },
+    {
+      "file": "starter.js",
+      "id": "starter-control-request-helper-transport",
+      "length": 91,
+      "offset": 28554,
+      "sha256": "1029798fa76f869b5c53d2ed68905c61a7e4074b8f788d6a995358e0ac8f9b16"
+    },
+    {
+      "file": "app.js",
+      "id": "sync-network-constructor-bindings",
+      "length": 131,
+      "offset": 3500700,
+      "sha256": "732647baad38c12472b08ad9d99e627d67141cab4936145da66748fe428d2620"
+    },
+    {
+      "file": "app.js",
+      "id": "sync-url-guard-websocket-flow",
+      "length": 233,
+      "offset": 3546309,
+      "sha256": "a6d0979e841feaace0546174791aefbdf10f96ec522fb7686711387356cf0f1c"
+    },
+    {
+      "file": "app.js",
+      "id": "loopback-control-development-endpoint",
+      "length": 21,
+      "offset": 1129393,
+      "sha256": "0398673719884a6295ed087fe9520379ddb77f6a812044908fca120b687cc4b2"
+    },
+    {
+      "file": "app.js",
+      "id": "loopback-sync-development-endpoint",
+      "length": 14,
+      "offset": 3523060,
+      "sha256": "2e4f6310fd5870e033979d7263ad4675600335edf9fe0e537a1d7625e82e1e10"
+    },
+    {
+      "file": "index.html",
+      "id": "renderer-script-reference",
+      "length": 6,
+      "offset": 1411,
+      "sha256": "e07d531ac040ce3f40e0ce632ac2a059d7cd60f20e61f78268ac3be015b3b28f"
+    },
+    {
+      "file": "main.js",
+      "id": "desktop-cli-socket",
+      "length": 18,
+      "offset": 23937,
+      "sha256": "fe9f398713e8c9086222f9ed51cbacc7cf9316330a0d6baab23aaeb4cf99e5f6"
+    },
+    {
+      "file": "main.js",
+      "id": "desktop-cli-runtime-root",
+      "length": 45,
+      "offset": 23890,
+      "sha256": "281b8592a4dac206cf56d1f8f9c162a175ef98ce034956a120d2358fbf95a788"
+    },
+    {
+      "file": "main.js",
+      "id": "desktop-cli-registration-target",
+      "length": 23,
+      "offset": 53059,
+      "sha256": "570acdb87cf981f420342b06f0394d38dd7c6364832dd217a05b8f9b3171b246"
+    },
+    {
+      "file": "main.js",
+      "id": "desktop-is-dev-ipc-handler",
+      "length": 19,
+      "offset": 46237,
+      "sha256": "a47ed64ec0aae32c45101abc790842b2b9793ffb559d503c9cdc914aabfc76a8"
     }
+  ],
+  "controlPlaneRequestHelpers": {
+    "app.js:gw->mw(dw+e)": 1,
+    "starter.js:da->va(sa+a)": 1
   },
+  "controlPlaneRouteLocations": {
+    "app.js:gw:/publish/create": 1,
+    "app.js:gw:/publish/delete": 1,
+    "app.js:gw:/publish/list": 1,
+    "app.js:gw:/publish/share/accept": 1,
+    "app.js:gw:/publish/share/invite": 1,
+    "app.js:gw:/publish/share/list": 1,
+    "app.js:gw:/publish/share/remove": 1,
+    "app.js:gw:/subscription/business": 1,
+    "app.js:gw:/subscription/list": 1,
+    "app.js:gw:/subscription/sync/signup-mobile": 1,
+    "app.js:gw:/user/authtoken": 1,
+    "app.js:gw:/user/forgetpass": 1,
+    "app.js:gw:/user/info": 1,
+    "app.js:gw:/user/resendconfirmation": 1,
+    "app.js:gw:/user/signin": 1,
+    "app.js:gw:/user/signout": 1,
+    "app.js:gw:/user/signup": 1,
+    "app.js:gw:/vault/access": 1,
+    "app.js:gw:/vault/create": 1,
+    "app.js:gw:/vault/delete": 1,
+    "app.js:gw:/vault/list": 1,
+    "app.js:gw:/vault/migrate": 1,
+    "app.js:gw:/vault/regions": 1,
+    "app.js:gw:/vault/rename": 1,
+    "app.js:gw:/vault/share/invite": 1,
+    "app.js:gw:/vault/share/list": 1,
+    "app.js:gw:/vault/share/remove": 1,
+    "starter.js:da:/user/signin": 1,
+    "starter.js:da:/vault/list": 1
+  },
+  "controlPlaneRoutes": {
+    "/publish/create": 1,
+    "/publish/delete": 1,
+    "/publish/list": 1,
+    "/publish/share/accept": 1,
+    "/publish/share/invite": 1,
+    "/publish/share/list": 1,
+    "/publish/share/remove": 1,
+    "/subscription/business": 1,
+    "/subscription/list": 1,
+    "/subscription/sync/signup-mobile": 1,
+    "/user/authtoken": 1,
+    "/user/forgetpass": 1,
+    "/user/info": 1,
+    "/user/resendconfirmation": 1,
+    "/user/signin": 2,
+    "/user/signout": 1,
+    "/user/signup": 1,
+    "/vault/access": 1,
+    "/vault/create": 1,
+    "/vault/delete": 1,
+    "/vault/list": 2,
+    "/vault/migrate": 1,
+    "/vault/regions": 1,
+    "/vault/rename": 1,
+    "/vault/share/invite": 1,
+    "/vault/share/list": 1,
+    "/vault/share/remove": 1
+  },
+  "id": "obsidian-macos-1.12.7",
   "javaScriptFiles": {
     "app.js": {
       "bytes": 3728534,
@@ -190,172 +286,23 @@
       "sha256": "af9005e6e44848fac2de2cb978676356c74a4ac39b33182926cb3c0cfde9c94d"
     }
   },
-  "unpackedJavaScriptFiles": {
-    "app.asar.unpacked/node_modules/btime/index.js": {
-      "bytes": 1726,
-      "sha256": "7ade5c334d6eb8a2e5ef8b6d52c5396641903af30c3c2ceda5e4934e3b88f35c"
+  "keyFiles": {
+    "app.js": {
+      "bytes": 3728534,
+      "sha256": "cc6d0c363cba3935207fb70e7d78736c9f0c2024545787871095288a1b185851"
     },
-    "app.asar.unpacked/node_modules/get-fonts/index.js": {
-      "bytes": 115,
-      "sha256": "b44255cd3525bf6596a184d6d4db62c54be16826ac35c9384ead5f6a815a1b47"
+    "index.html": {
+      "bytes": 1445,
+      "sha256": "48b72d620f92677a3dbbc3e91786fc939bbe54d572162eedd3ee938a4f40024f"
+    },
+    "main.js": {
+      "bytes": 60101,
+      "sha256": "ff7766c6d011657ba95bbf2ead798b8df7f4a4c7cbdf2b0678bfc6f6330fffee"
+    },
+    "package.json": {
+      "bytes": 260,
+      "sha256": "927286d1cfa49b97ea36ff59f95d4270ff7e06d017cb010350c9f2adc5142aab"
     }
-  },
-  "unpackedJavaScriptReview": {
-    "status": "reviewed",
-    "reviewedPaths": [
-      "app.asar.unpacked/node_modules/btime/index.js",
-      "app.asar.unpacked/node_modules/get-fonts/index.js"
-    ]
-  },
-  "anchors": [
-    {
-      "id": "control-origin-constructor",
-      "file": "app.js",
-      "literal": "String.fromCharCode(97,112,105),\"obsidian\",\"md\"",
-      "expectedMatches": 1
-    },
-    {
-      "id": "sync-websocket-host-authorization",
-      "file": "app.js",
-      "literal": "!oee.call(h,\".obsidian.md\")&&\"127.0.0.1\"!==h",
-      "expectedMatches": 1
-    },
-    {
-      "id": "control-request-helper-transport",
-      "file": "app.js",
-      "literal": "mw(dw+e,{method:\"POST\",body:JSON.stringify(t),headers:{\"Content-Type\":\"application/json\"}})",
-      "expectedMatches": 1
-    },
-    {
-      "id": "starter-control-origin-constructor",
-      "file": "starter.js",
-      "literal": "String.fromCharCode(97,112,105),\"obsidian\",\"md\"",
-      "expectedMatches": 1
-    },
-    {
-      "id": "starter-control-request-helper-transport",
-      "file": "starter.js",
-      "literal": "va(sa+a,{method:\"POST\",body:JSON.stringify(e),headers:{\"Content-Type\":\"application/json\"}})",
-      "expectedMatches": 1
-    },
-    {
-      "id": "sync-network-constructor-bindings",
-      "file": "app.js",
-      "literal": "nee=window.WebSocket,iee=window.URL,ree=Object.getOwnPropertyDescriptor(iee.prototype,\"hostname\").get,oee=String.prototype.endsWith",
-      "expectedMatches": 1
-    },
-    {
-      "id": "sync-url-guard-websocket-flow",
-      "file": "app.js",
-      "literal": "var u=new iee(e),h=ree.call(u);if(!oee.call(h,\".obsidian.md\")&&\"127.0.0.1\"!==h)return s(new Error(\"Unable to connect to server.\"));var p=!1,d=function(e){p||(p=!0,c.disconnect(),s(e))},f=c.socket=new nee(u);f.binaryType=\"arraybuffer\"",
-      "expectedMatches": 1
-    },
-    {
-      "id": "loopback-control-development-endpoint",
-      "file": "app.js",
-      "literal": "http://127.0.0.1:3000",
-      "expectedMatches": 1
-    },
-    {
-      "id": "loopback-sync-development-endpoint",
-      "file": "app.js",
-      "literal": "127.0.0.1:3003",
-      "expectedMatches": 1
-    },
-    {
-      "id": "renderer-script-reference",
-      "file": "index.html",
-      "literal": "app.js",
-      "expectedMatches": 1
-    },
-    {
-      "id": "desktop-cli-socket",
-      "file": "main.js",
-      "literal": ".obsidian-cli.sock",
-      "expectedMatches": 1
-    },
-    {
-      "id": "desktop-cli-runtime-root",
-      "file": "main.js",
-      "literal": "!U&&process.env.XDG_RUNTIME_DIR||ce.homedir()",
-      "expectedMatches": 1
-    },
-    {
-      "id": "desktop-cli-registration-target",
-      "file": "main.js",
-      "literal": "/usr/local/bin/obsidian",
-      "expectedMatches": 1
-    },
-    {
-      "id": "desktop-is-dev-ipc-handler",
-      "file": "main.js",
-      "literal": "ipcMain.on(\"is-dev\"",
-      "expectedMatches": 1
-    }
-  ],
-  "controlPlaneRoutes": {
-    "/publish/create": 1,
-    "/publish/delete": 1,
-    "/publish/list": 1,
-    "/publish/share/accept": 1,
-    "/publish/share/invite": 1,
-    "/publish/share/list": 1,
-    "/publish/share/remove": 1,
-    "/subscription/business": 1,
-    "/subscription/list": 1,
-    "/subscription/sync/signup-mobile": 1,
-    "/user/authtoken": 1,
-    "/user/forgetpass": 1,
-    "/user/info": 1,
-    "/user/resendconfirmation": 1,
-    "/user/signin": 2,
-    "/user/signout": 1,
-    "/user/signup": 1,
-    "/vault/access": 1,
-    "/vault/create": 1,
-    "/vault/delete": 1,
-    "/vault/list": 2,
-    "/vault/migrate": 1,
-    "/vault/regions": 1,
-    "/vault/rename": 1,
-    "/vault/share/invite": 1,
-    "/vault/share/list": 1,
-    "/vault/share/remove": 1
-  },
-  "controlPlaneRouteLocations": {
-    "app.js:gw:/publish/create": 1,
-    "app.js:gw:/publish/delete": 1,
-    "app.js:gw:/publish/list": 1,
-    "app.js:gw:/publish/share/accept": 1,
-    "app.js:gw:/publish/share/invite": 1,
-    "app.js:gw:/publish/share/list": 1,
-    "app.js:gw:/publish/share/remove": 1,
-    "app.js:gw:/subscription/business": 1,
-    "app.js:gw:/subscription/list": 1,
-    "app.js:gw:/subscription/sync/signup-mobile": 1,
-    "app.js:gw:/user/authtoken": 1,
-    "app.js:gw:/user/forgetpass": 1,
-    "app.js:gw:/user/info": 1,
-    "app.js:gw:/user/resendconfirmation": 1,
-    "app.js:gw:/user/signin": 1,
-    "app.js:gw:/user/signout": 1,
-    "app.js:gw:/user/signup": 1,
-    "app.js:gw:/vault/access": 1,
-    "app.js:gw:/vault/create": 1,
-    "app.js:gw:/vault/delete": 1,
-    "app.js:gw:/vault/list": 1,
-    "app.js:gw:/vault/migrate": 1,
-    "app.js:gw:/vault/regions": 1,
-    "app.js:gw:/vault/rename": 1,
-    "app.js:gw:/vault/share/invite": 1,
-    "app.js:gw:/vault/share/list": 1,
-    "app.js:gw:/vault/share/remove": 1,
-    "starter.js:da:/user/signin": 1,
-    "starter.js:da:/vault/list": 1
-  },
-  "controlPlaneRequestHelpers": {
-    "app.js:gw->mw(dw+e)": 1,
-    "starter.js:da->va(sa+a)": 1
   },
   "networkConstructors": {
     "app.js:binding:iee=window.URL": 1,
@@ -363,14 +310,14 @@
     "app.js:binding:nee=window.WebSocket": 1,
     "app.js:call:fetch": 8,
     "app.js:call:mw[window.fetch]": 1,
+    "app.js:new:URL": 8,
     "app.js:new:iee[window.URL]": 1,
     "app.js:new:nee[window.WebSocket]": 1,
-    "app.js:new:URL": 8,
-    "app.js:read:hostname": 1,
     "app.js:read:URL.prototype.hostname": 1,
-    "app.js:read:window.fetch": 1,
+    "app.js:read:hostname": 1,
     "app.js:read:window.URL": 2,
     "app.js:read:window.WebSocket": 1,
+    "app.js:read:window.fetch": 1,
     "enhance.js:new:XMLHttpRequest": 1,
     "help.js:call:fetch": 2,
     "lib/mathjax/tex-chtml-full.js:new:XMLHttpRequest": 1,
@@ -397,22 +344,326 @@
     "starter.js:call:va[window.fetch]": 1,
     "starter.js:read:window.fetch": 1
   },
-  "syncOperations": {
-    "bcurveTo": 5,
-    "deleted": 1,
-    "history": 1,
-    "init": 1,
-    "KetBra": 1,
-    "keyword": 1,
-    "lineTo": 4,
-    "move": 7,
-    "ping": 1,
-    "pull": 1,
-    "purge": 1,
-    "push": 2,
-    "restore": 1,
-    "size": 1,
-    "usernames": 1
+  "officialDmgSha256": "3b85c13b4ce55512e86e170a7cd2a494e2db695ac888c0601e153cb85b77881b",
+  "patchIncisions": [
+    {
+      "file": "app.js",
+      "id": "control-origin-constructor",
+      "length": 47,
+      "offset": 1129325,
+      "replacement": "control-origin",
+      "sha256": "e0165af1599efaac82e21137d5199dcf60d1b58f5327de78e58fba4eec4c555e"
+    },
+    {
+      "file": "app.js",
+      "id": "sync-websocket-host-authorization",
+      "length": 44,
+      "offset": 3546343,
+      "replacement": "data-host-guard",
+      "sha256": "f0ca5899b5b6ddddb1f8c90a46d4d7703f49b2f613c3e054dc3ae30d94a2d50f"
+    },
+    {
+      "file": "starter.js",
+      "id": "starter-control-origin-constructor",
+      "length": 47,
+      "offset": 28137,
+      "replacement": "control-origin",
+      "sha256": "e0165af1599efaac82e21137d5199dcf60d1b58f5327de78e58fba4eec4c555e"
+    },
+    {
+      "file": "main.js",
+      "id": "desktop-cli-socket",
+      "length": 18,
+      "offset": 23937,
+      "replacement": "cli-socket",
+      "sha256": "fe9f398713e8c9086222f9ed51cbacc7cf9316330a0d6baab23aaeb4cf99e5f6"
+    },
+    {
+      "file": "main.js",
+      "id": "desktop-cli-runtime-root",
+      "length": 45,
+      "offset": 23890,
+      "replacement": "cli-runtime-home",
+      "sha256": "281b8592a4dac206cf56d1f8f9c162a175ef98ce034956a120d2358fbf95a788"
+    },
+    {
+      "file": "main.js",
+      "id": "desktop-cli-registration",
+      "length": 83,
+      "offset": 53001,
+      "replacement": "cli-registration",
+      "sha256": "59e769d26a925b69c3e9560256827c469cd759f94ff829e65e4a5dbb4118777a"
+    }
+  ],
+  "rendererVersion": "1.12.7",
+  "runtimeContract": {
+    "rendererDevModeArgument": 3,
+    "wrapperRendererArguments": 2
+  },
+  "schemaVersion": 6,
+  "sourceAppTree": {
+    "directories": 327,
+    "entries": 622,
+    "fileBytes": 504371842,
+    "files": 281,
+    "formatVersion": 1,
+    "sha256": "1f45c46181c42bd130b6d0b159f02cb7ff502abe8f6f94123246bb9f55b1dfcd",
+    "symlinks": 14
+  },
+  "sourceAsarSha256": "2b2483b2e1246772e0d25367ec055cbc5047ea2f0091b667c35656678f86d712",
+  "sourceMacOSCodeInventory": {
+    "entries": [
+      {
+        "architectures": [],
+        "kind": "bundle",
+        "path": "."
+      },
+      {
+        "architectures": [],
+        "kind": "bundle",
+        "path": "Contents/Frameworks/Electron Framework.framework"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Electron Framework.framework/Versions/A/Helpers/chrome_crashpad_handler"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libEGL.dylib"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libGLESv2.dylib"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libffmpeg.dylib"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libvk_swiftshader.dylib"
+      },
+      {
+        "architectures": [],
+        "kind": "bundle",
+        "path": "Contents/Frameworks/Mantle.framework"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Mantle.framework/Versions/A/Mantle"
+      },
+      {
+        "architectures": [],
+        "kind": "bundle",
+        "path": "Contents/Frameworks/Obsidian Helper (GPU).app"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Obsidian Helper (GPU).app/Contents/MacOS/Obsidian Helper (GPU)"
+      },
+      {
+        "architectures": [],
+        "kind": "bundle",
+        "path": "Contents/Frameworks/Obsidian Helper (Plugin).app"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Obsidian Helper (Plugin).app/Contents/MacOS/Obsidian Helper (Plugin)"
+      },
+      {
+        "architectures": [],
+        "kind": "bundle",
+        "path": "Contents/Frameworks/Obsidian Helper (Renderer).app"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Obsidian Helper (Renderer).app/Contents/MacOS/Obsidian Helper (Renderer)"
+      },
+      {
+        "architectures": [],
+        "kind": "bundle",
+        "path": "Contents/Frameworks/Obsidian Helper.app"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Obsidian Helper.app/Contents/MacOS/Obsidian Helper"
+      },
+      {
+        "architectures": [],
+        "kind": "bundle",
+        "path": "Contents/Frameworks/ReactiveObjC.framework"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/ReactiveObjC.framework/Versions/A/ReactiveObjC"
+      },
+      {
+        "architectures": [],
+        "kind": "bundle",
+        "path": "Contents/Frameworks/Squirrel.framework"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Squirrel.framework/Versions/A/Resources/ShipIt"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Frameworks/Squirrel.framework/Versions/A/Squirrel"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/MacOS/Obsidian"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/MacOS/obsidian-cli"
+      },
+      {
+        "architectures": [
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Resources/app.asar.unpacked/node_modules/btime/bin/darwin-x64-101/btime.node"
+      },
+      {
+        "architectures": [
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Resources/app.asar.unpacked/node_modules/btime/bin/darwin-x64-87/btime.node"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Resources/app.asar.unpacked/node_modules/btime/binding.node"
+      },
+      {
+        "architectures": [
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Resources/app.asar.unpacked/node_modules/get-fonts/bin/darwin-x64-101/get-fonts.node"
+      },
+      {
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "kind": "mach-o",
+        "path": "Contents/Resources/app.asar.unpacked/node_modules/get-fonts/binding.node"
+      }
+    ],
+    "formatVersion": 1,
+    "sha256": "ef5c4c29b810f08d7b7afbb8b1f38d00bd61fbc064ca0b83b4c8b1366f04a244"
+  },
+  "sourceWrapperAsarSha256": "d8e392731d32feb97e80dd5fb8938d54c61bb7221f9eff5ff95965f6febeefdb",
+  "syncInboundOperations": {
+    "app.js:pong": 1,
+    "app.js:push": 1,
+    "app.js:ready": 1
+  },
+  "syncMessageShapeLocations": {
+    "app.js:deleted(op,suppressrenames)": 1,
+    "app.js:history(op,path,last)": 1,
+    "app.js:init(op,token,id,keyhash,version,initial,device,encryption_version)": 1,
+    "app.js:ping(op)": 1,
+    "app.js:pull(op,uid)": 1,
+    "app.js:purge(op)": 1,
+    "app.js:push(op,path,relatedpath,extension,hash,ctime,mtime,folder,deleted)": 1,
+    "app.js:push(op,path,relatedpath,extension,hash,ctime,mtime,folder,deleted,size,pieces)": 1,
+    "app.js:restore(op,uid)": 1,
+    "app.js:size(op)": 1,
+    "app.js:usernames(op)": 1,
+    "lib/mermaid.min.js:bcurveTo(op,data)": 5,
+    "lib/mermaid.min.js:lineTo(op,data)": 4,
+    "lib/mermaid.min.js:move(op,data)": 7
+  },
+  "syncMessageShapes": {
+    "bcurveTo(op,data)": 5,
+    "deleted(op,suppressrenames)": 1,
+    "history(op,path,last)": 1,
+    "init(op,token,id,keyhash,version,initial,device,encryption_version)": 1,
+    "lineTo(op,data)": 4,
+    "move(op,data)": 7,
+    "ping(op)": 1,
+    "pull(op,uid)": 1,
+    "purge(op)": 1,
+    "push(op,path,relatedpath,extension,hash,ctime,mtime,folder,deleted)": 1,
+    "push(op,path,relatedpath,extension,hash,ctime,mtime,folder,deleted,size,pieces)": 1,
+    "restore(op,uid)": 1,
+    "size(op)": 1,
+    "usernames(op)": 1
   },
   "syncOperationLocations": {
     "app.js:deleted": 1,
@@ -431,41 +682,64 @@
     "lib/mermaid.min.js:lineTo": 4,
     "lib/mermaid.min.js:move": 7
   },
-  "syncMessageShapes": {
-    "bcurveTo(op,data)": 5,
-    "deleted(op,suppressrenames)": 1,
-    "history(op,path,last)": 1,
-    "init(op,token,id,keyhash,version,initial,device,encryption_version)": 1,
-    "lineTo(op,data)": 4,
-    "move(op,data)": 7,
-    "ping(op)": 1,
-    "pull(op,uid)": 1,
-    "purge(op)": 1,
-    "push(op,path,relatedpath,extension,hash,ctime,mtime,folder,deleted,size,pieces)": 1,
-    "push(op,path,relatedpath,extension,hash,ctime,mtime,folder,deleted)": 1,
-    "restore(op,uid)": 1,
-    "size(op)": 1,
-    "usernames(op)": 1
+  "syncOperations": {
+    "KetBra": 1,
+    "bcurveTo": 5,
+    "deleted": 1,
+    "history": 1,
+    "init": 1,
+    "keyword": 1,
+    "lineTo": 4,
+    "move": 7,
+    "ping": 1,
+    "pull": 1,
+    "purge": 1,
+    "push": 2,
+    "restore": 1,
+    "size": 1,
+    "usernames": 1
   },
-  "syncMessageShapeLocations": {
-    "app.js:deleted(op,suppressrenames)": 1,
-    "app.js:history(op,path,last)": 1,
-    "app.js:init(op,token,id,keyhash,version,initial,device,encryption_version)": 1,
-    "app.js:ping(op)": 1,
-    "app.js:pull(op,uid)": 1,
-    "app.js:purge(op)": 1,
-    "app.js:push(op,path,relatedpath,extension,hash,ctime,mtime,folder,deleted,size,pieces)": 1,
-    "app.js:push(op,path,relatedpath,extension,hash,ctime,mtime,folder,deleted)": 1,
-    "app.js:restore(op,uid)": 1,
-    "app.js:size(op)": 1,
-    "app.js:usernames(op)": 1,
-    "lib/mermaid.min.js:bcurveTo(op,data)": 5,
-    "lib/mermaid.min.js:lineTo(op,data)": 4,
-    "lib/mermaid.min.js:move(op,data)": 7
+  "unpackedJavaScriptFiles": {
+    "app.asar.unpacked/node_modules/btime/index.js": {
+      "bytes": 1726,
+      "sha256": "7ade5c334d6eb8a2e5ef8b6d52c5396641903af30c3c2ceda5e4934e3b88f35c"
+    },
+    "app.asar.unpacked/node_modules/get-fonts/index.js": {
+      "bytes": 115,
+      "sha256": "b44255cd3525bf6596a184d6d4db62c54be16826ac35c9384ead5f6a815a1b47"
+    }
   },
-  "syncInboundOperations": {
-    "app.js:pong": 1,
-    "app.js:push": 1,
-    "app.js:ready": 1
-  }
+  "unpackedJavaScriptReview": {
+    "reviewedPaths": [
+      "app.asar.unpacked/node_modules/btime/index.js",
+      "app.asar.unpacked/node_modules/get-fonts/index.js"
+    ],
+    "status": "reviewed"
+  },
+  "wrapperIncisions": [
+    {
+      "file": "main.js",
+      "id": "wrapper-profile-bootstrap",
+      "length": 1022,
+      "offset": 977,
+      "replacement": "profile-bootstrap",
+      "sha256": "e3136fcfce4c5cc87edafb0d211ccc729010be525e77b63684a0a05a9023c369"
+    },
+    {
+      "file": "main.js",
+      "id": "wrapper-updater-disable",
+      "length": 111,
+      "offset": 2468,
+      "replacement": "disable-updater",
+      "sha256": "6eba3945839fcbc7bcb6eff441771136f6f4de00a2879b293d2de915da42eb6c"
+    },
+    {
+      "file": "main.js",
+      "id": "wrapper-embedded-renderer",
+      "length": 139,
+      "offset": 12334,
+      "replacement": "embedded-renderer-only",
+      "sha256": "12a572a41f6c6d57860a3c23da1f40bab366410b4fa824c65b6103d749b0d545"
+    }
+  ]
 }

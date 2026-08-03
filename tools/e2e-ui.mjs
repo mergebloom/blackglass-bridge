@@ -397,8 +397,26 @@ try {
     console.log(JSON.stringify(snapshot, null, 2));
   } else if (action === "click-text") {
     const text = required(arguments_[0], "click text");
-    await page.getByText(text, { exact: true }).last().click();
-    console.log(JSON.stringify({ clicked: text, url: page.url() }));
+    const locator = page.getByText(text, { exact: true });
+    const count = await locator.count();
+    const indexArgument = arguments_[1];
+    if (indexArgument === undefined && count !== 1) {
+      throw new Error(`Expected exactly one exact text match for ${JSON.stringify(text)}, found ${count}`);
+    }
+    const index = indexArgument === undefined ? 0 : Number(indexArgument);
+    if (!Number.isSafeInteger(index) || index < 0 || index >= count) {
+      throw new Error(`click-text index ${String(indexArgument)} is outside ${count} exact matches`);
+    }
+    await locator.nth(index).click();
+    console.log(JSON.stringify({ clicked: text, index, exactMatches: count, url: page.url() }));
+  } else if (action === "close-auxiliary") {
+    if (arguments_.length !== 0) throw new Error("close-auxiliary takes no arguments");
+    const closed = [];
+    for (const auxiliary of auxiliaryPages) {
+      closed.push({ title: await auxiliary.title(), url: auxiliary.url() });
+      await auxiliary.close();
+    }
+    console.log(JSON.stringify({ closed, count: closed.length }));
   } else if (action === "click-selector") {
     const selector = required(arguments_[0], "selector");
     const index = Number(arguments_[1] ?? "0");

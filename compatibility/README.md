@@ -1,10 +1,10 @@
 # Reviewed client compatibility baselines
 
-One JSON file qualifies one exact authorized renderer and macOS wrapper. The
-analyzer compares source/key-file hashes, semantic-anchor counts, control
-routes, literal Sync operations, and outbound message field shapes. Packaging
-also requires the recorded wrapper hash and the release-specific recursive
-inventory of every signed macOS bundle and Mach-O architecture.
+One JSON file describes one exact reviewed renderer and macOS wrapper. It
+stores artifact identities, code inventories, protocol-shape counts, and
+hash-and-offset incision contracts—not proprietary source excerpts. Packaging
+also requires the exact wrapper identity and the recursive inventory of every
+signed macOS bundle and Mach-O architecture.
 
 Never copy a prior file and mark it trusted automatically. For a new renderer,
 inspect every reported difference, update the protocol/server intentionally,
@@ -30,7 +30,7 @@ then manually convert its unpacked-file marker to `status: "reviewed"` with the
 reviewed paths, and promote only the reviewed `proposedBaseline` here with
 `apply_patch` or an equivalent manual edit.
 
-The repository currently preserves 1.12.7 as the compatibility floor and
-tracks the reviewed 1.13.4 static baseline as the current E2E candidate. See
-[`docs/protocol/obsidian-1.13.4.md`](../docs/protocol/obsidian-1.13.4.md) for its
-intentional protocol delta.
+After review, run the fast gates, full protocol and packaging gates, and every
+required packaged-client scenario. Only the generated
+[`matrix.json`](matrix.json) may make a support claim. The generated
+[`MATRIX.md`](MATRIX.md) must remain byte-for-byte derived from it.

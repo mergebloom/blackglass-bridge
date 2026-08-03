@@ -19,10 +19,10 @@ export interface CurrentReleaseValidationRecord {
   record: ReleaseValidationRecord;
 }
 
-export async function readCurrentReleaseValidationRecord(
+export async function readCurrentReleaseValidationRecords(
   rootArgument: string,
   requirement: CurrentReleaseRecordRequirement = "optional",
-): Promise<CurrentReleaseValidationRecord | null> {
+): Promise<CurrentReleaseValidationRecord[]> {
   const root = resolve(rootArgument);
   const packagePath = resolve(root, "package.json");
   const packageFile = await lstat(packagePath);
@@ -46,15 +46,11 @@ export async function readCurrentReleaseValidationRecord(
   const names = (await readdir(validationDirectory))
     .filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
     .sort(compareCodeUnitStrings);
-  const expectedCount = requirement === "required" ? "exactly one" : "at most one";
-  if (names.length > 1 || (requirement === "required" && names.length !== 1)) {
-    throw new Error(
-      `Expected ${expectedCount} current release qualification record for ${version}`,
-    );
+  if (requirement === "required" && names.length === 0) {
+    throw new Error(`Expected at least one current release qualification record for ${version}`);
   }
-  const name = names[0];
-  if (!name) return null;
-
+  const records = [];
+  for (const name of names) {
   const path = join(validationDirectory, name);
   const file = await lstat(path);
   if (file.isSymbolicLink() || !file.isFile()) {
@@ -98,7 +94,20 @@ export async function readCurrentReleaseValidationRecord(
       "Current release qualification record does not bind the reviewed compatibility baseline",
     );
   }
-  return { name, path, bytes, record: value };
+  records.push({ name, path, bytes, record: value });
+  }
+  return records;
+}
+
+export async function readCurrentReleaseValidationRecord(
+  rootArgument: string,
+  requirement: CurrentReleaseRecordRequirement = "optional",
+): Promise<CurrentReleaseValidationRecord | null> {
+  const records = await readCurrentReleaseValidationRecords(rootArgument, requirement);
+  if (records.length > 1) {
+    throw new Error("Expected at most one current release qualification record");
+  }
+  return records[0] ?? null;
 }
 
 function packageVersion(value: unknown): string {

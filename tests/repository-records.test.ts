@@ -181,7 +181,7 @@ describe("committed release records", () => {
     const bytes = await readFile(path);
     expect(bytes.at(-1)).toBe(10);
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(
-      "5cb05ed9959ca19f3d0cd229993e09c162de14a8ea1289ab748e0a03eaefd810",
+      "579f1a49f8394175453c671f52b64ea541ff833bc3eb847b2fbd7fff439baa6c",
     );
   });
 });

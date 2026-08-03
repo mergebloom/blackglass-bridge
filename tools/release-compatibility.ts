@@ -13,19 +13,20 @@ import {
 } from "./tree-identity";
 import { isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
+import type {
+  RendererIncision,
+  RendererRuntimeContract,
+  ReviewedRange,
+  WrapperIncision,
+} from "../packages/client-adapter/src/incision";
 
-export const COMPATIBILITY_BASELINE_SCHEMA_VERSION = 5;
-export const RELEASE_ANALYSIS_FORMAT_VERSION = 5;
+export const COMPATIBILITY_BASELINE_SCHEMA_VERSION = 6;
+export const RELEASE_ANALYSIS_FORMAT_VERSION = 6;
 
 export type FileIdentity = { bytes: number; sha256: string };
 export type UnpackedJavaScriptFiles = Record<string, FileIdentity>;
 
-export interface CompatibilityAnchor {
-  id: string;
-  file: string;
-  literal: string;
-  expectedMatches: number;
-}
+export type CompatibilityAnchor = ReviewedRange;
 
 export interface CompatibilityBaseline {
   schemaVersion: typeof COMPATIBILITY_BASELINE_SCHEMA_VERSION;
@@ -44,6 +45,9 @@ export interface CompatibilityBaseline {
     reviewedPaths: string[];
   };
   anchors: CompatibilityAnchor[];
+  patchIncisions: RendererIncision[];
+  wrapperIncisions: WrapperIncision[];
+  runtimeContract: RendererRuntimeContract;
   controlPlaneRoutes: Record<string, number>;
   controlPlaneRouteLocations: Record<string, number>;
   controlPlaneRequestHelpers: Record<string, number>;
@@ -195,10 +199,10 @@ export function discoverRendererRelease(
   const mainJsBuffer = archive.read("main.js");
   const indexHtmlBuffer = archive.read("index.html");
   const packageJsonBuffer = archive.read("package.json");
-  const anchorSources = new Map<string, string>([
-    ["app.js", appJsBuffer.toString("utf8")],
-    ["main.js", mainJsBuffer.toString("utf8")],
-    ["index.html", indexHtmlBuffer.toString("utf8")],
+  const anchorSources = new Map<string, Buffer>([
+    ["app.js", appJsBuffer],
+    ["main.js", mainJsBuffer],
+    ["index.html", indexHtmlBuffer],
   ]);
   const javaScriptEntries = archive.entries()
     .filter(
@@ -224,7 +228,7 @@ export function discoverRendererRelease(
   for (const entry of javaScriptEntries) {
     const buffer = archive.read(entry.path);
     const source = buffer.toString("utf8");
-    anchorSources.set(entry.path, source);
+    anchorSources.set(entry.path, buffer);
     javaScriptFiles[entry.path] = fileIdentity(buffer);
     const network = collectNetworkCompatibility(entry.path, source);
     routes.push(...network.routes);
@@ -267,7 +271,11 @@ export function discoverRendererRelease(
           if (source === undefined) {
             throw new Error(`Compatibility anchor references a missing file: ${item.file}`);
           }
-          return [item.id, countLiteral(source, item.literal)];
+          const range = source.subarray(item.offset, item.offset + item.length);
+          return [
+            item.id,
+            range.length === item.length && sha256(range) === item.sha256 ? 1 : 0,
+          ];
         }),
     ),
     controlPlaneRoutes: countValues(routes),
@@ -308,7 +316,7 @@ export function analyzeRendererRelease(
       "anchor-match-counts",
       Object.fromEntries(
         baseline.anchors
-          .map((item) => [item.id, item.expectedMatches] as const)
+          .map((item) => [item.id, 1] as const)
           .sort(([left], [right]) => compareStrings(left, right)),
       ),
       discovery.anchorMatches,
@@ -1644,14 +1652,35 @@ function assertCompatibilityBaseline(value: unknown): asserts value is Compatibi
       typeof anchor.file !== "string" ||
       (anchor.file !== "index.html" &&
         !Object.prototype.hasOwnProperty.call(reviewedJavaScriptFiles, anchor.file)) ||
-      typeof anchor.literal !== "string" ||
-      anchor.literal.length === 0 ||
-      !Number.isSafeInteger(anchor.expectedMatches) ||
-      (anchor.expectedMatches as number) < 1
+      !Number.isSafeInteger(anchor.offset) ||
+      (anchor.offset as number) < 0 ||
+      !Number.isSafeInteger(anchor.length) ||
+      (anchor.length as number) < 1 ||
+      !isSha256(anchor.sha256)
     ) {
       throw new Error("Compatibility baseline contains an invalid or duplicate anchor");
     }
     anchorIds.add(anchor.id);
+  }
+  assertIncisions(value.patchIncisions, [
+    "control-origin",
+    "control-origin",
+    "data-host-guard",
+    "cli-socket",
+    "cli-runtime-home",
+    "cli-registration",
+  ], "renderer");
+  assertIncisions(value.wrapperIncisions, [
+    "profile-bootstrap",
+    "disable-updater",
+    "embedded-renderer-only",
+  ], "wrapper");
+  if (
+    !isRecord(value.runtimeContract) ||
+    value.runtimeContract.wrapperRendererArguments !== 2 ||
+    ![3, null].includes(value.runtimeContract.rendererDevModeArgument as never)
+  ) {
+    throw new Error("Compatibility baseline runtime contract is invalid");
   }
   for (const field of [
     "controlPlaneRoutes",
@@ -1673,6 +1702,37 @@ function assertCompatibilityBaseline(value: unknown): asserts value is Compatibi
         throw new Error(`Compatibility baseline ${field} contains an invalid count`);
       }
     }
+  }
+}
+
+function assertIncisions(
+  value: unknown,
+  replacements: readonly string[],
+  label: string,
+): void {
+  if (!Array.isArray(value) || value.length !== replacements.length) {
+    throw new Error(`Compatibility baseline ${label} incisions are invalid`);
+  }
+  const ids = new Set<string>();
+  const remainingReplacements = [...replacements];
+  for (const incision of value) {
+    if (
+      !isRecord(incision) ||
+      typeof incision.id !== "string" ||
+      ids.has(incision.id) ||
+      typeof incision.file !== "string" ||
+      !Number.isSafeInteger(incision.offset) ||
+      (incision.offset as number) < 0 ||
+      !Number.isSafeInteger(incision.length) ||
+      (incision.length as number) < 1 ||
+      !isSha256(incision.sha256) ||
+      typeof incision.replacement !== "string" ||
+      !remainingReplacements.includes(incision.replacement)
+    ) {
+      throw new Error(`Compatibility baseline ${label} incisions are invalid`);
+    }
+    ids.add(incision.id);
+    remainingReplacements.splice(remainingReplacements.indexOf(incision.replacement), 1);
   }
 }
 

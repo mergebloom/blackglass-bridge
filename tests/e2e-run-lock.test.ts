@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -32,6 +32,34 @@ describe("prepared-run launch/reset locking", () => {
         "locked for source-loss reset",
       );
       await releaseSourceLossResetLock(lock, revision);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("recovers an exact dead-owner lease but preserves active and malformed locks", async () => {
+    const root = await mkdtemp(join(tmpdir(), "blackglass-run-lock-"));
+    try {
+      const path = join(root, ".client-a.launch.lock");
+      await writeFile(path, `${JSON.stringify({
+        schemaVersion: 2,
+        pid: 2_147_483_647,
+        clientName: "client-a",
+        acquiredAt: new Date().toISOString(),
+        ownerNonce: "dead-owner-nonce",
+        executable: "/dead/process",
+        argumentsSha256: "a".repeat(64),
+      })}\n`, { mode: 0o600 });
+      const recovered = await acquirePreparedClientLease(root, "client-a");
+      await expect(acquirePreparedClientLease(root, "client-a")).rejects.toThrow(
+        "Active prepared-client launch lease",
+      );
+      await releasePreparedClientLease(recovered);
+
+      await writeFile(path, "not-json\n", { mode: 0o600 });
+      await expect(acquirePreparedClientLease(root, "client-a")).rejects.toThrow(
+        "Refusing malformed prepared-client launch lease",
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }

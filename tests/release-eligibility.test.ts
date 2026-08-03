@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { readCurrentReleaseValidationRecord } from "../tools/current-release-record";
+import {
+  readCurrentReleaseValidationRecord,
+  readCurrentReleaseValidationRecords,
+} from "../tools/current-release-record";
 
 const repositoryRoot = resolve(import.meta.dir, "..");
 
@@ -13,13 +16,13 @@ describe("current release qualification selection", () => {
       expect(await readCurrentReleaseValidationRecord(root, "optional")).toBeNull();
       await expect(
         readCurrentReleaseValidationRecord(root, "required"),
-      ).rejects.toThrow("Expected exactly one current release qualification record");
+      ).rejects.toThrow("Expected at least one current release qualification record");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  test("both modes reject multiple current records", async () => {
+  test("plural selection validates every current renderer record", async () => {
     const root = await createRoot();
     try {
       for (const rendererVersion of ["1.12.7", "1.12.8"]) {
@@ -33,11 +36,8 @@ describe("current release qualification selection", () => {
         );
       }
       await expect(
-        readCurrentReleaseValidationRecord(root, "optional"),
-      ).rejects.toThrow("Expected at most one current release qualification record");
-      await expect(
-        readCurrentReleaseValidationRecord(root, "required"),
-      ).rejects.toThrow("Expected exactly one current release qualification record");
+        readCurrentReleaseValidationRecords(root, "required"),
+      ).rejects.toThrow("Invalid release validation record");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

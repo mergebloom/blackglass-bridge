@@ -1,172 +1,108 @@
-# Blackglass
+# Blackglass Bridge
 
-Blackglass is desktop compatibility tooling for using the built-in
-Obsidian Sync experience with a self-hosted Blackglass Server.
+Blackglass Bridge adapts a user-supplied official Obsidian desktop installation
+to a user-selected [Blackglass Server](https://github.com/mergebloom/blackglass-server).
+The intended result is self-hosted Sync with the native desktop application UX,
+full control of service location and stored data, and a repeatable maintenance
+path as new Obsidian releases appear.
 
-It analyzes an authorized desktop release, changes the control and data
-endpoints, enforces a separate mode-`0700` local profile with upstream updates
-disabled, rebuilds the package integrity metadata, and creates a separately
-identified macOS application for local use. It never modifies the installed
-Obsidian application or a real user vault.
+The Bridge verifies an exact reviewed upstream artifact, applies narrow
+endpoint/update/CLI/profile/branding incisions, and emits an independently
+identified `Blackglass.app` plus an auditable manifest and receipt. It preserves
+the upstream executable and helper names needed for Electron stability, uses a
+separate mode-`0700` profile, and disables upstream application updates in the
+generated build.
 
-Blackglass is independent and is not affiliated with or endorsed by Obsidian.
+## Install and adapt
 
-## Project goal
+The Apple Silicon macOS release provides a standalone executable and ZIP. End
+users need macOS and their own official Obsidian DMG or application; Bun, Node,
+npm, and a source checkout are not required.
 
-The intended outcome is to use the Obsidian desktop app's existing Sync UX and
-qualified Sync functionality with a fully self-hosted server. Users keep
-control of their encrypted vault data, service, backups, retention, and network
-location while retaining the familiar application workflow. This provides data
-sovereignty and content privacy; the server remains able to observe limited
-operational metadata.
+```sh
+shasum -a 256 -c blackglass-bridge-vVERSION-macos-arm64.sha256
+chmod 0755 blackglass-bridge-vVERSION-macos-arm64
+./blackglass-bridge-vVERSION-macos-arm64 adapt \
+  --dmg /path/to/Obsidian-VERSION.dmg \
+  --control-origin https://sync-control.example.com \
+  --data-host sync-data.example.com \
+  --output "$HOME/Desktop/Blackglass-output"
+```
 
-The long-term target is the existing app experience with no loss of
-functionality while its services are self-hosted. The supported table below
-states what has been implemented and requalified so far.
+See the [standalone guide](docs/bridge-cli.md) for app input and output details.
+Operators should deploy the companion Server first so the two exact HTTPS/WSS
+endpoints are ready.
 
-Blackglass uses six fixed-length client-ASAR incisions: three adapt the control and
-Sync endpoints, while three isolate the macOS CLI runtime root, socket, and
-registration name. Two fixed-length incisions apply the same socket name to the
-universal CLI binary. Three fail-closed wrapper incisions isolate Blackglass
-state with mode-`0700` enforcement, disable the upstream package updater, and
-force the embedded qualified renderer. The GUI keeps the native `HOME` needed
-by macOS secure storage; a private `BLACKGLASS_HOME` selects Blackglass state. The
-exact artifacts are requalified with end-to-end tests so future Obsidian
-updates remain a small, repeatable maintenance task.
+## Support and conformance
 
-Blackglass began as a research project exploring frontier language-model
-capabilities in minified-code analysis, protocol recovery, clean-room compatible
-implementation, release adaptation, and end-to-end validation. Model-assisted
-findings are accepted only when backed by deterministic tooling and tests.
+Desktop Apple Silicon macOS and Sync are the initial product surface. The
+[generated compatibility matrix](compatibility/MATRIX.md) is the sole support
+claim for exact renderer, Bridge, Server, platform, scenario, report, and date
+combinations. A row appears only after packaged-client release/recovery,
+tenancy, custom-E2EE collaboration, and managed-encryption collaboration all
+pass against source-bound artifacts.
 
-## How it works
+Windows, Linux desktop, Intel Mac, mobile, Publish, and unrelated Obsidian
+services are future work. Blackglass redirects the account and Sync traffic; it
+is not a network sandbox for plugins, embeds, Help, or other upstream features.
 
-1. Compare the authorized renderer with its reviewed, versioned compatibility baseline.
-2. Require exact anchor, request-helper, network-constructor, route,
-   Sync-operation, and message-shape inventories.
-3. Generate a deterministic compatibility ASAR for the chosen server URLs.
-4. Patch the copied wrapper to isolate state, disable updates, and pin the embedded renderer.
-5. Package and sign two independent `Blackglass.app` outputs, then require
-   distinct invocation receipts plus matching manifests and artifact identities.
-6. Bind that reproducibility proof while qualifying the exact client and server
-   artifact pair with multipart Sync and recovery E2E.
+The conformance suite covers authentication/session isolation, exact control
+and WebSocket shapes, owner/collaborator attribution and lifecycle, outsider
+isolation, background bidirectional Sync, mixed files and deletion, restart,
+backup/restore/migration, clean-profile recovery, packaging, reproducibility,
+secret redaction, and hash-chained evidence.
 
-The client adapter is release-specific. The Sync protocol and durable data live
-in the separate Blackglass Server project, normally checked out beside this one
-as `../blackglass-server`.
+## Develop and qualify
 
-## Supported scope
-
-| Area | Current support |
-| --- | --- |
-| Platform | macOS on Apple Silicon |
-| Renderer | Obsidian 1.12.7 and 1.13.4 |
-| Client behavior | Built-in sign-in; remote-vault create/list/access; E2EE Sync including multipart attachments; source-loss recovery UI |
-| Packaging | Separate app identity, ad-hoc local signing, updates disabled |
-| Server | Blackglass Server over loopback or HTTPS/WSS |
-
-Mobile, Windows, Intel-only Macs, Publish, sharing, and automatic compatibility
-with later Obsidian releases are not qualified yet.
-
-## Quick start
-
-Requirements: Bun 1.3.8 (pinned in `.bun-version`), Node.js/npm for the
-lockfile-verified dependency install and E2E TLS proxy, and an authorized
-official Obsidian DMG.
+Development uses the pinned Bun runtime and lockfile:
 
 ```sh
 npm ci
-bun run analyze:release -- \
-  '/Volumes/Obsidian/Obsidian.app/Contents/Resources/obsidian.asar' \
-  --resources '/Volumes/Obsidian/Obsidian.app/Contents/Resources'
-bun run patch:client -- \
-  '/Volumes/Obsidian/Obsidian.app/Contents/Resources/obsidian.asar' \
-  /tmp/blackglass.asar \
-  --resources '/Volumes/Obsidian/Obsidian.app/Contents/Resources' \
-  --control-origin http://127.0.0.1:3000 \
-  --data-host 127.0.0.1:3003
-bun run package:macos -- \
-  '/Volumes/Obsidian/Obsidian.app' \
-  /tmp/blackglass.asar \
-  '/path/to/Blackglass.app' \
-  --control-origin http://127.0.0.1:3000 \
-  --data-host 127.0.0.1:3003 \
-  --official-dmg /path/to/Obsidian.dmg \
-  --manifest /path/to/blackglass-release.json \
-  --receipt /path/to/blackglass-package-receipt.json
 bun run check
 ```
 
-Before E2E qualification, repeat the package command into a different output
-directory and run `package:macos:verify-reproducibility` with both invocation
-receipts as shown in the E2E guide. Preparation refuses an app without that
-bound two-build evidence.
+`release:candidate:create` freezes the exact clean Bridge/Server revisions and
+reviewed artifact identities. `release:run` performs resumable checks, native
+and Linux builds, two independent macOS packages, reproducibility, and E2E
+preparation. Completed stages are hash-receipted; partial, changed, or
+revision-mismatched state fails closed. See [E2E](docs/e2e.md) and
+[compatibility maintenance](compatibility/README.md).
 
-For release work, `release:candidate:create` freezes the exact clean client and
-server revisions, and `release:run` provides a resumable doctor/check/build/
-package preparation path. See the E2E guide for the compact command.
+## Project boundary
 
-For a real deployment, use HTTPS/WSS endpoints and follow the
-[deployment guide](docs/deployment.md). Run the packaged-client qualification in
-[the E2E guide](docs/e2e.md) before relying on a generated build.
+This repository owns client inspection, reviewed compatibility baselines,
+local adaptation, macOS packaging, client release artifacts, E2E orchestration,
+and the conformance suite. The Server repository owns the Rust service, SQLite
+schema and migrations, Linux/container artifacts, deployment, backups, and
+operations. Detailed concerns live in their owning repository and are linked
+rather than duplicated.
 
-## Updating for a new Obsidian release
+The public project does not contain or distribute Obsidian applications,
+ASARs, extracted/minified source, proprietary assets, generated client apps, or
+private deployment data. Reviewed incisions are stored as hashes, byte ranges,
+and independent replacement semantics. Release and repository gates scan for
+forbidden artifacts, private identifiers, domains, and secret patterns.
 
-Each upstream release must be treated as unknown: retain the DMG hash, rerun static
-analysis, review and commit a new compatibility baseline, generate a new app,
-then pass Sync and source-loss recovery E2E against the intended server binary.
-Any new, removed, or changed packed or unpacked JavaScript file, anchor, route,
-Sync operation, or message shape stops the build. The stable self-hosted server
-URLs do not need to change.
+Obsidian is a third-party product. Blackglass is independent and is not
+affiliated with or endorsed by Obsidian. Users must supply their own legitimate
+Obsidian installation. This note describes the project boundary, not a legal
+conclusion.
 
-`bun run baseline:candidate -- <official.dmg> <Obsidian.app> --predecessor
-<reviewed-baseline.json>` creates a deterministic, untrusted predecessor-diff
-packet under ignored `.data/compatibility-candidates/`. It never updates the
-tracked baseline; follow the review and manual-promotion process in
-[`compatibility/README.md`](compatibility/README.md).
-
-## Safety and distribution
-
-The official application, generated ASARs and apps, credentials, profiles, and
-vault contents are inputs or ignored local artifacts. Do not commit or
-redistribute them. Generated apps contain proprietary upstream code and are not
-notarized distribution artifacts; share this tooling and require authorized
-users to supply their own official release.
-
-Blackglass redirects the built-in account and Sync traffic; it is not a general
-network sandbox for Obsidian. Features such as Help, community plugins, embeds,
-and other upstream integrations may still contact their own external services.
-
-The copied app uses bundle identifier `com.blackglass.app`, does not register
-Obsidian's URL scheme or iCloud container, and uses a dedicated profile so it
-can coexist with an ordinary Obsidian installation. Its outer app filename and
-display name are Blackglass, while the upstream `Obsidian` bundle name,
-main executable, and Electron helper topology remain unchanged for runtime
-compatibility.
-
-Blackglass sets its Electron application name before profile initialization,
-so macOS stores its encryption key as `Blackglass Safe Storage` instead of
-requesting access to Obsidian's keychain item. It does not migrate an existing
-Obsidian profile or login: the first Blackglass launch starts clean and requires
-sign-in, while the Obsidian profile remains untouched.
-
-## Validation
-
-Sanitized evidence lives in [docs/validation](docs/validation/README.md).
-Qualification is bound to the exact renderer, generated ASAR, packaged app, and
-server binary hashes; rebuilding any artifact requires a new result.
+Blackglass began as a research project exploring frontier LLM capabilities in
+software analysis, compatibility engineering, clean-room implementation, and
+end-to-end validation. Deterministic checks and executable evidence—not model
+output—control support claims.
 
 ## Documentation
 
-| Guide | Purpose |
+| Guide | Owner |
 | --- | --- |
-| [Architecture](docs/architecture.md) | Adapter design, ownership, and safety boundaries |
-| [Deployment](docs/deployment.md) | Endpoint layout, rollout, and release maintenance |
-| [Client audit](docs/client-audit-1.12.7.md) | Findings for the initial qualified renderer |
-| [Protocol](docs/protocol/obsidian-1.12.7.md) | Observed client-side Sync contract |
-| [E2E](docs/e2e.md) | Two-client Sync and source-loss recovery procedure |
+| [Architecture](docs/architecture.md) | Client adaptation and safety boundary |
+| [Standalone Bridge](docs/bridge-cli.md) | No-development-dependency user workflow |
+| [Compatibility maintenance](compatibility/README.md) | Future renderer review and promotion |
+| [Compatibility matrix](compatibility/MATRIX.md) | Exact supported combinations |
+| [E2E](docs/e2e.md) | Conformance operation and evidence |
+| [Deployment](docs/deployment.md) | Endpoint topology and Bridge rollout |
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before sharing changes and
-[SECURITY.md](SECURITY.md) for vulnerability reporting. The independently
-written tooling is available under the [MIT License](LICENSE); that license does
-not cover Obsidian or generated application artifacts.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and the
+[MIT License](LICENSE). The license does not cover Obsidian or generated apps.

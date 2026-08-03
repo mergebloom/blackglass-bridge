@@ -153,6 +153,9 @@ if (
 const clientArtifact = await inspectMacOSArtifact(app);
 const releaseManifestBytes = await readFile(releaseManifestPath);
 const releaseManifest = parseBlackglassReleaseManifest(releaseManifestBytes);
+if (releaseManifest.reproduction.officialDmgMatchedBaseline !== true) {
+  throw new Error("Release qualification requires the reviewed official DMG input");
+}
 const releaseManifestSha256 = createHash("sha256")
   .update(releaseManifestBytes)
   .digest("hex");

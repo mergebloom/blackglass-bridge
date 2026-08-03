@@ -167,7 +167,9 @@ post-restart transfers until explicitly finalized:
 
 Each launcher holds an owner-only per-client lease for its full lifetime. The
 source-loss reset acquires the mutually exclusive run lock before staging or
-renaming either profile, so a reset and a relaunch cannot race.
+renaming either profile, so a reset and a relaunch cannot race. A dead-owner
+lease is recovered only when its nonce, executable, arguments, and process
+identity prove it stale; an active or malformed lease fails closed.
 
 ```sh
 bun run client:launch -- \
@@ -319,12 +321,31 @@ bun run e2e:scenario:capture -- .data/e2e/<run> \
   phase-4-custom/wrong-password 9322
 ```
 
+The capture binds one exact renderer window. Close stale settings/dialog
+windows before capture with `e2e-ui.mjs PORT close-auxiliary`. `click-text`
+requires one exact match unless an explicit in-range index is supplied. Failed
+captures are preserved under `evidence/failed-attempts`; incomplete final-file
+pairs are quarantined and may be recaptured because the proof is published
+last.
+
 Use these exact proof filenames when creating scenario content:
 
 - `Blackglass E2E Tenant A Proof.md` and `Blackglass E2E Tenant B Proof.md`;
 - `Blackglass E2E Owner Proof.md` and `Blackglass E2E Collaborator Proof.md`;
 - `Blackglass E2E Former Member Proof.md`, created on B only after revocation;
 - `Blackglass E2E Cold Bootstrap Proof.md`, created on A before B's clean bootstrap.
+
+Before the Phase 4 cold-bootstrap checkpoint, stop client B and replace its
+entire disposable client lifecycle—not merely its vault directory:
+
+```sh
+bun run e2e:reset-client -- .data/e2e/<run> client-b
+```
+
+The command records the removed tree, preserves only the exact prepared
+adapter, creates a genuinely empty vault and fresh profile, and refuses active
+launch leases. The cold-bootstrap proof binds this reset record and the later
+fresh launch.
 
 The verifier refuses missing, reordered, overwritten, cross-run, cross-client,
 or semantically inconsistent checkpoints. It verifies encryption-mode storage,

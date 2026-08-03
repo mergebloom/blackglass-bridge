@@ -42,6 +42,7 @@ import {
   type TreeIdentity,
 } from "./tree-identity";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
+import { COMPATIBILITY_BASELINE_SCHEMA_VERSION } from "./release-compatibility";
 
 export const BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION = 9;
 
@@ -84,7 +85,7 @@ export interface BlackglassReleaseManifest {
   cli: CliBinaryPatchReport;
   macOS: Omit<MacOSArtifact, "appPath">;
   reproduction: {
-    officialDmgMatchedBaseline: true;
+    officialDmgMatchedBaseline: boolean;
     sourceAppTreeMatchedBaseline: true;
     stagedCopyTreeMatchedSource: true;
     reviewedSourceRenderer: true;
@@ -134,7 +135,7 @@ export function assertBlackglassReleaseManifest(
   if (
     !isRecord(value.compatibilityBaseline) ||
     typeof value.compatibilityBaseline.id !== "string" ||
-    value.compatibilityBaseline.schemaVersion !== 5 ||
+    value.compatibilityBaseline.schemaVersion !== COMPATIBILITY_BASELINE_SCHEMA_VERSION ||
     !isSha256(value.compatibilityBaseline.sha256)
   ) {
     throw new Error("Blackglass release manifest has an invalid compatibility baseline");
@@ -306,7 +307,7 @@ export function assertBlackglassReleaseManifest(
   }
   if (
     !isRecord(value.reproduction) ||
-    value.reproduction.officialDmgMatchedBaseline !== true ||
+    typeof value.reproduction.officialDmgMatchedBaseline !== "boolean" ||
     value.reproduction.sourceAppTreeMatchedBaseline !== true ||
     value.reproduction.stagedCopyTreeMatchedSource !== true ||
     value.reproduction.reviewedSourceRenderer !== true ||
