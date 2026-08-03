@@ -31,8 +31,18 @@ export interface ReleaseCandidate {
 }
 
 interface ServerReleaseContract {
-  schemaVersion: 1;
+  schemaVersion: 2;
   serverVersion: string;
+  database: {
+    supportedSourceSchemas: number[];
+    destinationSchema: number;
+  };
+  rollback: {
+    previousPublishedTag: string;
+    previousPublishedSchema: number;
+    directRollbackTag: string | null;
+    directRollbackSupported: boolean;
+  };
   clientToolingRevision: string;
   qualifiedRenderers: Array<{ version: string; baselineSha256: string }>;
 }
@@ -216,16 +226,46 @@ function packageVersion(value: unknown, label: string): string {
   return value.version;
 }
 
-function assertServerReleaseContract(value: unknown): asserts value is ServerReleaseContract {
+export function assertServerReleaseContract(value: unknown): asserts value is ServerReleaseContract {
   if (
     !isRecord(value) ||
-    value.schemaVersion !== 1 ||
+    value.schemaVersion !== 2 ||
     !isSupportedSemver(value.serverVersion) ||
+    !isRecord(value.database) ||
+    !Array.isArray(value.database.supportedSourceSchemas) ||
+    value.database.supportedSourceSchemas.length === 0 ||
+    !isPositiveInteger(value.database.destinationSchema) ||
+    !isRecord(value.rollback) ||
+    !isReleaseTag(value.rollback.previousPublishedTag) ||
+    !isPositiveInteger(value.rollback.previousPublishedSchema) ||
+    !(
+      value.rollback.directRollbackTag === null ||
+      isReleaseTag(value.rollback.directRollbackTag)
+    ) ||
+    typeof value.rollback.directRollbackSupported !== "boolean" ||
     !isRevision(value.clientToolingRevision) ||
     !Array.isArray(value.qualifiedRenderers) ||
     value.qualifiedRenderers.length === 0
   ) {
     throw new Error("Server release contract is malformed");
+  }
+  const schemas = new Set<number>();
+  for (const schema of value.database.supportedSourceSchemas) {
+    if (
+      !isPositiveInteger(schema) ||
+      schema >= value.database.destinationSchema ||
+      schemas.has(schema)
+    ) {
+      throw new Error("Server release contract database migration set is malformed");
+    }
+    schemas.add(schema);
+  }
+  if (
+    !schemas.has(value.rollback.previousPublishedSchema) ||
+    value.rollback.directRollbackSupported !==
+      (value.rollback.directRollbackTag !== null)
+  ) {
+    throw new Error("Server release contract rollback policy is malformed");
   }
   const seen = new Set<string>();
   for (const renderer of value.qualifiedRenderers) {
@@ -255,6 +295,14 @@ function sha256(bytes: Uint8Array): string {
 
 function isRevision(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{40}$/u.test(value);
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function isReleaseTag(value: unknown): value is string {
+  return typeof value === "string" && value.startsWith("v") && isSupportedSemver(value.slice(1));
 }
 
 function isSha256(value: unknown): value is string {

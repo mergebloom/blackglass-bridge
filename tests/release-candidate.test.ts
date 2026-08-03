@@ -1,9 +1,27 @@
 import { describe, expect, test } from "bun:test";
 import {
+  assertServerReleaseContract,
   parseReleaseCandidate,
   releaseCandidateSha256,
   type ReleaseCandidate,
 } from "../tools/release-candidate";
+
+const serverContract = () => ({
+  schemaVersion: 2,
+  serverVersion: "0.5.0",
+  database: { supportedSourceSchemas: [4, 5], destinationSchema: 6 },
+  rollback: {
+    previousPublishedTag: "v0.2.5",
+    previousPublishedSchema: 4,
+    directRollbackTag: null,
+    directRollbackSupported: false,
+  },
+  clientToolingRevision: "a".repeat(40),
+  qualifiedRenderers: [
+    { version: "1.12.7", baselineSha256: "b".repeat(64) },
+    { version: "1.13.4", baselineSha256: "c".repeat(64) },
+  ],
+});
 
 const candidate = (): ReleaseCandidate => ({
   schemaVersion: 1,
@@ -37,6 +55,28 @@ const candidate = (): ReleaseCandidate => ({
 });
 
 describe("immutable release candidates", () => {
+  test("accepts the exact server migration and rollback contract", () => {
+    expect(() => assertServerReleaseContract(serverContract())).not.toThrow();
+  });
+
+  test("rejects unsafe or ambiguous server migration and rollback contracts", () => {
+    const mutations: Array<(value: any) => void> = [
+      (value) => { value.schemaVersion = 1; },
+      (value) => { value.database.supportedSourceSchemas = []; },
+      (value) => { value.database.supportedSourceSchemas = [4, 4]; },
+      (value) => { value.database.supportedSourceSchemas = [4, 6]; },
+      (value) => { value.rollback.previousPublishedSchema = 3; },
+      (value) => { value.rollback.previousPublishedTag = "0.2.5"; },
+      (value) => { value.rollback.directRollbackSupported = true; },
+      (value) => { value.rollback.directRollbackTag = "v0.4.5"; },
+    ];
+    for (const mutate of mutations) {
+      const value = serverContract();
+      mutate(value);
+      expect(() => assertServerReleaseContract(value)).toThrow();
+    }
+  });
+
   test("parses and hashes a complete cross-repository freeze", () => {
     const value = candidate();
     expect(parseReleaseCandidate(Buffer.from(JSON.stringify(value)))).toEqual(value);
