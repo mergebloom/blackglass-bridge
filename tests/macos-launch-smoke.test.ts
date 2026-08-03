@@ -171,7 +171,10 @@ function evidence(): FinderLaunchSmokeEvidence {
       blackglassHomePath: launchHomePath,
       stdoutPath: layout.stdoutPath,
       stderrPath: layout.stderrPath,
-      profilePath: layout.profilePath,
+      profilePath: join(
+        launchHomePath,
+        "Library/Application Support/Blackglass Profile",
+      ),
       runtimeReceiptPath: join(layout.smokeRoot, "runtime-receipt.json"),
       chromiumHostResolverRules,
       tlsSpkiSha256Base64,
@@ -548,6 +551,10 @@ describe("packaged macOS LaunchServices smoke", () => {
       (value: any) => (value.launchHomeRootRemoved = false),
       (value: any) => (value.launchHomeRootMode = 0o755),
       (value: any) => (value.launchHomePath = "/Users/example/home"),
+      (value: any) => {
+        const profileArgument = value.launchCommand.indexOf("--blackglass-profile") + 1;
+        value.launchCommand[profileArgument] = value.profilePath;
+      },
       (value: any) => (value.blackglassHomeEnvironment = "HOME"),
       (value: any) => (value.blackglassHomeEnvironmentObserved = false),
       (value: any) => (value.nativeHomeEnvironmentPreserved = false),

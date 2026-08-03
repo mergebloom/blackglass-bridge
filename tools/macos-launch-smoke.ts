@@ -511,7 +511,10 @@ export function assertFinderLaunchSmokeEvidence(
     blackglassHomePath: value.launchHomePath,
     stdoutPath: layout.stdoutPath,
     stderrPath: layout.stderrPath,
-    profilePath: layout.profilePath,
+    profilePath: join(
+      value.launchHomePath,
+      "Library/Application Support/Blackglass Profile",
+    ),
     runtimeReceiptPath: join(layout.smokeRoot, "runtime-receipt.json"),
     chromiumHostResolverRules: options.chromiumHostResolverRules,
     tlsSpkiSha256Base64: options.tlsSpkiSha256Base64,
