@@ -46,6 +46,12 @@ describe("immutable release runner", () => {
     expect(source).toContain(`name: \`client-\${rendererVersion}-patch-b\``);
     expect(source).toContain('"standalone-bridge-a"');
     expect(source).toContain('"standalone-bridge-b"');
+    expect(source).toContain(
+      'const standaloneReproducibility = join(workRoot, "standalone-reproducibility.json")',
+    );
+    expect(source).not.toContain(
+      'const standaloneReproducibility = join(rendererRoot, "standalone-reproducibility.json")',
+    );
     expect(source).toContain("tools/verify-standalone-reproducibility.ts");
     expect(source).toContain("tools/verify-macos-reproducibility.ts");
     expect(source).toContain("tools/prepare-e2e.ts");

@@ -233,7 +233,10 @@ if (parsed.booleans.has("--prepare-client")) {
     standaloneRootB,
     `blackglass-bridge-v${candidate.client.version}-macos-arm64`,
   );
-  const standaloneReproducibility = join(rendererRoot, "standalone-reproducibility.json");
+  // The standalone Bridge has no renderer input. Keep its receipt beside the
+  // candidate-scoped standalone outputs so a second renderer revalidates the
+  // same exact artifact instead of looking for a renderer-local copy.
+  const standaloneReproducibility = join(workRoot, "standalone-reproducibility.json");
   const firstRoot = join(rendererRoot, "package-a");
   const secondRoot = join(rendererRoot, "package-b");
   await mkdir(firstRoot, { recursive: true, mode: 0o700 });
