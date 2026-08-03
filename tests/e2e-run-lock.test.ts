@@ -15,7 +15,11 @@ describe("prepared-run launch/reset locking", () => {
     try {
       const lease = await acquirePreparedClientLease(root, "client-a");
       await expect(
-        acquireSourceLossResetLock(root, "a".repeat(64)),
+        acquireSourceLossResetLock(root, "a".repeat(64), [
+          "client-a",
+          "client-b",
+          "client-c",
+        ]),
       ).rejects.toThrow("Stop prepared clients");
       await releasePreparedClientLease(lease);
     } finally {
@@ -27,11 +31,64 @@ describe("prepared-run launch/reset locking", () => {
     const root = await mkdtemp(join(tmpdir(), "blackglass-run-lock-"));
     const revision = "b".repeat(64);
     try {
-      const lock = await acquireSourceLossResetLock(root, revision);
+      const lock = await acquireSourceLossResetLock(root, revision, [
+        "client-a",
+        "client-b",
+        "client-c",
+      ]);
       await expect(acquirePreparedClientLease(root, "client-b")).rejects.toThrow(
         "locked for source-loss reset",
       );
       await releaseSourceLossResetLock(lock, revision);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a targeted client reset permits unrelated live capture clients", async () => {
+    const root = await mkdtemp(join(tmpdir(), "blackglass-run-lock-"));
+    const revision = "f".repeat(64);
+    try {
+      const clientA = await acquirePreparedClientLease(root, "client-a");
+      const clientC = await acquirePreparedClientLease(root, "client-c");
+      const lock = await acquireSourceLossResetLock(root, revision, ["client-b"]);
+      for (const client of ["client-a", "client-b", "client-c"] as const) {
+        await expect(acquirePreparedClientLease(root, client)).rejects.toThrow(
+          "locked for source-loss reset",
+        );
+      }
+      await releaseSourceLossResetLock(lock, revision);
+      await releasePreparedClientLease(clientA);
+      await releasePreparedClientLease(clientC);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a targeted client reset still rejects the target's live lease", async () => {
+    const root = await mkdtemp(join(tmpdir(), "blackglass-run-lock-"));
+    const revision = "1".repeat(64);
+    try {
+      const clientB = await acquirePreparedClientLease(root, "client-b");
+      await expect(
+        acquireSourceLossResetLock(root, revision, ["client-b"]),
+      ).rejects.toThrow("Stop prepared clients before source-loss reset: client-b");
+      await releasePreparedClientLease(clientB);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("requires an explicit non-empty unique reset scope", async () => {
+    const root = await mkdtemp(join(tmpdir(), "blackglass-run-lock-"));
+    const revision = "2".repeat(64);
+    try {
+      await expect(acquireSourceLossResetLock(root, revision, [])).rejects.toThrow(
+        "non-empty unique prepared-client scope",
+      );
+      await expect(
+        acquireSourceLossResetLock(root, revision, ["client-b", "client-b"]),
+      ).rejects.toThrow("non-empty unique prepared-client scope");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -82,11 +139,19 @@ describe("prepared-run launch/reset locking", () => {
         processStartIdentity: "e".repeat(64),
       };
       await writeFile(path, `${JSON.stringify(staleLease)}\n`, { mode: 0o600 });
-      const lock = await acquireSourceLossResetLock(root, revision);
+      const lock = await acquireSourceLossResetLock(root, revision, [
+        "client-a",
+        "client-b",
+        "client-c",
+      ]);
       await releaseSourceLossResetLock(lock, revision);
 
       const active = await acquirePreparedClientLease(root, "client-b");
-      await expect(acquireSourceLossResetLock(root, revision)).rejects.toThrow(
+      await expect(acquireSourceLossResetLock(root, revision, [
+        "client-a",
+        "client-b",
+        "client-c",
+      ])).rejects.toThrow(
         "Stop prepared clients",
       );
       await releasePreparedClientLease(active);

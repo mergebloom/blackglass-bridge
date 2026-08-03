@@ -176,7 +176,7 @@ if (await pathExists(resetTemporary)) {
   throw new Error("Source-loss reset staging record already exists");
 }
 let resetPublished = false;
-await acquireSourceLossResetLock(root, run.manifestSha256);
+await acquireSourceLossResetLock(root, run.manifestSha256, clients);
 try {
 await assertNoPreparedClientLeases(root, clients);
 assertNoActiveDisposableClients(appPath, clientProfiles);
@@ -436,7 +436,11 @@ async function finalizePublishedReset(
 
   await assertRetiredClientTreesMatch(canonicalTrash, reset.removed);
 
-  const lockPath = await acquireSourceLossResetLock(runRoot, run.manifestSha256);
+  const lockPath = await acquireSourceLossResetLock(
+    runRoot,
+    run.manifestSha256,
+    ["client-a", "client-b"],
+  );
   try {
     await assertNoPreparedClientLeases(runRoot, ["client-a", "client-b"]);
     await rm(canonicalTrash, { recursive: true, force: false });

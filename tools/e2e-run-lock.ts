@@ -75,7 +75,17 @@ export async function releasePreparedClientLease(leasePath: string): Promise<voi
 export async function acquireSourceLossResetLock(
   runRoot: string,
   runManifestSha256: string,
+  clientsThatMustBeStopped: readonly PreparedClientName[],
 ): Promise<string> {
+  if (
+    clientsThatMustBeStopped.length === 0 ||
+    new Set(clientsThatMustBeStopped).size !== clientsThatMustBeStopped.length ||
+    clientsThatMustBeStopped.some((client) =>
+      !["client-a", "client-b", "client-c"].includes(client)
+    )
+  ) {
+    throw new Error("Source-loss reset requires a non-empty unique prepared-client scope");
+  }
   const requestedLockPath = sourceLossResetLockPath(runRoot);
   await recoverDeadOwnerLock(requestedLockPath, "source-loss reset lock");
   const lockPath = await canonicalOutputPath(
@@ -97,7 +107,7 @@ export async function acquireSourceLossResetLock(
     { flag: "wx", mode: 0o600 },
   );
   try {
-    await assertNoPreparedClientLeases(runRoot, ["client-a", "client-b", "client-c"]);
+    await assertNoPreparedClientLeases(runRoot, clientsThatMustBeStopped);
   } catch (error) {
     await releaseSourceLossResetLock(lockPath, runManifestSha256);
     throw error;

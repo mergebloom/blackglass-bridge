@@ -167,9 +167,12 @@ post-restart transfers until explicitly finalized:
 
 Each launcher holds an owner-only per-client lease for its full lifetime. The
 source-loss reset acquires the mutually exclusive run lock before staging or
-renaming either profile, so a reset and a relaunch cannot race. A dead-owner
-lease is recovered only when its nonce, executable, arguments, and process
-identity prove it stale; an active or malformed lease fails closed.
+renaming a profile, so a reset and a relaunch cannot race. A whole-run recovery
+requires every client to stop; the Phase 4 clean-client reset requires only its
+target to stop so the other clients' continuous network evidence can remain
+live. A dead-owner lease is recovered only when its nonce, executable,
+arguments, and process identity prove it stale; an active or malformed target
+lease fails closed.
 
 ```sh
 bun run client:launch -- \

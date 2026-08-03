@@ -54,8 +54,8 @@ await stageFreshClientLayout({
 let lock: string | undefined;
 let transitioned = false;
 try {
-  lock = await acquireSourceLossResetLock(root, run.manifestSha256);
-  await assertNoPreparedClientLeases(root, ["client-a", "client-b", "client-c"]);
+  lock = await acquireSourceLossResetLock(root, run.manifestSha256, [clientName]);
+  await assertNoPreparedClientLeases(root, [clientName]);
   await rename(clientRoot, retired);
   try {
     await rename(staging, clientRoot);
