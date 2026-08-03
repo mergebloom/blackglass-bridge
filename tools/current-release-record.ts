@@ -6,7 +6,7 @@ import {
   type ReleaseValidationRecord,
 } from "./release-validation";
 import { isSupportedSemver } from "./semver";
-import { compareCodeUnitStrings, stableJson } from "./stable-json";
+import { compareCodeUnitStrings, stableJson, stableJsonFile } from "./stable-json";
 import { loadCompatibilityBaseline } from "./release-compatibility";
 import { macOSCodeInventoriesEqual } from "./macos-code-inventory";
 
@@ -61,6 +61,9 @@ export async function readCurrentReleaseValidationRecords(
     throw new Error("Current release qualification record must end with a newline");
   }
   const value = parseJson(bytes, `Current release qualification record ${name}`);
+  if (bytes.toString("utf8") !== stableJsonFile(value)) {
+    throw new Error("Current release qualification record is not canonical JSON");
+  }
   assertReleaseValidationRecord(value);
   if (value.blackglassVersion !== version) {
     throw new Error("Current release qualification record has the wrong Blackglass version");

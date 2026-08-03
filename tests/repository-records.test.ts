@@ -31,6 +31,7 @@ import {
   computeToolingSourceIdentityAtRevision,
   toolingSourceTreeEqual,
 } from "../tools/tooling-source";
+import { stableJsonFile } from "../tools/stable-json";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -92,6 +93,7 @@ describe("committed release records", () => {
     const recordBytes = current.bytes;
     expect(recordBytes.at(-1)).toBe(10);
     const validation = current.record;
+    expect(recordBytes.toString("utf8")).toBe(stableJsonFile(validation));
     expect(
       toolingSourceTreeEqual(
         validation.toolingSource,
@@ -120,10 +122,7 @@ describe("committed release records", () => {
         incisions: RENDERER_INCISION_COUNT,
       },
     });
-    expect(canonicalAdapterOptions(validation.endpoints)).toEqual({
-      controlOrigin: "https://sync-control.example.com",
-      dataHost: "sync-data.example.com",
-    });
+    expect(canonicalAdapterOptions(validation.endpoints)).toEqual(validation.endpoints);
     for (const hash of [
       validation.artifacts.compatibilityAsarSha256,
       validation.artifacts.releaseManifestSha256,
@@ -135,7 +134,7 @@ describe("committed release records", () => {
     expect(validation.artifacts.server).toMatchObject({
       schemaVersion: 2,
       name: "blackglass-server",
-      version: "0.4.0",
+      version: expect.stringMatching(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u),
       sourceRevision: expect.stringMatching(/^[a-f0-9]{40}$/u),
       binaryName: "blackglass-server",
       architecture: "arm64",

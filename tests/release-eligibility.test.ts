@@ -64,6 +64,24 @@ describe("current release qualification selection", () => {
     }
   });
 
+  test("rejects noncanonical validation record bytes before semantic validation", async () => {
+    const root = await createRoot();
+    try {
+      await writeFile(
+        join(
+          root,
+          "docs/validation/blackglass-0.1.1-obsidian-1.12.7-qualification.json",
+        ),
+        "{ }\n",
+      );
+      await expect(
+        readCurrentReleaseValidationRecord(root, "optional"),
+      ).rejects.toThrow("Current release qualification record is not canonical JSON");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("routes tag publishing through the explicit eligibility command", async () => {
     const packageMetadata = JSON.parse(
       await readFile(join(repositoryRoot, "package.json"), "utf8"),
