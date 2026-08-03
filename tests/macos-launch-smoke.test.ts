@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   BLACKGLASS_BUNDLE_IDENTIFIER,
@@ -33,6 +34,17 @@ const officialAppPath = "/Applications/Obsidian.app";
 const launcherExecutablePath = join(appPath, "Contents/MacOS/blackglass-bridge");
 const controlOrigin = "https://blackglass.example.com";
 const chromiumHostResolverRules = "MAP blackglass.example.com 127.0.0.1:8443";
+
+test("failure cleanup waits for both the supervised launcher and official child", async () => {
+  const source = await readFile(
+    join(import.meta.dir, "../tools/smoke-macos-launch.ts"),
+    "utf8",
+  );
+  expect(source).toContain("...exactNewAppProcesses(appPath, baselineAppPids)");
+  expect(source).toContain("...exactNewAppProcesses(officialAppPath, baselineAppPids)");
+  expect(source).toContain("waitForProcessExit(supervisedProcesses, 5_000)");
+  expect(source).toContain("Supervised launcher did not exit");
+});
 const tlsSpkiSha256Base64 = `${"A".repeat(43)}=`;
 const launchHomePath = "/private/tmp/blackglass-launch-ABC123/h";
 const nativeHomePath = "/Users/example";

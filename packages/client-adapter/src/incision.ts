@@ -9,7 +9,7 @@ export interface ReviewedRange {
 }
 
 export type RendererReplacement =
-  | "control-origin"
+  | "control-host"
   | "data-host-guard"
   | "cli-socket"
   | "cli-runtime-home"

@@ -259,8 +259,8 @@ async function createFixture(
     unpackedJavaScriptReview: { status: "reviewed", reviewedPaths: [] },
     anchors,
     patchIncisions: [
-      incision("control-a", "app.js", "control-origin", 0),
-      incision("control-b", "starter.js", "control-origin", 1),
+      incision("control-a", "app.js", "control-host", 0),
+      incision("control-b", "starter.js", "control-host", 1),
       incision("data", "app.js", "data-host-guard", 2),
       incision("socket", "main.js", "cli-socket", 3),
       incision("runtime", "main.js", "cli-runtime-home", 4),

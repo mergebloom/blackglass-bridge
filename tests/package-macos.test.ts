@@ -206,9 +206,9 @@ function makeRendererArchive(): Buffer {
   const runtime = "hm.homedir()".padEnd(48, " ");
   const registration = 'let aa=pp.join(rr,"obsidian-cli");if(ff.existsSync(aa)){let cc="/usr/local/bin/obsidian";';
   return makeArchive({
-    "app.js": Buffer.from(`var dw=${control},mw=window.fetch;function gw(path){return mw(dw+path,{method:"POST"})}if(${data})throw Error();gw("/user/signin");new WebSocket(url);socket.send({op:"ping"});x.prototype.onMessage=function(e){var t=e.op;if("ready"===t)return};`),
+    "app.js": Buffer.from(`var dw="https://"+[${control}].join("."),mw=window.fetch;function gw(path){return mw(dw+path,{method:"POST"})}if(${data})throw Error();gw("/user/signin");new WebSocket(url);socket.send({op:"ping"});x.prototype.onMessage=function(e){var t=e.op;if("ready"===t)return};`),
     "main.js": Buffer.from(`module.exports=function(){const home=${runtime};const socket=".obsidian-cli.sock";${registration}}}`),
-    "starter.js": Buffer.from(`var sa=${control};gw("/user/signin");`),
+    "starter.js": Buffer.from(`var sa="https://"+[${control}].join(".");gw("/user/signin");`),
     "index.html": Buffer.from('<script src="app.js"></script>'),
     "package.json": Buffer.from('{"version":"1.12.7"}'),
   });
@@ -271,9 +271,9 @@ function sourceWrapperFixture(): { source: Buffer; incisions: WrapperIncision[] 
 function rendererPatchIncisions(sourceAsar: Buffer): RendererIncision[] {
   const archive = AsarArchive.fromBuffer(sourceAsar);
   const definitions = [
-    ["control", "app.js", "false".padEnd(64, " "), "control-origin"],
+    ["control", "app.js", "false".padEnd(64, " "), "control-host"],
     ["data", "app.js", "true".padEnd(64, " "), "data-host-guard"],
-    ["starter", "starter.js", "false".padEnd(64, " "), "control-origin"],
+    ["starter", "starter.js", "false".padEnd(64, " "), "control-host"],
     ["runtime", "main.js", "hm.homedir()".padEnd(48, " "), "cli-runtime-home"],
     ["socket", "main.js", ".obsidian-cli.sock", "cli-socket"],
     ["registration", "main.js", 'let aa=pp.join(rr,"obsidian-cli");if(ff.existsSync(aa)){let cc="/usr/local/bin/obsidian";', "cli-registration"],

@@ -1663,8 +1663,8 @@ function assertCompatibilityBaseline(value: unknown): asserts value is Compatibi
     anchorIds.add(anchor.id);
   }
   assertIncisions(value.patchIncisions, [
-    "control-origin",
-    "control-origin",
+    "control-host",
+    "control-host",
     "data-host-guard",
     "cli-socket",
     "cli-runtime-home",

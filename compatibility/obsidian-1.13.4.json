@@ -362,7 +362,7 @@
       "id": "control-origin-constructor",
       "length": 47,
       "offset": 1171184,
-      "replacement": "control-origin",
+      "replacement": "control-host",
       "sha256": "e0165af1599efaac82e21137d5199dcf60d1b58f5327de78e58fba4eec4c555e"
     },
     {
@@ -378,7 +378,7 @@
       "id": "starter-control-origin-constructor",
       "length": 47,
       "offset": 11390,
-      "replacement": "control-origin",
+      "replacement": "control-host",
       "sha256": "e0165af1599efaac82e21137d5199dcf60d1b58f5327de78e58fba4eec4c555e"
     },
     {

@@ -433,6 +433,16 @@ try {
         mainPid,
         terminationHelperPath,
       );
+      const supervisedProcesses = () => [
+        ...exactNewAppProcesses(appPath, baselineAppPids),
+        ...exactNewAppProcesses(officialAppPath, baselineAppPids),
+      ];
+      if (!await waitForProcessExit(supervisedProcesses, 5_000)) {
+        throw new Error(
+          "Supervised launcher did not exit after the official application terminated: " +
+            processSummary(supervisedProcesses()),
+        );
+      }
     }
   } catch (cleanupError) {
     cleanupErrors.push(
@@ -1542,7 +1552,7 @@ function processSummary(processes: ProcessRow[]): string {
     .join("; ");
 }
 
-async function waitForProcessExit(
+export async function waitForProcessExit(
   processes: () => ProcessRow[],
   timeoutMs: number,
 ): Promise<boolean> {

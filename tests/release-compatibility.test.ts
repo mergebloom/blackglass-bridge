@@ -605,8 +605,8 @@ function syntheticMacOSCodeInventory(): MacOSCodeInventory {
 
 function syntheticRendererIncisions(): RendererIncision[] {
   const replacements: RendererIncision["replacement"][] = [
-    "control-origin",
-    "control-origin",
+    "control-host",
+    "control-host",
     "data-host-guard",
     "cli-socket",
     "cli-runtime-home",

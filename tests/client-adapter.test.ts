@@ -15,27 +15,29 @@ const endpoints = {
 };
 
 test("applies only reviewed hash-and-offset renderer incisions", () => {
-  const source = Buffer.from(`prefix-${"c".repeat(64)}-middle-${"d".repeat(64)}-suffix`);
+  const source = Buffer.from(`prefix-"https://"+[${"c".repeat(64)}].join(".")-middle-${"d".repeat(64)}-suffix`);
   const controlOffset = source.indexOf(Buffer.from("c".repeat(64)));
   const dataOffset = source.indexOf(Buffer.from("d".repeat(64)));
   const incisions = [
-    reviewed("control", "app.js", source, controlOffset, 64, "control-origin"),
+    reviewed("control", "app.js", source, controlOffset, 64, "control-host"),
     reviewed("data", "app.js", source, dataOffset, 64, "data-host-guard"),
   ];
   const patched = patchRenderer(source, endpoints, incisions);
   expect(patched.length).toBe(source.length);
-  expect(patched.toString()).toContain('"https://sync-control.example.test"');
+  expect(new Function(`return ${patched.toString().slice(7, patched.toString().indexOf("-middle"))}`)())
+    .toBe(endpoints.controlOrigin);
   expect(patched.toString()).toContain('u.host!=="sync-data.example.test"');
   expect(source.toString()).not.toBe(patched.toString());
 });
 
 test("patches the starter with its independently reviewed range", () => {
-  const source = Buffer.from(`before-${"s".repeat(64)}-after`);
+  const source = Buffer.from(`before-"https://"+[${"s".repeat(64)}].join(".")-after`);
   const offset = source.indexOf(Buffer.from("s".repeat(64)));
   const patched = patchStarterRenderer(source, endpoints, [
-    reviewed("starter-control", "starter.js", source, offset, 64, "control-origin"),
+    reviewed("starter-control", "starter.js", source, offset, 64, "control-host"),
   ]);
-  expect(patched.toString()).toContain('"https://sync-control.example.test"');
+  expect(new Function(`return ${patched.toString().slice(7, patched.toString().indexOf("-after"))}`)())
+    .toBe(endpoints.controlOrigin);
   expect(patched.length).toBe(source.length);
 });
 
@@ -60,8 +62,8 @@ test("derives minified CLI bindings locally without storing an upstream excerpt"
 });
 
 test("builds and reopens an exact ASAR from reviewed incisions", () => {
-  const app = Buffer.from(`a${"x".repeat(64)}b${"y".repeat(64)}c`);
-  const starter = Buffer.from(`d${"z".repeat(64)}e`);
+  const app = Buffer.from(`a"https://"+[${"x".repeat(64)}].join(".")b${"y".repeat(64)}c`);
+  const starter = Buffer.from(`d"https://"+[${"z".repeat(64)}].join(".")e`);
   const runtime = "hm.homedir()".padEnd(48, " ");
   const socket = ".obsidian-cli.sock";
   const registration =
@@ -75,9 +77,9 @@ test("builds and reopens an exact ASAR from reviewed incisions", () => {
     "package.json": Buffer.from('{"version":"1.2.3"}'),
   });
   const incisions: RendererIncision[] = [
-    rangeFor("control", "app.js", app, "x".repeat(64), "control-origin"),
+    rangeFor("control", "app.js", app, "x".repeat(64), "control-host"),
     rangeFor("data", "app.js", app, "y".repeat(64), "data-host-guard"),
-    rangeFor("starter", "starter.js", starter, "z".repeat(64), "control-origin"),
+    rangeFor("starter", "starter.js", starter, "z".repeat(64), "control-host"),
     rangeFor("runtime", "main.js", main, runtime, "cli-runtime-home"),
     rangeFor("socket", "main.js", main, socket, "cli-socket"),
     rangeFor("registration", "main.js", main, registration, "cli-registration"),
@@ -85,7 +87,7 @@ test("builds and reopens an exact ASAR from reviewed incisions", () => {
   const generated = patchAsar(archive, endpoints, incisions);
   expect(generated.buffer.length).toBe(archive.length);
   expect(generated.report).toMatchObject({
-    patchFormatVersion: 9,
+    patchFormatVersion: 10,
     cliExecutableEnvironment: "BGCLI",
     incisionCount: 6,
     controlOrigin: endpoints.controlOrigin,
@@ -95,15 +97,24 @@ test("builds and reopens an exact ASAR from reviewed incisions", () => {
 });
 
 test("fails closed on changed, out-of-range, overlapping, or empty incision plans", () => {
-  const source = Buffer.from("x".repeat(128));
-  const valid = reviewed("one", "app.js", source, 2, 64, "control-origin");
+  const source = Buffer.from(`"https://"+[${"x".repeat(64)}].join(".")${"y".repeat(64)}`);
+  const controlOffset = source.indexOf(Buffer.from("x".repeat(64)));
+  const valid = reviewed("one", "app.js", source, controlOffset, 64, "control-host");
   expect(() => patchRenderer(source, endpoints, [{ ...valid, sha256: "0".repeat(64) }]))
     .toThrow("hash mismatch");
-  expect(() => patchRenderer(source, endpoints, [{ ...valid, offset: 99 }]))
+  expect(() => patchRenderer(source, endpoints, [{ ...valid, offset: source.length }]))
     .toThrow("Invalid");
-  expect(() => patchRenderer(source, endpoints, [valid, { ...valid, id: "two", offset: 3 }]))
+  const overlapping = reviewed("two", "app.js", source, controlOffset + 1, 63, "control-host");
+  expect(() => patchRenderer(source, endpoints, [valid, overlapping]))
     .toThrow("overlapping");
   expect(() => patchRenderer(source, endpoints, [])).toThrow("empty");
+});
+
+test("rejects a control-host range outside the reviewed HTTPS constructor", () => {
+  const source = Buffer.from("x".repeat(96));
+  const incision = reviewed("control", "app.js", source, 0, 96, "control-host");
+  expect(() => patchRenderer(source, endpoints, [incision]))
+    .toThrow("expected HTTPS constructor");
 });
 
 test("binds the generated data-host expression to its port", () => {
@@ -115,8 +126,15 @@ test("binds the generated data-host expression to its port", () => {
 });
 
 test("enforces canonical HTTPS control and renderer-compatible data endpoints", () => {
-  const source = Buffer.from("x".repeat(96));
-  const incision = reviewed("control", "app.js", source, 0, 96, "control-origin");
+  const source = Buffer.from(`"https://"+[${"x".repeat(96)}].join(".")`);
+  const incision = reviewed(
+    "control",
+    "app.js",
+    source,
+    source.indexOf(Buffer.from("x".repeat(96))),
+    96,
+    "control-host",
+  );
   for (const controlOrigin of [
     "https://sync.example.test",
     "http://127.0.0.1:3000",

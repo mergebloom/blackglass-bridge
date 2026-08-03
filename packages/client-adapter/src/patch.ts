@@ -12,7 +12,7 @@ export const BLACKGLASS_CLI_COMMAND_NAME = "blackglass";
 export const BLACKGLASS_CLI_COMMAND_PATH = "/usr/local/bin/blackglass";
 export const BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT = "BGCLI" as const;
 
-export const RENDERER_PATCH_FORMAT_VERSION = 9;
+export const RENDERER_PATCH_FORMAT_VERSION = 10;
 export const RENDERER_INCISION_COUNT = 6;
 
 export interface AdapterOptions {
@@ -190,6 +190,9 @@ function applyReviewedIncisions(
     if (sha256(original) !== incision.sha256) {
       throw new Error(`Reviewed incision hash mismatch: ${incision.id}`);
     }
+    if (incision.replacement === "control-host") {
+      assertControlHostContext(source, incision.offset, incision.length);
+    }
     const replacement = rendererReplacement(incision.replacement, original, incision.length, options);
     replacement.copy(output, incision.offset);
     previousEnd = incision.offset + incision.length;
@@ -205,9 +208,9 @@ function rendererReplacement(
   options: AdapterOptions | undefined,
 ): Buffer {
   let replacement: string;
-  if (kind === "control-origin") {
-    if (!options) throw new Error("Control-origin incision requires endpoint options");
-    replacement = JSON.stringify(options.controlOrigin);
+  if (kind === "control-host") {
+    if (!options) throw new Error("Control-host incision requires endpoint options");
+    replacement = JSON.stringify(new URL(options.controlOrigin).host);
   } else if (kind === "data-host-guard") {
     if (!options) throw new Error("Data-host incision requires endpoint options");
     replacement = `u.host!==${JSON.stringify(parseDataHost(options.dataHost).host)}`;
@@ -227,6 +230,14 @@ function rendererReplacement(
     throw new Error(`Unknown renderer incision replacement: ${kind satisfies never}`);
   }
   return Buffer.from(paddedSource(replacement, length, kind), "utf8");
+}
+
+function assertControlHostContext(source: Buffer, offset: number, length: number): void {
+  const prefix = source.subarray(Math.max(0, offset - 13), offset).toString("utf8");
+  const suffix = source.subarray(offset + length, offset + length + 12).toString("utf8");
+  if (!prefix.endsWith('"https://"+[') || !suffix.startsWith('].join(".")')) {
+    throw new Error("Reviewed control-host incision is not inside the expected HTTPS constructor");
+  }
 }
 
 export function canonicalAdapterOptions(options: AdapterOptions): AdapterOptions {
