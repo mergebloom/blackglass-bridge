@@ -68,6 +68,19 @@ describe("immutable release runner", () => {
     expect(source).toContain("tools/verify-release-dependencies.ts");
   });
 
+  test("keeps operator E2E state in the exact clean checkout", async () => {
+    const source = await readFile(resolve(root, "tools/run-release-candidate.ts"), "utf8");
+    expect(source).toContain("E2E state deliberately belongs to the operator checkout");
+    expect(source).toContain("const runRoot = await safeE2EOutputPath(clientRoot, runArgument)");
+    const prepareStage = source.slice(
+      source.indexOf('name: `client-${rendererVersion}-e2e-prepare`'),
+      source.indexOf('name: `client-${rendererVersion}-e2e-tls`'),
+    );
+    expect(prepareStage).toContain("cwd: clientRoot");
+    expect(prepareStage).not.toContain("immutableClientSource: true");
+    expect(source).toContain("await assertReleaseCandidateMatchesCheckouts");
+  });
+
   test("treats an old native binary as rebuildable cache state", async () => {
     const source = await readFile(
       resolve(root, "tools/doctor-release-candidate.ts"),

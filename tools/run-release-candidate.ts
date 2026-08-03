@@ -348,7 +348,11 @@ if (parsed.booleans.has("--prepare-client")) {
         "--reproducibility-evidence", reproducibility,
         "--scenario", scenarioId,
       ],
-      cwd: clientSourceRoot,
+      // E2E state deliberately belongs to the operator checkout's ignored
+      // .data tree. The candidate gate proves that checkout is still the exact
+      // clean source revision before and after this stage; using the detached
+      // worktree here would make prepare-e2e reject the operator-owned run path.
+      cwd: clientRoot,
       outputs: [
         join(runRoot, "run-manifest.json"),
         join(runRoot, "blackglass-release-manifest.json"),
@@ -356,7 +360,6 @@ if (parsed.booleans.has("--prepare-client")) {
         join(runRoot, "client-reproducibility.json"),
         join(runRoot, "credentials.json"),
       ],
-      immutableClientSource: true,
     },
     {
       name: `client-${rendererVersion}-e2e-tls`,
@@ -366,13 +369,12 @@ if (parsed.booleans.has("--prepare-client")) {
         runRoot,
       ),
       command: [Bun.which("bun") ?? "bun", "run", "tools/prepare-e2e-tls.ts", runRoot],
-      cwd: clientSourceRoot,
+      cwd: clientRoot,
       outputs: [
         join(runRoot, "tls-certificate.pem"),
         join(runRoot, "tls-private-key.pem"),
         join(runRoot, "tls-metadata.json"),
       ],
-      immutableClientSource: true,
     },
   );
 
