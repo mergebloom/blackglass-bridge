@@ -6,7 +6,7 @@ import {
   type ReleaseValidationRecord,
 } from "./release-validation";
 import { isSupportedSemver } from "./semver";
-import { compareCodeUnitStrings } from "./stable-json";
+import { compareCodeUnitStrings, stableJson } from "./stable-json";
 import { loadCompatibilityBaseline } from "./release-compatibility";
 import { macOSCodeInventoriesEqual } from "./macos-code-inventory";
 
@@ -80,8 +80,8 @@ export async function readCurrentReleaseValidationRecords(
     value.compatibilityBaseline.schemaVersion !== loadedBaseline.baseline.schemaVersion ||
     value.compatibilityBaseline.sha256 !== loadedBaseline.sha256 ||
     value.source.officialDmgSha256 !== loadedBaseline.baseline.officialDmgSha256 ||
-    JSON.stringify(value.source.appTree) !==
-      JSON.stringify(loadedBaseline.baseline.sourceAppTree) ||
+    stableJson(value.source.appTree) !==
+      stableJson(loadedBaseline.baseline.sourceAppTree) ||
     value.source.rendererAsarSha256 !== loadedBaseline.baseline.sourceAsarSha256 ||
     value.source.wrapperAsarSha256 !==
       loadedBaseline.baseline.sourceWrapperAsarSha256 ||

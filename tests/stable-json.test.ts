@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   compareCodeUnitStrings,
   stableJson,
+  stableJsonFile,
 } from "../tools/stable-json";
 
 describe("locale-independent stable JSON", () => {
@@ -26,5 +27,12 @@ describe("locale-independent stable JSON", () => {
 
   test("rejects values that JSON cannot encode", () => {
     expect(() => stableJson(undefined)).toThrow("JSON-serializable");
+  });
+
+  test("emits canonical JSON file bytes independent of insertion order", () => {
+    const first = stableJsonFile({ z: [{ b: 2, a: 1 }], a: true });
+    const second = stableJsonFile({ a: true, z: [{ a: 1, b: 2 }] });
+    expect(first).toBe('{"a":true,"z":[{"a":1,"b":2}]}\n');
+    expect(second).toBe(first);
   });
 });

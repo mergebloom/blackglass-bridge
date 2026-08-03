@@ -19,3 +19,7 @@ export function stableJson(value: unknown): string {
   }
   return encoded;
 }
+
+export function stableJsonFile(value: unknown): string {
+  return `${stableJson(value)}\n`;
+}

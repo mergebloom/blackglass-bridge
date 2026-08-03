@@ -23,6 +23,7 @@ import {
   releaseValidationRecordFileName,
   type ReleaseQualification,
 } from "./release-validation";
+import { stableJsonFile } from "./stable-json";
 
 const [rootArgument, outputArgument, ...extraArguments] = Bun.argv.slice(2);
 if (!rootArgument || !outputArgument || extraArguments.length !== 0) usage();
@@ -134,7 +135,7 @@ const record = buildReleaseValidationRecord({
   qualification,
   qualificationSha256: sha256(qualificationBytes),
 });
-await writeFile(output, `${JSON.stringify(record, null, 2)}\n`, {
+await writeFile(output, stableJsonFile(record), {
   flag: "wx",
   mode: 0o644,
 });
