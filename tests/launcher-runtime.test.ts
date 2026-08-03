@@ -8,12 +8,47 @@ import { packagedLauncherArguments } from "../tools/launcher-config";
 import { runtimeReceiptPathForClientIdentity } from "../tools/e2e-client";
 import {
   assertRuntimeProfile,
+  assertSafeRuntimePathLayout,
   assertSafeRuntimeArguments,
   acquireRuntimeLaunchLease,
   clearStaleRendererLeases,
   releaseRuntimeLaunchLease,
   unmanagedOfficialProcesses,
 } from "../tools/launcher-runtime";
+
+test("allows the canonical profile inside an isolated runtime home only", () => {
+  const base = {
+    bundlePath: "/build/Blackglass Bridge.app",
+    officialAppPath: "/private/runtime/Obsidian.app",
+    normalObsidianProfilePath: "/Users/example/Library/Application Support/Obsidian",
+    vaultPath: "/vaults/example",
+  };
+  expect(() => assertSafeRuntimePathLayout({
+    ...base,
+    blackglassHomePath: "/private/tmp/blackglass-launch/h",
+    profilePath: "/private/tmp/blackglass-launch/h/Library/Application Support/Blackglass Profile",
+  })).not.toThrow();
+  expect(() => assertSafeRuntimePathLayout({
+    ...base,
+    blackglassHomePath: "/runtime/separate",
+    profilePath: "/profiles/separate",
+  })).not.toThrow();
+  expect(() => assertSafeRuntimePathLayout({
+    ...base,
+    blackglassHomePath: "/profiles/blackglass/runtime",
+    profilePath: "/profiles/blackglass",
+  })).toThrow("runtime home must not be inside");
+  expect(() => assertSafeRuntimePathLayout({
+    ...base,
+    blackglassHomePath: "/profiles/blackglass",
+    profilePath: "/profiles/blackglass",
+  })).toThrow("must be distinct");
+  expect(() => assertSafeRuntimePathLayout({
+    ...base,
+    blackglassHomePath: "/vaults/example/runtime",
+    profilePath: "/profiles/separate",
+  })).toThrow("must not overlap");
+});
 
 test("extracts internal launcher bindings and rejects isolation overrides", () => {
   expect(packagedLauncherArguments([

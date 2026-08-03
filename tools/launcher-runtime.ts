@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createConnection } from "node:net";
 import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import { AsarArchive } from "./asar";
 import {
@@ -71,14 +71,14 @@ export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promi
   const receiptPath = options.receiptPath
     ? await canonicalOutputPath(options.receiptPath, "Bridge runtime receipt")
     : undefined;
-  assertNonOverlappingPaths([
-    { label: "Bridge bundle", path: bundlePath },
-    { label: "Official application", path: config.officialAppPath },
-    { label: "Blackglass profile", path: profile },
-    { label: "Blackglass runtime home", path: blackglassHome },
-    { label: "Normal Obsidian profile", path: join(homedir(), "Library/Application Support/Obsidian") },
-    ...(vault ? [{ label: "Vault", path: vault }] : []),
-  ]);
+  assertSafeRuntimePathLayout({
+    bundlePath,
+    officialAppPath: config.officialAppPath,
+    profilePath: profile,
+    blackglassHomePath: blackglassHome,
+    normalObsidianProfilePath: join(homedir(), "Library/Application Support/Obsidian"),
+    ...(vault ? { vaultPath: vault } : {}),
+  });
   await prepareProfileDirectory(profile);
   const launchLease = await acquireRuntimeLaunchLease(profile, bundlePath, profile);
   let primaryLaunchError: Error | undefined;
@@ -190,6 +190,52 @@ export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promi
         "Blackglass launch finalization failed",
       );
     }
+  }
+}
+
+export function assertSafeRuntimePathLayout(paths: {
+  bundlePath: string;
+  officialAppPath: string;
+  profilePath: string;
+  blackglassHomePath: string;
+  normalObsidianProfilePath: string;
+  vaultPath?: string;
+}): void {
+  const protectedPaths = [
+    { label: "Bridge bundle", path: paths.bundlePath },
+    { label: "Official application", path: paths.officialAppPath },
+    { label: "Normal Obsidian profile", path: paths.normalObsidianProfilePath },
+    ...(paths.vaultPath ? [{ label: "Vault", path: paths.vaultPath }] : []),
+  ];
+  assertNonOverlappingPaths(protectedPaths);
+  assertNonOverlappingPaths([
+    ...protectedPaths,
+    { label: "Blackglass profile", path: paths.profilePath },
+  ]);
+  assertNonOverlappingPaths([
+    ...protectedPaths,
+    { label: "Blackglass runtime home", path: paths.blackglassHomePath },
+  ]);
+
+  const profile = resolve(paths.profilePath);
+  const runtimeHome = resolve(paths.blackglassHomePath);
+  if (profile === runtimeHome) {
+    throw new Error("Blackglass profile and runtime home must be distinct");
+  }
+  const profileRelativeToHome = relative(runtimeHome, profile);
+  const profileInsideRuntimeHome =
+    profileRelativeToHome !== "" &&
+    profileRelativeToHome !== ".." &&
+    !profileRelativeToHome.startsWith(`..${sep}`) &&
+    !isAbsolute(profileRelativeToHome);
+  const runtimeRelativeToProfile = relative(profile, runtimeHome);
+  const runtimeInsideProfile =
+    runtimeRelativeToProfile !== "" &&
+    runtimeRelativeToProfile !== ".." &&
+    !runtimeRelativeToProfile.startsWith(`..${sep}`) &&
+    !isAbsolute(runtimeRelativeToProfile);
+  if (!profileInsideRuntimeHome && runtimeInsideProfile) {
+    throw new Error("Blackglass runtime home must not be inside the Blackglass profile");
   }
 }
 
