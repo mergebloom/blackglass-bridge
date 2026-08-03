@@ -300,10 +300,14 @@ export async function observeScenarioDatabase(
   const db = new Database(path, { readonly: true, strict: true });
   try {
     const users = db.query(`
-      SELECT users.id, users.status, COUNT(sessions.token_hash) AS sessions
+      SELECT users.id, users.status,
+        COUNT(CASE
+          WHEN sessions.revoked_at IS NULL AND sessions.expires_at > ?
+          THEN sessions.token_hash
+        END) AS sessions
       FROM users LEFT JOIN sessions ON sessions.user_id = users.id
       GROUP BY users.id, users.status ORDER BY users.id
-    `).all() as Array<{ id: number; status: string; sessions: number }>;
+    `).all(Date.now()) as Array<{ id: number; status: string; sessions: number }>;
     const rawVaults = db.query(`
       SELECT vaults.id, vaults.name, vaults.owner_user_id AS ownerUserId,
         CASE WHEN vaults.password IS NULL THEN 0 ELSE 1 END AS managedPasswordStored,
