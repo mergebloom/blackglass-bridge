@@ -20,7 +20,11 @@ import {
   parseReleaseCandidate,
   releaseCandidateSha256,
 } from "./release-candidate";
-import { releaseStageResumeDecision } from "./release-stage-resume";
+import {
+  releaseStageResumeDecision,
+  releaseUnboundOutputDecision,
+  type ReleaseStageOutputPresence,
+} from "./release-stage-resume";
 
 const PIPELINE_STATE_SCHEMA_VERSION = 3;
 
@@ -50,6 +54,7 @@ interface Stage {
   revalidateOnResume?: boolean;
   resumeKey?: string;
   immutableClientSource?: boolean;
+  rebuildsExistingOutputs?: boolean;
 }
 
 const [candidateArgument, ...flagArguments] = Bun.argv.slice(2);
@@ -175,6 +180,7 @@ stages.push({
   outputs: [join(serverRoot, "apps/server-rust/target/release/blackglass-server")],
   environment: { BLACKGLASS_TESTED_SOURCE_REVISION: candidate.server.revision },
   revalidateOnResume: true,
+  rebuildsExistingOutputs: true,
 });
 if (parsed.booleans.has("--linux")) {
   for (const target of ["linux-amd64", "linux-arm64"] as const) {
@@ -612,7 +618,7 @@ function runScopedStageKey(stage: string, root: string, runRoot: string): string
   return `${stage}:run-${digest}`;
 }
 
-async function outputsPresent(paths: string[]): Promise<"missing" | "partial" | "complete"> {
+async function outputsPresent(paths: string[]): Promise<ReleaseStageOutputPresence> {
   const present = await Promise.all(paths.map(pathExists));
   if (present.every(Boolean)) return "complete";
   if (present.every((value) => !value)) return "missing";
@@ -622,7 +628,10 @@ async function outputsPresent(paths: string[]): Promise<"missing" | "partial" | 
 async function assertNoUnboundOutputs(stage: Stage): Promise<void> {
   if (!stage.outputs) return;
   const present = await outputsPresent(stage.outputs);
-  if (present !== "missing") {
+  if (releaseUnboundOutputDecision({
+    presence: present,
+    rebuildsExistingOutputs: stage.rebuildsExistingOutputs === true,
+  }) === "reject") {
     throw new Error(
       `Stage ${stage.name} has ${present} outputs without an exact completed-stage receipt; ` +
         "preserve them for diagnosis and use a new candidate run",

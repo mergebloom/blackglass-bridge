@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { releaseStageResumeDecision } from "../tools/release-stage-resume";
+import {
+  releaseStageResumeDecision,
+  releaseUnboundOutputDecision,
+} from "../tools/release-stage-resume";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -34,6 +37,25 @@ describe("immutable release runner", () => {
       .toBe("resume");
     expect(releaseStageResumeDecision({ hasReceipt: false, revalidateOnResume: true }))
       .toBe("run-new");
+  });
+
+  test("permits only a complete explicitly rebuildable unreceipted output", () => {
+    expect(releaseUnboundOutputDecision({
+      presence: "missing",
+      rebuildsExistingOutputs: false,
+    })).toBe("run");
+    expect(releaseUnboundOutputDecision({
+      presence: "complete",
+      rebuildsExistingOutputs: true,
+    })).toBe("run");
+    expect(releaseUnboundOutputDecision({
+      presence: "complete",
+      rebuildsExistingOutputs: false,
+    })).toBe("reject");
+    expect(releaseUnboundOutputDecision({
+      presence: "partial",
+      rebuildsExistingOutputs: true,
+    })).toBe("reject");
   });
 
   test("prepares two independent packages and reproducibility evidence", async () => {
@@ -96,6 +118,15 @@ describe("immutable release runner", () => {
     expect(source).not.toContain(
       "Existing native server binary does not match the release candidate",
     );
+    const runner = await readFile(
+      resolve(root, "tools/run-release-candidate.ts"),
+      "utf8",
+    );
+    const nativeStage = runner.slice(
+      runner.indexOf('name: "server-native-release"'),
+      runner.indexOf('if (parsed.booleans.has("--linux"))'),
+    );
+    expect(nativeStage).toContain("rebuildsExistingOutputs: true");
   });
 
   test("finds generated apps even when LaunchServices omits them", async () => {
