@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { chmod, lstat, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +16,53 @@ import {
   releaseRuntimeLaunchLease,
   unmanagedOfficialProcesses,
 } from "../tools/launcher-runtime";
+import { superviseTerminationSignals } from "../tools/termination-signal-supervisor";
+
+test("forwards termination while preserving the parent cleanup path", async () => {
+  const signals = new EventEmitter();
+  const forwarded: string[] = [];
+  const child = {
+    exitCode: null as number | null,
+    kill(signal: "SIGINT" | "SIGTERM" | "SIGKILL") {
+      forwarded.push(signal);
+    },
+  };
+  const supervisor = superviseTerminationSignals(child, {
+    signalSource: signals,
+    escalationDelayMs: 5,
+  });
+
+  signals.emit("SIGINT");
+  signals.emit("SIGTERM");
+  expect(forwarded).toEqual(["SIGINT"]);
+  await Bun.sleep(10);
+  expect(forwarded).toEqual(["SIGINT", "SIGKILL"]);
+
+  supervisor.dispose();
+  signals.emit("SIGINT");
+  expect(forwarded).toEqual(["SIGINT", "SIGKILL"]);
+});
+
+test("cancels termination escalation after a clean child exit", async () => {
+  const signals = new EventEmitter();
+  const forwarded: string[] = [];
+  const child = {
+    exitCode: null as number | null,
+    kill(signal: "SIGINT" | "SIGTERM" | "SIGKILL") {
+      forwarded.push(signal);
+    },
+  };
+  const supervisor = superviseTerminationSignals(child, {
+    signalSource: signals,
+    escalationDelayMs: 5,
+  });
+
+  signals.emit("SIGTERM");
+  child.exitCode = 0;
+  await Bun.sleep(10);
+  expect(forwarded).toEqual(["SIGTERM"]);
+  supervisor.dispose();
+});
 
 test("allows the canonical profile inside an isolated runtime home only", () => {
   const base = {

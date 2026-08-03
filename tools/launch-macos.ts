@@ -53,6 +53,7 @@ import {
   verifyPackagedOfficialRuntime,
 } from "./launcher-runtime";
 import { BRIDGE_EXECUTABLE_NAME } from "./launcher-config";
+import { superviseTerminationSignals } from "./termination-signal-supervisor";
 
 const [asarArgument, profileArgument, vaultArgument, ...flagArguments] = Bun.argv.slice(2);
 if (!asarArgument || !profileArgument || !vaultArgument) usage();
@@ -175,6 +176,7 @@ if (!e2eRequested && !blackglassHomeArgument) {
 }
 
 let launchLeasePath: string | undefined;
+let terminationSignalSupervisor: ReturnType<typeof superviseTerminationSignals> | undefined;
 try {
 let targetAsar = join(profile, launchConfig.adapterProfileFileName);
 let launchHome = profile;
@@ -410,6 +412,7 @@ try {
   }
   throw error;
 }
+terminationSignalSupervisor = superviseTerminationSignals(child);
 if (launchBinding && debugPort) {
   if (!appArtifact) throw new Error("Prepared E2E app identity is unavailable");
   const publicArtifact = publicMacOSArtifact(appArtifact);
@@ -545,6 +548,7 @@ if (shortHomeRoot) {
 }
 process.exitCode = exitCode;
 } finally {
+  terminationSignalSupervisor?.dispose();
   if (launchLeasePath) await releasePreparedClientLease(launchLeasePath);
 }
 
