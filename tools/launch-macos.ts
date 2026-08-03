@@ -53,6 +53,7 @@ import {
   verifyPackagedOfficialRuntime,
 } from "./launcher-runtime";
 import { BRIDGE_EXECUTABLE_NAME } from "./launcher-config";
+import { removeProfileSingletonArtifacts } from "./profile-singletons";
 import { superviseTerminationSignals } from "./termination-signal-supervisor";
 
 const [asarArgument, profileArgument, vaultArgument, ...flagArguments] = Bun.argv.slice(2);
@@ -533,6 +534,7 @@ if (shortHomeRoot) {
   if (!await waitForClientProcessesExit(runtimeApp, profile, 5_000)) {
     throw new Error("Client helpers survived after the launched main process exited");
   }
+  await removeProfileSingletonArtifacts(profile);
   await removeShortBlackglassHome(
     shortHomeRoot,
     launchHome,
@@ -542,6 +544,7 @@ if (shortHomeRoot) {
   if (!await waitForClientProcessesExit(runtimeApp, profile, 5_000)) {
     throw new Error("Client helpers survived after the launched main process exited");
   }
+  await removeProfileSingletonArtifacts(profile);
   if (await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-c.sock"))) {
     throw new Error("Client retained its dedicated CLI socket after shutdown");
   }
@@ -760,6 +763,7 @@ async function rethrowAfterFailedLaunch(
         throw new Error("Failed client launch left scoped app processes running");
       }
     }
+    await removeProfileSingletonArtifacts(profile);
   } catch (error) {
     cleanupErrors.push(asError(error));
   }

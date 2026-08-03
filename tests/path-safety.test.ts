@@ -9,6 +9,7 @@ import {
   pathExists,
 } from "../tools/path-safety";
 import { computeTreeIdentity } from "../tools/tree-identity";
+import { removeProfileSingletonArtifacts } from "../tools/profile-singletons";
 
 describe("filesystem safety", () => {
   test("computes a deterministic content, mode, and symlink tree identity", async () => {
@@ -30,6 +31,38 @@ describe("filesystem safety", () => {
     const root = await mkdtemp(join(tmpdir(), "blackglass-tree-escape-"));
     await symlink("../outside", join(root, "escape"));
     await expect(computeTreeIdentity(root)).rejects.toThrow();
+  });
+
+  test("removes only Chromium profile singleton symlinks after shutdown", async () => {
+    const root = await mkdtemp(join(tmpdir(), "blackglass-profile-singletons-"));
+    try {
+      await symlink("stale-cookie", join(root, "SingletonCookie"));
+      await symlink("host-123", join(root, "SingletonLock"));
+      await symlink("/tmp/stale-socket", join(root, "SingletonSocket"));
+      await symlink("keep-me", join(root, "unrelated"));
+
+      await removeProfileSingletonArtifacts(root);
+
+      expect(await pathExists(join(root, "SingletonCookie"))).toBe(false);
+      expect(await pathExists(join(root, "SingletonLock"))).toBe(false);
+      expect(await pathExists(join(root, "SingletonSocket"))).toBe(false);
+      expect(await pathExists(join(root, "unrelated"))).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses to remove a non-symlink profile singleton artifact", async () => {
+    const root = await mkdtemp(join(tmpdir(), "blackglass-profile-singleton-file-"));
+    try {
+      await writeFile(join(root, "SingletonLock"), "unexpected");
+      await expect(removeProfileSingletonArtifacts(root)).rejects.toThrow(
+        "Refusing to remove a non-symlink profile singleton artifact",
+      );
+      expect(await pathExists(join(root, "SingletonLock"))).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("canonicalizes safe inputs and rejects overlapping outputs", async () => {
