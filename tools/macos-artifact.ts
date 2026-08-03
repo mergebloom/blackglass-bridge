@@ -1,267 +1,209 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { inspectPatchedMacOSWrapperAsar } from "../packages/client-adapter/src/wrapper";
-import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
-import { inspectPatchedMainProcess } from "../packages/client-adapter/src/patch";
-import { AsarArchive, asarHeaderSha256 } from "./asar";
+import { inspectMacOSCodeInventory, type MacOSCodeInventory } from "./macos-code-inventory";
+import { inspectMacOSRootMetadata, type MacOSRootMetadata } from "./macos-root-metadata";
 import {
-  BLACKGLASS_CLI_SOCKET_NAME,
-  CLI_BINARY_INCISION_COUNT,
-  inspectPatchedCliBinary,
-} from "./cli-binary";
-import {
-  inspectPackagedMacOSCodeSigning,
-  type MacOSCodeSigningEvidence,
-} from "./macos-code-signing";
-import {
-  inspectMacOSCodeInventory,
-  type MacOSCodeInventory,
-} from "./macos-code-inventory";
-import {
-  inspectMacOSRootMetadata,
-  type MacOSRootMetadata,
-} from "./macos-root-metadata";
-import { computeTreeIdentity, type TreeIdentity } from "./tree-identity";
-import { isSupportedStableSemver } from "./semver";
+  assertBridgeLaunchConfig,
+  BRIDGE_BUNDLE_IDENTIFIER,
+  BRIDGE_BUNDLE_NAME,
+  BRIDGE_EXECUTABLE_NAME,
+  BRIDGE_PROFILE_DIRECTORY,
+  type BridgeLaunchConfig,
+} from "./launcher-config";
 import { MACOS_PACKAGING_EXECUTABLES } from "./packaging-toolchain";
+import { computeTreeIdentity, type TreeIdentity } from "./tree-identity";
+import { BLACKGLASS_CLI_SOCKET_NAME, patchCliBinary } from "./cli-binary";
 
-export const ELECTRON_HELPER_VARIANTS = [
-  { nameSuffix: "", identifierSuffix: "" },
-  { nameSuffix: " (GPU)", identifierSuffix: ".GPU" },
-  { nameSuffix: " (Plugin)", identifierSuffix: ".Plugin" },
-  { nameSuffix: " (Renderer)", identifierSuffix: ".Renderer" },
-] as const;
+export interface MacOSLauncherSigningEvidence {
+  signature: "ad-hoc";
+  strictVerification: true;
+  allArchitecturesVerified: true;
+  bundleIdentifier: typeof BRIDGE_BUNDLE_IDENTIFIER;
+  executableIdentifier: typeof BRIDGE_BUNDLE_IDENTIFIER;
+  executableArchitectures: ["arm64"];
+}
 
 export interface MacOSArtifact {
-  schemaVersion: 8;
+  schemaVersion: 9;
   appPath: string;
-  appBundleName: "Blackglass.app";
-  bundleIdentifier: "com.blackglass.app";
-  bundleName: "Obsidian";
-  displayName: "Blackglass";
+  appBundleName: typeof BRIDGE_BUNDLE_NAME;
+  bundleIdentifier: typeof BRIDGE_BUNDLE_IDENTIFIER;
+  bundleName: "Blackglass Bridge";
+  displayName: "Blackglass Bridge";
+  blackglassVersion: string;
+  rendererVersion: string;
   version: string;
-  executableName: "Obsidian";
+  executableName: typeof BRIDGE_EXECUTABLE_NAME;
   infoPlistSha256: string;
   executableSha256: string;
-  cliExecutableName: "obsidian-cli";
+  cliExecutableName: "blackglass-cli";
   cliExecutableSha256: string;
   cliSocketName: typeof BLACKGLASS_CLI_SOCKET_NAME;
-  cliSocketOccurrences: typeof CLI_BINARY_INCISION_COUNT;
   embeddedAsarSha256: string;
-  rendererRuntimeHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
-  rendererCliRuntimeRootValidated: true;
-  embeddedWrapperAsarSha256: string;
-  embeddedWrapperHeaderSha256: string;
+  launchConfigSha256: string;
+  officialAppTreeSha256: string;
+  officialCodeInventorySha256: string;
+  officialExecutableName: "Obsidian";
+  officialExecutableSha256: string;
   codeDirectoryHash: string;
   applicationTreeSha256: string;
   applicationTreeIdentity: TreeIdentity;
-  helperBundleIdentifiers: string[];
-  codeSigning: MacOSCodeSigningEvidence;
+  codeSigning: MacOSLauncherSigningEvidence;
   codeInventory: MacOSCodeInventory;
   rootMetadata: MacOSRootMetadata;
-  profileDirectory: "Blackglass";
+  profileDirectory: typeof BRIDGE_PROFILE_DIRECTORY;
   profileMode: 448;
-  profilePathCanonicalAtSetup: true;
-  explicitUserDataDirHonored: true;
-  profileHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
-  dedicatedHomeValidated: true;
+  canonicalProfileRequired: true;
+  explicitUserDataDir: true;
+  explicitUserDataDirRequired: true;
+  nativeHomePreserved: true;
   nativeHomeFallbackPreserved: true;
-  upstreamUpdatesDisabled: true;
-  embeddedRendererOnly: true;
+  blackglassHomeEnvironment: "BLACKGLASS_HOME";
+  profileHomeEnvironment: "BLACKGLASS_HOME";
+  dedicatedRuntimeHomeRequired: true;
+  updateDisableSettingRequired: true;
+  exactOfficialAppVerifiedAtEveryLaunch: true;
+  officialAppUnmodified: true;
+  officialChildSupervisionRequired: true;
   registeredUrlSchemes: [];
   upstreamICloudContainerRegistered: false;
 }
 
 export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSArtifact> {
   const appPath = resolve(appArgument);
-  if (
-    basename(appPath) !== "Blackglass.app" ||
-    !(await lstat(appPath)).isDirectory()
-  ) {
-    throw new Error(`macOS artifact is not an app bundle: ${appPath}`);
+  if (basename(appPath) !== BRIDGE_BUNDLE_NAME || !(await lstat(appPath)).isDirectory()) {
+    throw new Error(`macOS launcher is not ${BRIDGE_BUNDLE_NAME}: ${appPath}`);
   }
   const infoPlist = join(appPath, "Contents/Info.plist");
-  const bundleIdentifier = plistString(infoPlist, "CFBundleIdentifier");
-  const bundleName = plistString(infoPlist, "CFBundleName");
-  const displayName = plistString(infoPlist, "CFBundleDisplayName");
   if (
-    bundleIdentifier !== "com.blackglass.app" ||
-    bundleName !== "Obsidian" ||
-    displayName !== "Blackglass"
+    plistString(infoPlist, "CFBundleIdentifier") !== BRIDGE_BUNDLE_IDENTIFIER ||
+    plistString(infoPlist, "CFBundleName") !== "Blackglass Bridge" ||
+    plistString(infoPlist, "CFBundleDisplayName") !== "Blackglass Bridge" ||
+    plistString(infoPlist, "CFBundleExecutable") !== BRIDGE_EXECUTABLE_NAME
+  ) {
+    throw new Error("Unexpected Blackglass Bridge application identity");
+  }
+  if (hasPlistKey(infoPlist, "CFBundleURLTypes") || hasPlistKey(infoPlist, "NSUbiquitousContainers")) {
+    throw new Error("Blackglass Bridge must not claim upstream URL or iCloud identities");
+  }
+  run([MACOS_PACKAGING_EXECUTABLES.codesign, "--verify", "--deep", "--strict", "--all-architectures", appPath]);
+  const executable = join(appPath, "Contents/MacOS", BRIDGE_EXECUTABLE_NAME);
+  const architectures = runText([MACOS_PACKAGING_EXECUTABLES.lipo, "-archs", executable]).split(/\s+/u);
+  if (architectures.length !== 1 || architectures[0] !== "arm64") {
+    throw new Error("Blackglass Bridge launcher must contain exactly one arm64 executable");
+  }
+  const executableSignature = signatureDetails(executable);
+  const appSignature = signatureDetails(appPath);
+  if (
+    executableSignature.identifier !== BRIDGE_BUNDLE_IDENTIFIER ||
+    appSignature.identifier !== BRIDGE_BUNDLE_IDENTIFIER ||
+    !executableSignature.adHoc || !appSignature.adHoc
   ) {
     throw new Error(
-      `Unexpected Blackglass identity: ${bundleIdentifier}, ${bundleName}, ${displayName}`,
+      `Blackglass Bridge launcher has an unexpected code signature: executable=${executableSignature.identifier}/${executableSignature.adHoc}, app=${appSignature.identifier}/${appSignature.adHoc}`,
     );
   }
-  if (hasPlistKey(infoPlist, "CFBundleURLTypes")) {
-    throw new Error("Blackglass must not register an upstream URL scheme");
+  const configBytes = await readFile(join(appPath, "Contents/Resources/bridge-launch.json"));
+  const config = JSON.parse(configBytes.toString("utf8")) as unknown;
+  assertBridgeLaunchConfig(config);
+  if (
+    config.blackglassVersion !== plistString(infoPlist, "CFBundleShortVersionString") ||
+    config.rendererVersion !== plistString(infoPlist, "BlackglassRendererVersion")
+  ) {
+    throw new Error("Blackglass Bridge plist and launch contract versions differ");
   }
-  if (hasPlistKey(infoPlist, "NSUbiquitousContainers")) {
-    throw new Error("Blackglass must not register an upstream iCloud container");
-  }
-  run([
-    MACOS_PACKAGING_EXECUTABLES.codesign,
-    "--verify",
-    "--deep",
-    "--strict",
-    appPath,
-  ]);
-  const codeInventory = await inspectMacOSCodeInventory(
-    appPath,
-    "strict-all-architectures",
+  const adapterSha256 = await sha256File(join(appPath, "Contents/Resources", config.adapterFileName));
+  if (adapterSha256 !== config.adapterSha256) throw new Error("Embedded adapter does not match launch contract");
+  const generatedCli = patchCliBinary(
+    await readFile(join(config.officialAppPath, "Contents/MacOS/obsidian-cli")),
   );
-  const codeSigning = inspectPackagedMacOSCodeSigning(appPath, codeInventory);
+  const codeInventory = await inspectMacOSCodeInventory(appPath, "strict-all-architectures");
   const rootMetadata = await inspectMacOSRootMetadata(appPath);
-  const signatureDetails = runText(
-    [MACOS_PACKAGING_EXECUTABLES.codesign, "-d", "--verbose=4", appPath],
-    true,
-  );
-  const codeDirectoryHash = /^CDHash=(\S+)$/m.exec(signatureDetails)?.[1];
-  if (!codeDirectoryHash) throw new Error("Packaged app signature has no CDHash");
-
-  const executableName = plistString(infoPlist, "CFBundleExecutable");
-  if (executableName !== "Obsidian") {
-    throw new Error(`Unexpected Blackglass runtime executable: ${executableName}`);
-  }
-  const version = plistString(infoPlist, "CFBundleShortVersionString");
-  if (!isSupportedStableSemver(version)) {
-    throw new Error(`Unexpected Blackglass renderer version: ${version}`);
-  }
-  const helperBundleIdentifiers: string[] = [];
-  for (const helper of ELECTRON_HELPER_VARIANTS) {
-    const helperName = `Obsidian Helper${helper.nameSuffix}`;
-    const helperPlist = join(
-      appPath,
-      "Contents/Frameworks",
-      `${helperName}.app/Contents/Info.plist`,
-    );
-    const helperIdentifier = `md.obsidian.helper${helper.identifierSuffix}`;
-    if (plistString(helperPlist, "CFBundleIdentifier") !== helperIdentifier) {
-      throw new Error(`Unexpected Blackglass helper identifier: ${helperName}`);
-    }
-    if (plistString(helperPlist, "CFBundleDisplayName") !== helperName) {
-      throw new Error(`Unexpected Blackglass helper display name: ${helperName}`);
-    }
-    if (plistString(helperPlist, "CFBundleExecutable") !== helperName) {
-      throw new Error(`Unexpected Blackglass helper executable: ${helperName}`);
-    }
-    helperBundleIdentifiers.push(helperIdentifier);
-  }
-  const wrapperAsar = join(appPath, "Contents/Resources/app.asar");
-  const wrapperBytes = await readFile(wrapperAsar);
-  const wrapperSafety = inspectPatchedMacOSWrapperAsar(wrapperBytes);
-  const embeddedWrapperAsarSha256 = sha256(wrapperBytes);
-  const embeddedWrapperHeaderSha256 = asarHeaderSha256(wrapperBytes);
-  if (electronAsarIntegrityHash(infoPlist) !== embeddedWrapperHeaderSha256) {
-    throw new Error("Embedded Electron wrapper does not match Info.plist integrity metadata");
-  }
-  const cliExecutableName = "obsidian-cli";
-  const cliExecutable = join(appPath, "Contents/MacOS", cliExecutableName);
-  const cliSafety = inspectPatchedCliBinary(await readFile(cliExecutable));
-  const rendererAsar = await readFile(
-    join(appPath, "Contents/Resources/obsidian.asar"),
-  );
-  const rendererMainSafety = inspectPatchedMainProcess(
-    AsarArchive.fromBuffer(rendererAsar).read("main.js"),
-  );
   const applicationTreeIdentity = await computeTreeIdentity(appPath);
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     appPath,
-    appBundleName: "Blackglass.app",
-    bundleIdentifier: "com.blackglass.app",
-    bundleName: "Obsidian",
-    displayName: "Blackglass",
-    version,
-    executableName: "Obsidian",
+    appBundleName: BRIDGE_BUNDLE_NAME,
+    bundleIdentifier: BRIDGE_BUNDLE_IDENTIFIER,
+    bundleName: "Blackglass Bridge",
+    displayName: "Blackglass Bridge",
+    blackglassVersion: config.blackglassVersion,
+    rendererVersion: config.rendererVersion,
+    version: config.rendererVersion,
+    executableName: BRIDGE_EXECUTABLE_NAME,
     infoPlistSha256: await sha256File(infoPlist),
-    executableSha256: await sha256File(join(appPath, "Contents/MacOS", executableName)),
-    cliExecutableName,
-    cliExecutableSha256: cliSafety.sha256,
-    cliSocketName: cliSafety.socketName,
-    cliSocketOccurrences: cliSafety.socketOccurrences,
-    embeddedAsarSha256: sha256(rendererAsar),
-    rendererRuntimeHomeEnvironment: rendererMainSafety.runtimeHomeEnvironment,
-    rendererCliRuntimeRootValidated: rendererMainSafety.runtimeRootValidated,
-    embeddedWrapperAsarSha256,
-    embeddedWrapperHeaderSha256,
-    codeDirectoryHash,
+    executableSha256: await sha256File(executable),
+    cliExecutableName: "blackglass-cli",
+    cliExecutableSha256: generatedCli.report.patchedSha256,
+    cliSocketName: BLACKGLASS_CLI_SOCKET_NAME,
+    embeddedAsarSha256: adapterSha256,
+    launchConfigSha256: sha256(configBytes),
+    officialAppTreeSha256: config.officialAppTree.sha256,
+    officialCodeInventorySha256: config.officialCodeInventory.sha256,
+    officialExecutableName: config.officialExecutableName,
+    officialExecutableSha256: await sha256File(
+      join(config.officialAppPath, "Contents/MacOS", config.officialExecutableName),
+    ),
+    codeDirectoryHash: appSignature.cdHash,
     applicationTreeSha256: applicationTreeIdentity.sha256,
     applicationTreeIdentity,
-    helperBundleIdentifiers,
-    codeSigning,
+    codeSigning: {
+      signature: "ad-hoc",
+      strictVerification: true,
+      allArchitecturesVerified: true,
+      bundleIdentifier: BRIDGE_BUNDLE_IDENTIFIER,
+      executableIdentifier: BRIDGE_BUNDLE_IDENTIFIER,
+      executableArchitectures: ["arm64"],
+    },
     codeInventory,
     rootMetadata,
-    profileDirectory: wrapperSafety.profileDirectory,
-    profileMode: wrapperSafety.profileMode,
-    profilePathCanonicalAtSetup: wrapperSafety.profilePathCanonicalAtSetup,
-    explicitUserDataDirHonored: wrapperSafety.explicitUserDataDirHonored,
-    profileHomeEnvironment: wrapperSafety.profileHomeEnvironment,
-    dedicatedHomeValidated: wrapperSafety.dedicatedHomeValidated,
-    nativeHomeFallbackPreserved: wrapperSafety.nativeHomeFallbackPreserved,
-    upstreamUpdatesDisabled: wrapperSafety.upstreamUpdatesDisabled,
-    embeddedRendererOnly: wrapperSafety.embeddedRendererOnly,
+    profileDirectory: config.profileDirectory,
+    profileMode: config.profileMode,
+    canonicalProfileRequired: true,
+    explicitUserDataDir: true,
+    explicitUserDataDirRequired: true,
+    nativeHomePreserved: true,
+    nativeHomeFallbackPreserved: true,
+    blackglassHomeEnvironment: "BLACKGLASS_HOME",
+    profileHomeEnvironment: "BLACKGLASS_HOME",
+    dedicatedRuntimeHomeRequired: true,
+    updateDisableSettingRequired: config.updateDisabled,
+    exactOfficialAppVerifiedAtEveryLaunch: true,
+    officialAppUnmodified: true,
+    officialChildSupervisionRequired: true,
     registeredUrlSchemes: [],
     upstreamICloudContainerRegistered: false,
   };
 }
 
-export function publicMacOSArtifact(
-  artifact: MacOSArtifact,
-): Omit<MacOSArtifact, "appPath"> {
-  const { appPath: _appPath, ...published } = artifact;
-  return published;
+export function publicMacOSArtifact(artifact: MacOSArtifact): Omit<MacOSArtifact, "appPath"> {
+  const { appPath: _path, ...result } = artifact;
+  return result;
 }
 
-async function sha256File(path: string): Promise<string> {
-  const bytes = Buffer.from(await Bun.file(path).arrayBuffer());
-  return createHash("sha256").update(bytes).digest("hex");
+function signatureDetails(path: string): { identifier: string; cdHash: string; adHoc: boolean } {
+  const details = runText([MACOS_PACKAGING_EXECUTABLES.codesign, "-d", "--verbose=4", path], true);
+  const identifier = /^Identifier=(.+)$/mu.exec(details)?.[1];
+  const cdHash = /^CDHash=([a-f0-9]+)$/mu.exec(details)?.[1];
+  if (!identifier || !cdHash) throw new Error("Incomplete launcher code-signing identity");
+  return { identifier, cdHash, adHoc: /^Signature=adhoc$/mu.test(details) };
 }
 
-function sha256(value: Uint8Array): string {
-  return createHash("sha256").update(value).digest("hex");
+function plistString(path: string, key: string): string {
+  return runText([MACOS_PACKAGING_EXECUTABLES.plutil, "-extract", key, "raw", "-o", "-", path]);
 }
-
-function plistString(infoPlist: string, key: string): string {
-  return runText([
-    MACOS_PACKAGING_EXECUTABLES.plutil,
-    "-extract",
-    key,
-    "raw",
-    "-o",
-    "-",
-    infoPlist,
-  ]);
+function hasPlistKey(path: string, key: string): boolean {
+  return Bun.spawnSync([MACOS_PACKAGING_EXECUTABLES.plutil, "-type", key, path], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
 }
-
-function hasPlistKey(infoPlist: string, key: string): boolean {
-  return Bun.spawnSync([MACOS_PACKAGING_EXECUTABLES.plutil, "-type", key, infoPlist], {
-    stdout: "ignore",
-    stderr: "ignore",
-  }).exitCode === 0;
+function run(args: string[]): void {
+  const result = Bun.spawnSync(args, { stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString("utf8").trim());
 }
-
-function electronAsarIntegrityHash(infoPlist: string): string {
-  return runText([
-    MACOS_PACKAGING_EXECUTABLES.PlistBuddy,
-    "-c",
-    "Print :ElectronAsarIntegrity:Resources/app.asar:hash",
-    infoPlist,
-  ]);
+function runText(args: string[], stderr = false): string {
+  const result = Bun.spawnSync(args, { stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString("utf8").trim());
+  return (stderr ? result.stderr : result.stdout).toString("utf8").trim();
 }
-
-function run(arguments_: string[]): void {
-  const result = Bun.spawnSync(arguments_, { stdout: "pipe", stderr: "pipe" });
-  if (result.exitCode !== 0) {
-    throw new Error(Buffer.from(result.stderr).toString("utf8").trim());
-  }
-}
-
-function runText(arguments_: string[], stderr = false): string {
-  const result = Bun.spawnSync(arguments_, { stdout: "pipe", stderr: "pipe" });
-  if (result.exitCode !== 0) {
-    throw new Error(Buffer.from(result.stderr).toString("utf8").trim());
-  }
-  return Buffer.from(stderr ? result.stderr : result.stdout).toString("utf8").trim();
-}
+async function sha256File(path: string): Promise<string> { return sha256(await readFile(path)); }
+function sha256(value: Uint8Array): string { return createHash("sha256").update(value).digest("hex"); }

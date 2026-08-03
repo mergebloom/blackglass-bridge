@@ -1,104 +1,37 @@
 # Blackglass architecture
 
-## Responsibility
+Blackglass Bridge is a compatibility boundary, not a reimplementation or
+distribution of the Obsidian desktop application. Its public release contains a
+standalone open-source launcher and reviewed compatibility baselines. A user
+supplies an official DMG or application; the Bridge verifies its complete
+identity, creates a private unmodified runtime copy, generates a narrowly
+adapted renderer locally, and packages only the launcher plus that local
+renderer.
 
-Blackglass owns the desktop compatibility boundary:
+At launch the Bridge verifies the official runtime tree and code inventory,
+requires exclusive use of Obsidian's runtime identity, installs exactly one
+hash-bound renderer alias into a mode-`0700` Blackglass profile, disables
+renderer updates, generates a profile-local Blackglass CLI, removes only stale
+Unix-socket leases, and supervises the official process tree. The renderer must
+prove selection by creating `.blackglass-c.sock`; an upstream socket, changed
+alias, changed adapter, changed update setting, unrelated Obsidian process, or
+changed official tree fails closed.
 
-1. inspect an authorized upstream renderer against a reviewed versioned baseline;
-2. inventory every packed JavaScript file, every JavaScript file in the two
-   unpacked resource trees, plus request helpers, network constructors, control
-   routes, and inbound and outbound Sync operations/message shapes;
-3. require exact source hashes and exact inventory/semantic-anchor matches;
-4. verify reviewed hash-and-offset incision ranges, derive only the necessary
-   local binding names from the user-supplied artifact, and replace those
-   ranges without retaining the proprietary bytes;
-5. patch the copied Electron wrapper to select an isolated canonical profile
-   from `BLACKGLASS_HOME` at mode `0700`, while preserving the GUI's native
-   `HOME`, disabling its upstream package updater, and pinning the embedded
-   qualified renderer;
-6. rebuild both ASAR integrity records;
-7. bind the official DMG digest, full source tree, and every signed bundle/Mach-O
-   target, then stage, verify, sign, and publish a separate macOS application copy;
-8. launch it through LaunchServices with a genuinely empty default profile,
-   prove the native starter's sign-in and vault-list requests use the configured
-   TLS origin, and record the exact process, executable, app, adapter, debug
-   port, and local TLS identities; and
-9. run the isolated-vault Sync and source-loss recovery qualification.
+Preserving the official application, executable, helper, and Safe Storage
+identity is deliberate: renaming proprietary Electron components caused launch
+failures. Files and profile state are isolated, but macOS Keychain behavior is
+still provided by the official runtime identity. This is a known architectural
+boundary that the conformance suite tests rather than obscures.
 
-It does not implement authentication, persistence, WebSocket synchronization,
-or production operations. Those belong to Blackglass Server.
+The companion Blackglass Server owns authentication, Rust/SQLite persistence,
+WebSocket synchronization, tenant isolation, backup, and operations. Bridge
+expects an HTTPS control origin and WSS data host. Exact supported combinations
+come only from [compatibility/matrix.json](../compatibility/matrix.json).
 
-## Stable boundary with Blackglass Server
-
-Blackglass expects two endpoints:
-
-- an HTTP control origin, such as `http://127.0.0.1:3000`; and
-- a Sync WebSocket host, such as `127.0.0.1:3003`.
-
-The protocol contract is documented in
-[`protocol/obsidian-1.12.7.md`](protocol/obsidian-1.12.7.md). Blackglass treats the
-server as an external dependency and the E2E runner accepts its binary through
-`BLACKGLASS_SERVER_BINARY`. The default is the release artifact in the sibling
-`blackglass-server` project.
-
-## Release maintenance
-
-For each new desktop release, rerun static analysis and the semantic-anchor
-tests. Review and commit a new compatibility baseline; never carry the prior
-release's inventory forward automatically. The baseline explicitly records the
-reviewed `obsidian.asar.unpacked` and `app.asar.unpacked` JavaScript paths,
-sizes, and SHA-256 identities. If any packed or unpacked JavaScript file,
-anchor, request helper, network constructor, route, operation, or message shape
-is new, removed, or changed, generation stops. Packaging then reproduces the
-six-incision client ASAR from the reviewed source and canonical endpoints and
-requires a byte-identical result. Two packages in separate output roots must
-have distinct invocation receipts and the same complete app and manifest
-identities. E2E preparation re-inspects both roots and recomputes their
-path-free proof; final qualification embeds and binds that proof. A single release manifest binds
-the baseline, source/result hashes, endpoints, patcher formats, wrapper, and app
-identity into the isolated E2E report. The E2E TLS certificate, resolver rules,
-proxy routes, and server ports are derived from that run's endpoint-bound
-network plan rather than duplicated constants. Live process-tree checks and
-sanitized CDP traces first prove the empty-profile starter flow, then begin
-before normal Sync login and remain attached through the server restart,
-post-restart transfers, and a separately identified cold-recovery client. They
-prove that the configured HTTPS and WSS endpoints, not retained development or
-upstream fallbacks, handled every qualified lifecycle phase.
-
-Packaging also records a deterministic identity for the Git-tracked
-release-critical source, configuration, tests, workflows, and documentation.
-Ignored files and generated qualification records/matrix outputs do not affect that tree identity,
-while a relevant untracked or modified file makes the packaging source dirty.
-The release-tag gate requires the tested source commit to be an ancestor and
-permits exactly one generated qualification-bundle commit after it. That commit
-may contain only the exact per-renderer records and both matrix files; the
-tooling tree at the tag must remain byte-identical.
-
-## Safety boundaries
-
-- The installed Obsidian application is read-only.
-- Real user profiles and vaults are refused by project tooling.
-- Generated apps, credentials, and E2E vaults stay under ignored data paths.
-- Plaintext loopback endpoints are permitted only for local testing.
-- Non-loopback deployments require authenticated TLS endpoints.
-- An explicit `--user-data-dir` is honored for disposable E2E clients; otherwise
-  the wrapper selects the separate Blackglass profile under
-  `BLACKGLASS_HOME`, with native `HOME` as the ordinary-launch fallback. The GUI
-  `HOME` is never overridden, so Electron continues to use the user's login
-  Keychain. The wrapper rejects a non-canonical path at setup and enforces
-  directory mode `0700` for both forms.
-- The wrapper sets Electron's application name to `Blackglass` before profile
-  initialization. Electron therefore uses `Blackglass Safe Storage`; it never
-  requests Obsidian's Safe Storage item or migrates the Obsidian login.
-- The embedded main process uses `.blackglass-c.sock` instead of Obsidian's
-  global CLI socket, so the two applications cannot unlink each other's CLI
-  endpoint. On macOS, a sixth renderer incision makes `BLACKGLASS_HOME` the
-  socket runtime root. Its registration action installs
-  `/usr/local/bin/blackglass`, never the upstream `/usr/local/bin/obsidian`
-  command.
-- The packaged CLI still discovers its socket through `HOME`, so only that
-  subprocess receives `HOME=BLACKGLASS_HOME`; the GUI process does not.
-- The LaunchServices smoke uses a private, short-lived `BLACKGLASS_HOME` under
-  `/private/tmp` so the macOS Unix-socket address stays within the platform
-  limit. After shutdown, that directory is moved into the disposable run so its
-  profile and diagnostics remain available as qualification evidence.
+For each upstream release, static analysis inventories every packed and
+unpacked JavaScript file, request helper, network constructor, control route,
+Sync operation, and message shape. Any source, anchor, or protocol drift creates
+an untrusted candidate requiring explicit review. Source-bound release tooling
+then runs deterministic patching, two independent packages, LaunchServices
+smoke, full Sync/lifecycle/recovery E2E, secret redaction, and hash-chained
+evidence before the compatibility matrix can gain a supported row.

@@ -1,13 +1,20 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import baseline1127 from "../compatibility/obsidian-1.12.7.json" with { type: "text" };
 import baseline1134 from "../compatibility/obsidian-1.13.4.json" with { type: "text" };
 import { AsarArchive } from "./asar";
 import { parseStrictFlags } from "./cli-flags";
 import { canonicalExistingPath, canonicalOutputPath } from "./path-safety";
 import { computeToolingSourceIdentity } from "./tooling-source";
+import { computeTreeIdentity } from "./tree-identity";
+import { launchPackagedBridge } from "./launcher-runtime";
+import { BRIDGE_BUNDLE_NAME, packagedLauncherArguments } from "./launcher-config";
+import {
+  STANDALONE_BRIDGE_BUILD_INFO_SCHEMA_VERSION,
+  type StandaloneBridgeBuildInfo,
+} from "./standalone-bridge";
 
 declare const __BLACKGLASS_BRIDGE_VERSION__: string;
 declare const __BLACKGLASS_BRIDGE_REVISION__: string;
@@ -17,7 +24,17 @@ const compiled = typeof __BLACKGLASS_BRIDGE_VERSION__ !== "undefined";
 const rawArguments = Bun.argv.slice(2);
 const [command, ...commandArguments] = rawArguments;
 
-if (command === "__patch" || command === "__package") {
+if (isPackagedLauncherInvocation()) {
+  const launcher = packagedLauncherArguments(rawArguments);
+  process.exitCode = await launchPackagedBridge({
+    bundlePath: launcherBundlePath(),
+    ...(launcher.profilePath ? { profilePath: launcher.profilePath } : {}),
+    ...(launcher.vaultPath ? { vaultPath: launcher.vaultPath } : {}),
+    ...(launcher.blackglassHomePath ? { blackglassHomePath: launcher.blackglassHomePath } : {}),
+    ...(launcher.receiptPath ? { receiptPath: launcher.receiptPath } : {}),
+    runtimeArguments: launcher.runtimeArguments,
+  });
+} else if (command === "__patch" || command === "__package") {
   Bun.argv.splice(0, Bun.argv.length, process.execPath, "blackglass-bridge", ...commandArguments);
   if (command === "__patch") await import("./patch-client");
   else await import("./package-macos");
@@ -25,6 +42,17 @@ if (command === "__patch" || command === "__package") {
   await adapt(commandArguments);
 } else if (command === "--version" || command === "version") {
   console.log(`blackglass-bridge ${await blackglassVersion()} (${sourceRevision()})`);
+} else if (command === "build-info") {
+  if (!compiled) throw new Error("build-info is available only in a standalone Bridge executable");
+  const info: StandaloneBridgeBuildInfo = {
+    schemaVersion: STANDALONE_BRIDGE_BUILD_INFO_SCHEMA_VERSION,
+    name: "blackglass-bridge",
+    version: await blackglassVersion(),
+    sourceRevision: sourceRevision(),
+    target: { operatingSystem: "macOS", architecture: "arm64" },
+    toolingSource: await toolingSourceIdentity() as StandaloneBridgeBuildInfo["toolingSource"],
+  };
+  console.log(JSON.stringify(info));
 } else {
   usage();
 }
@@ -45,7 +73,10 @@ async function adapt(arguments_: string[]): Promise<void> {
     !controlOrigin || !dataHost || !outputArgument) usage();
 
   const output = await prepareOutputDirectory(outputArgument);
-  const outputApp = await canonicalOutputPath(join(output, "Blackglass.app"), "Blackglass app");
+  if (!compiled) {
+    throw new Error("The adapt command requires the official standalone Blackglass Bridge executable");
+  }
+  const outputApp = await canonicalOutputPath(join(output, BRIDGE_BUNDLE_NAME), "Blackglass Bridge app");
   const manifest = await canonicalOutputPath(join(output, "blackglass-release.json"), "release manifest");
   const receipt = await canonicalOutputPath(
     join(output, "blackglass-package-receipt.json"),
@@ -54,6 +85,7 @@ async function adapt(arguments_: string[]): Promise<void> {
   const temporary = await mkdtemp(join(tmpdir(), "blackglass-bridge-"));
   let mountPoint: string | undefined;
   let mounted = false;
+  let primaryError: Error | undefined;
   try {
     const sourceIdentity = await toolingSourceIdentity();
     const identityPath = join(temporary, "tooling-source.json");
@@ -79,18 +111,20 @@ async function adapt(arguments_: string[]): Promise<void> {
     }
     const baselinePath = join(temporary, "compatibility-baseline.json");
     await writeFile(baselinePath, baselineText, { flag: "wx", mode: 0o600 });
+    const sourceTree = await computeTreeIdentity(sourceApp);
+    const runtimeApp = await installPrivateRuntime(sourceApp, sourceTree.sha256, temporary);
     const patchedAsar = join(temporary, "blackglass.asar");
     await runSelf([
       "__patch",
-      join(sourceApp, "Contents/Resources/obsidian.asar"),
+      join(runtimeApp, "Contents/Resources/obsidian.asar"),
       patchedAsar,
       "--control-origin", controlOrigin,
       "--data-host", dataHost,
-      "--resources", join(sourceApp, "Contents/Resources"),
+      "--resources", join(runtimeApp, "Contents/Resources"),
       "--baseline", baselinePath,
     ]);
     const packageArguments = [
-      "__package", sourceApp, patchedAsar, outputApp,
+      "__package", runtimeApp, patchedAsar, outputApp,
       "--control-origin", controlOrigin,
       "--data-host", dataHost,
       "--manifest", manifest,
@@ -108,11 +142,74 @@ async function adapt(arguments_: string[]): Promise<void> {
       outputApp,
       manifest,
       receipt,
+      privateOfficialRuntime: runtimeApp,
     }, null, 2));
+  } catch (error) {
+    primaryError = error instanceof Error ? error : new Error(String(error));
+    throw error;
   } finally {
-    if (mountPoint && mounted) run(["/usr/bin/hdiutil", "detach", mountPoint]);
-    await rm(temporary, { recursive: true, force: true });
+    const cleanupErrors: Error[] = [];
+    if (mountPoint && mounted) {
+      try { run(["/usr/bin/hdiutil", "detach", mountPoint]); }
+      catch (error) { cleanupErrors.push(error instanceof Error ? error : new Error(String(error))); }
+    }
+    try { await rm(temporary, { recursive: true, force: true }); }
+    catch (error) { cleanupErrors.push(error instanceof Error ? error : new Error(String(error))); }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [...(primaryError ? [primaryError] : []), ...cleanupErrors],
+        "Bridge adaptation cleanup failed",
+      );
+    }
   }
+}
+
+async function installPrivateRuntime(sourceApp: string, treeSha256: string, temporary: string): Promise<string> {
+  const runtimeRoot = join(
+    homedir(),
+    "Library/Application Support/Blackglass Runtimes/Official",
+    treeSha256,
+  );
+  const protectedRoot = join(homedir(), "Library/Application Support/Blackglass Runtimes");
+  await mkdir(protectedRoot, { recursive: true, mode: 0o700 });
+  await assertOwnerOnlyDirectory(protectedRoot, "Private runtime root");
+  await mkdir(dirname(runtimeRoot), { recursive: true, mode: 0o700 });
+  await assertOwnerOnlyDirectory(dirname(runtimeRoot), "Private runtime namespace");
+  const runtimeApp = join(runtimeRoot, "Obsidian.app");
+  if (await Bun.file(join(runtimeApp, "Contents/Info.plist")).exists()) {
+    const existing = await computeTreeIdentity(runtimeApp);
+    if (existing.sha256 !== treeSha256) {
+      throw new Error("Existing private official runtime does not match the reviewed source; remove it manually after inspection");
+    }
+    return canonicalExistingPath(runtimeApp, "Private official runtime", "directory");
+  }
+  const stagingRoot = join(temporary, "private-runtime");
+  const stagingApp = join(stagingRoot, "Obsidian.app");
+  await mkdir(stagingRoot, { mode: 0o700 });
+  run(["/usr/bin/ditto", "--norsrc", "--noextattr", "--noqtn", "--noacl", "--nopersistRootless", sourceApp, stagingApp]);
+  const copied = await computeTreeIdentity(stagingApp);
+  if (copied.sha256 !== treeSha256) throw new Error("Private official runtime copy differs from its reviewed source");
+  await rename(stagingRoot, runtimeRoot);
+  return canonicalExistingPath(runtimeApp, "Private official runtime", "directory");
+}
+
+async function assertOwnerOnlyDirectory(path: string, label: string): Promise<void> {
+  const metadata = await Bun.file(path).stat();
+  if (!metadata.isDirectory() || metadata.uid !== process.getuid!() ||
+    (metadata.mode & 0o777) !== 0o700) {
+    throw new Error(`${label} must be an owner-only directory`);
+  }
+  if (await canonicalExistingPath(path, label, "directory") !== path) {
+    throw new Error(`${label} must not contain symbolic-link path segments`);
+  }
+}
+
+function isPackagedLauncherInvocation(): boolean {
+  return process.execPath.includes(`/${BRIDGE_BUNDLE_NAME}/Contents/MacOS/`);
+}
+
+function launcherBundlePath(): string {
+  return resolve(dirname(process.execPath), "../..");
 }
 
 async function prepareOutputDirectory(argument: string): Promise<string> {
@@ -186,7 +283,8 @@ function usage(): never {
   console.error(
     "Usage: blackglass-bridge adapt (--dmg <official.dmg> | --app <official Obsidian.app>) " +
       "--control-origin <https-origin> --data-host <host[:port]> --output <new-directory>\n" +
-      "       blackglass-bridge --version",
+      "       blackglass-bridge --version\n" +
+      "       blackglass-bridge build-info",
   );
   process.exit(2);
 }

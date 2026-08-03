@@ -30,6 +30,7 @@ import {
 import { parseBlackglassReleaseManifest } from "./release-manifest";
 import { isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
+import { readPackagedBridgeConfig } from "./launcher-runtime";
 import {
   assertMacOSReproducibilityEvidenceBinds,
   parseMacOSReproducibilityEvidence,
@@ -52,14 +53,14 @@ const runManifest = preparedRun.manifest as typeof preparedRun.manifest & {
   releaseManifestFileName: string;
   releaseManifestSha256: string;
   endpoints: { controlOrigin: string; dataHost: string };
-  explicitUserDataDirHonored: boolean;
+  explicitUserDataDirRequired: boolean;
 };
 if (
-  runManifest.schemaVersion !== 4 ||
+  runManifest.schemaVersion !== 5 ||
   !isRendererAdapterFileName(runManifest.adapterFileName) ||
   runManifest.releaseManifestFileName !== "blackglass-release-manifest.json" ||
   !/^[a-f0-9]{64}$/u.test(runManifest.releaseManifestSha256) ||
-  runManifest.explicitUserDataDirHonored !== true
+  runManifest.explicitUserDataDirRequired !== true
 ) {
   throw new Error("Unsupported or malformed E2E run manifest");
 }
@@ -87,12 +88,12 @@ if (
     runManifest.compatibilityAsarSha256 ||
   JSON.stringify(releaseManifest.endpoints) !==
     JSON.stringify(runManifest.endpoints) ||
-  releaseManifest.wrapper.profileMode !== 0o700 ||
-  releaseManifest.wrapper.profilePathCanonicalAtSetup !== true ||
-  releaseManifest.wrapper.explicitUserDataDirHonored !== true ||
-  releaseManifest.wrapper.profileHomeEnvironment !== "BLACKGLASS_HOME" ||
-  releaseManifest.wrapper.dedicatedHomeValidated !== true ||
-  releaseManifest.wrapper.nativeHomeFallbackPreserved !== true
+  releaseManifest.launchPolicy.profileMode !== 0o700 ||
+  releaseManifest.launchPolicy.explicitUserDataDir !== true ||
+  releaseManifest.launchPolicy.blackglassHomeEnvironment !== "BLACKGLASS_HOME" ||
+  releaseManifest.launchPolicy.nativeHomePreserved !== true ||
+  releaseManifest.launchPolicy.exactOfficialAppVerifiedAtEveryLaunch !== true ||
+  releaseManifest.launchPolicy.officialChildSupervisionRequired !== true
 ) {
   throw new Error("E2E run manifest is inconsistent with the Blackglass release manifest");
 }
@@ -150,6 +151,7 @@ const liveReady = await fetch(
 );
 if (!liveReady.ok) throw new Error("Restarted E2E server is not ready");
 const currentClient = await inspectMacOSArtifact(recordedClient.appPath);
+const launchConfig = await readPackagedBridgeConfig(recordedClient.appPath);
 if (
   JSON.stringify(publicMacOSArtifact(currentClient)) !==
   JSON.stringify(publicMacOSArtifact(recordedClient))
@@ -191,9 +193,13 @@ for (const client of ["client-a", "client-b"] as const) {
   if (
     identity.runManifestSha256 !== preparedRun.manifestSha256 ||
     identity.releaseManifestSha256 !== runManifest.releaseManifestSha256 ||
-    identity.executablePath !==
+    identity.launcherExecutablePath !==
       resolve(recordedClient.appPath, "Contents/MacOS", recordedClient.executableName) ||
-    identity.executableSha256 !== recordedClient.executableSha256 ||
+    identity.launcherExecutableSha256 !== recordedClient.executableSha256 ||
+    identity.officialAppPath !== launchConfig.officialAppPath ||
+    identity.executablePath !==
+      resolve(launchConfig.officialAppPath, "Contents/MacOS", launchConfig.officialExecutableName) ||
+    identity.executableSha256 !== recordedClient.officialExecutableSha256 ||
     identity.appBundlePath !== recordedClient.appPath ||
     identity.appArtifactSha256 !== sha256(Buffer.from(stableJson(publicClient))) ||
     stableJson(identity.appArtifact) !== stableJson(publicClient) ||
@@ -213,6 +219,8 @@ for (const client of ["client-a", "client-b"] as const) {
 if (
   clientLaunchIdentities.get("client-a")!.pid ===
     clientLaunchIdentities.get("client-b")!.pid ||
+  clientLaunchIdentities.get("client-a")!.launcherPid ===
+    clientLaunchIdentities.get("client-b")!.launcherPid ||
   clientLaunchIdentities.get("client-a")!.debugPort ===
     clientLaunchIdentities.get("client-b")!.debugPort
 ) {
@@ -689,8 +697,15 @@ const report = {
     patcher: releaseManifest.patcher,
     endpoints: releaseManifest.endpoints,
     releaseManifestSha256: runManifest.releaseManifestSha256,
-    explicitUserDataDirHonored: true,
+    explicitUserDataDirRequired: true,
   },
+  clientLaunches: Object.fromEntries(
+    [...liveClientBindings.entries()].map(([client, binding]) => [client, {
+      identitySha256: binding.identitySha256,
+      runtimeReceiptSha256: binding.identity.runtimeReceiptSha256,
+      officialChildOfLauncher: true,
+    }]),
+  ),
   proofs,
   observations,
   server: {

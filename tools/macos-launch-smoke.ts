@@ -5,13 +5,13 @@ import type { MacOSArtifact } from "./macos-artifact";
 import { assertPathWithin, pathsEqual } from "./path-safety";
 import { stableJson } from "./stable-json";
 
-export const FINDER_LAUNCH_SMOKE_SCHEMA_VERSION = 7;
+export const FINDER_LAUNCH_SMOKE_SCHEMA_VERSION = 9;
 export const FINDER_LAUNCH_MINIMUM_HEALTH_MS = 8_000;
 export const FINDER_LAUNCH_DEBUG_PORT = 9_320;
 export const FINDER_LAUNCH_DEBUG_ADDRESS = "127.0.0.1" as const;
 export const FINDER_LAUNCH_LISTENER_TIMEOUT_MS = 30_000;
 export const FINDER_LAUNCH_STARTER_TIMEOUT_MS = 90_000;
-export const BLACKGLASS_BUNDLE_IDENTIFIER = "com.blackglass.app" as const;
+export const BLACKGLASS_BUNDLE_IDENTIFIER = "com.blackglass.bridge" as const;
 export const OBSIDIAN_BUNDLE_IDENTIFIER = "md.obsidian" as const;
 export const MACOS_LAUNCH_REQUIRED_ABSENT_BUNDLE_IDENTIFIERS = [
   BLACKGLASS_BUNDLE_IDENTIFIER,
@@ -77,11 +77,14 @@ export interface FinderLaunchSmokeEvidence {
   appArtifactSha256: string;
   applicationTreeSha256: string;
   executableSha256: string;
+  launcherExecutableSha256: string;
   embeddedAsarSha256: string;
   tlsMetadataSha256: string;
   tlsSpkiSha256Base64: string;
   chromiumHostResolverRules: string;
   appPath: string;
+  officialAppPath: string;
+  launcherExecutablePath: string;
   executablePath: string;
   launchHomePath: string;
   launchHomeRootMode: 448;
@@ -96,6 +99,11 @@ export interface FinderLaunchSmokeEvidence {
   profilePath: string;
   vaultPath: string;
   launchCommand: string[];
+  launcherCommand: string;
+  officialCommand: string;
+  officialChildOfLauncher: true;
+  runtimeReceiptPath: string;
+  runtimeReceiptSha256: string;
   debugPort: typeof FINDER_LAUNCH_DEBUG_PORT;
   debugAddress: typeof FINDER_LAUNCH_DEBUG_ADDRESS;
   debugListenerPid: number;
@@ -107,6 +115,7 @@ export interface FinderLaunchSmokeEvidence {
   healthyAt: string;
   completedAt: string;
   mainPid: number;
+  launcherPid: number;
   rendererPid: number;
   rendererStableDuringHealth: true;
   healthyForMs: number;
@@ -125,7 +134,7 @@ export interface FinderLaunchSmokeEvidence {
   cliForwardedCommandSucceeded: true;
   cliForwardedResponse: "Command line interface is not enabled. Please turn it on in Settings > General > Advanced.";
   cliMainProcessReceiptObserved: true;
-  explicitUserDataDirUsed: false;
+  explicitUserDataDirUsed: true;
   noLocalVaultAtLaunch: true;
   starterPageObserved: true;
   starterNativeUiExercised: true;
@@ -160,6 +169,7 @@ export function finderLaunchSmokeLayout(root: string): {
   vaultPath: string;
   stdoutPath: string;
   stderrPath: string;
+  runtimeReceiptPath: string;
   evidencePath: string;
 } {
   const smokeRoot = join(root, "launch-services-smoke");
@@ -167,10 +177,11 @@ export function finderLaunchSmokeLayout(root: string): {
   return {
     smokeRoot,
     homePath,
-    profilePath: join(homePath, "Library/Application Support/Blackglass"),
+    profilePath: join(homePath, "Library/Application Support/Blackglass Profile"),
     vaultPath: join(smokeRoot, "vault"),
     stdoutPath: join(smokeRoot, "stdout.log"),
     stderrPath: join(smokeRoot, "stderr.log"),
+    runtimeReceiptPath: join(smokeRoot, "runtime-receipt.json"),
     evidencePath: join(root, "finder-launch-smoke.json"),
   };
 }
@@ -252,6 +263,8 @@ export function finderLaunchCommand(input: {
   blackglassHomePath: string;
   stdoutPath: string;
   stderrPath: string;
+  profilePath: string;
+  runtimeReceiptPath: string;
   chromiumHostResolverRules: string;
   tlsSpkiSha256Base64: string;
   debugPort?: number;
@@ -268,6 +281,10 @@ export function finderLaunchCommand(input: {
     "-a",
     input.appPath,
     "--args",
+    "--blackglass-profile",
+    input.profilePath,
+    "--blackglass-runtime-receipt",
+    input.runtimeReceiptPath,
     `--remote-debugging-port=${input.debugPort ?? FINDER_LAUNCH_DEBUG_PORT}`,
     `--remote-debugging-address=${FINDER_LAUNCH_DEBUG_ADDRESS}`,
     `--host-resolver-rules=${input.chromiumHostResolverRules}`,
@@ -457,6 +474,8 @@ export function assertFinderLaunchSmokeEvidence(
     runManifestSha256: string;
     releaseManifestSha256: string;
     appPath: string;
+    officialAppPath: string;
+    launcherExecutablePath: string;
     artifact: PublicMacOSArtifact;
     controlOrigin: string;
     tlsMetadataSha256: string;
@@ -468,8 +487,8 @@ export function assertFinderLaunchSmokeEvidence(
   if (!isRecord(value)) throw new Error("Finder launch smoke evidence is malformed");
   assertMacOSLaunchPreflightEvidence(value.launchPreflight);
   const layout = finderLaunchSmokeLayout(options.root);
-  const executablePath = join(options.appPath, "Contents/MacOS/Obsidian");
-  const cliExecutablePath = join(options.appPath, "Contents/MacOS/obsidian-cli");
+  const executablePath = join(options.officialAppPath, "Contents/MacOS/Obsidian");
+  const cliExecutablePath = join(layout.profilePath, "blackglass-cli");
   if (
     typeof value.launchHomePath !== "string" ||
     !/^\/private\/tmp\/blackglass-launch-[A-Za-z0-9]{6}\/h$/u.test(
@@ -492,6 +511,8 @@ export function assertFinderLaunchSmokeEvidence(
     blackglassHomePath: value.launchHomePath,
     stdoutPath: layout.stdoutPath,
     stderrPath: layout.stderrPath,
+    profilePath: layout.profilePath,
+    runtimeReceiptPath: join(layout.smokeRoot, "runtime-receipt.json"),
     chromiumHostResolverRules: options.chromiumHostResolverRules,
     tlsSpkiSha256Base64: options.tlsSpkiSha256Base64,
     debugPort: FINDER_LAUNCH_DEBUG_PORT,
@@ -505,7 +526,13 @@ export function assertFinderLaunchSmokeEvidence(
     value.releaseManifestSha256 !== options.releaseManifestSha256 ||
     value.appArtifactSha256 !== macOSArtifactBindingSha256(options.artifact) ||
     value.applicationTreeSha256 !== options.artifact.applicationTreeSha256 ||
-    value.executableSha256 !== options.artifact.executableSha256 ||
+    value.executableSha256 !== options.artifact.officialExecutableSha256 ||
+    value.launcherExecutableSha256 !== options.artifact.executableSha256 ||
+    !isSha256(value.runtimeReceiptSha256) ||
+    value.runtimeReceiptPath !== join(layout.smokeRoot, "runtime-receipt.json") ||
+    typeof value.launcherCommand !== "string" || value.launcherCommand.length === 0 ||
+    typeof value.officialCommand !== "string" || value.officialCommand.length === 0 ||
+    value.officialChildOfLauncher !== true ||
     value.embeddedAsarSha256 !== options.artifact.embeddedAsarSha256 ||
     value.tlsMetadataSha256 !== options.tlsMetadataSha256 ||
     value.tlsSpkiSha256Base64 !== options.tlsSpkiSha256Base64 ||
@@ -518,6 +545,10 @@ export function assertFinderLaunchSmokeEvidence(
     ) ||
     typeof value.appPath !== "string" ||
     !pathsEqual(value.appPath, options.appPath) ||
+    typeof value.officialAppPath !== "string" ||
+    !pathsEqual(value.officialAppPath, options.officialAppPath) ||
+    typeof value.launcherExecutablePath !== "string" ||
+    !pathsEqual(value.launcherExecutablePath, options.launcherExecutablePath) ||
     typeof value.executablePath !== "string" ||
     !pathsEqual(value.executablePath, executablePath) ||
     typeof value.cliExecutablePath !== "string" ||
@@ -555,6 +586,9 @@ export function assertFinderLaunchSmokeEvidence(
     healthyAt > completedAt ||
     !Number.isSafeInteger(value.mainPid) ||
     (value.mainPid as number) < 1 ||
+    !Number.isSafeInteger(value.launcherPid) ||
+    (value.launcherPid as number) < 1 ||
+    value.launcherPid === value.mainPid ||
     !Number.isSafeInteger(value.rendererPid) ||
     (value.rendererPid as number) < 1 ||
     value.rendererPid === value.mainPid ||
@@ -590,7 +624,7 @@ export function assertFinderLaunchSmokeEvidence(
     value.cliForwardedResponse !==
       "Command line interface is not enabled. Please turn it on in Settings > General > Advanced." ||
     value.cliMainProcessReceiptObserved !== true ||
-    value.explicitUserDataDirUsed !== false ||
+    value.explicitUserDataDirUsed !== true ||
     value.noLocalVaultAtLaunch !== true ||
     value.starterPageObserved !== true ||
     value.starterNativeUiExercised !== true ||
@@ -647,6 +681,10 @@ function validLoopbackListenerEndpoints(value: unknown, port: number): value is 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 }
 
 function isStarterSyncEntryAttempt(value: unknown): value is StarterSyncEntryAttempt {

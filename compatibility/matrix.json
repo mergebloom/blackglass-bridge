@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "requiredScenarios": [
     "E2E-RELEASE-SYNC-RECOVERY",
     "E2E-P3-TENANCY",

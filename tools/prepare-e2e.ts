@@ -20,6 +20,7 @@ import {
 } from "./tooling-source";
 import { isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
+import { adapterProfileFileName } from "./launcher-config";
 import {
   assertMacOSReproducibilityEvidenceBinds,
   parseMacOSReproducibilityEvidence,
@@ -66,9 +67,9 @@ if (
 ) {
   console.error(
     "Usage: bun run tools/prepare-e2e.ts <run-directory> <patched.asar> " +
-      "--app <Blackglass.app> --release-manifest <release.json> " +
+      "--app <Blackglass Bridge.app> --release-manifest <release.json> " +
       "--package-receipt <receipt.json> " +
-      "--second-app <Blackglass.app> " +
+      "--second-app <Blackglass Bridge.app> " +
       "--second-release-manifest <release.json> " +
       "--second-package-receipt <receipt.json> " +
       "--reproducibility-evidence <reproducibility.json> " +
@@ -216,23 +217,21 @@ if (
 }
 if (
   clientArtifact.profileMode !== 0o700 ||
-  clientArtifact.profilePathCanonicalAtSetup !== true ||
-  releaseManifest.wrapper.profileMode !== 0o700 ||
-  releaseManifest.wrapper.profilePathCanonicalAtSetup !== true ||
-  clientArtifact.explicitUserDataDirHonored !== true ||
-  releaseManifest.wrapper.explicitUserDataDirHonored !== true ||
+  clientArtifact.canonicalProfileRequired !== true ||
+  releaseManifest.launchPolicy.profileMode !== 0o700 ||
+  clientArtifact.explicitUserDataDirRequired !== true ||
+  releaseManifest.launchPolicy.explicitUserDataDir !== true ||
   clientArtifact.profileHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
-  releaseManifest.wrapper.profileHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
-  clientArtifact.dedicatedHomeValidated !== true ||
-  releaseManifest.wrapper.dedicatedHomeValidated !== true ||
+  releaseManifest.launchPolicy.blackglassHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
+  clientArtifact.dedicatedRuntimeHomeRequired !== true ||
   clientArtifact.nativeHomeFallbackPreserved !== true ||
-  releaseManifest.wrapper.nativeHomeFallbackPreserved !== true
+  releaseManifest.launchPolicy.nativeHomePreserved !== true
 ) {
-  throw new Error("Packaged wrapper cannot safely isolate disposable E2E profiles");
+  throw new Error("Packaged launcher cannot safely isolate disposable E2E profiles");
 }
-const adapterFileName = `obsidian-${packageMetadata.version}.asar`;
+const adapterFileName = adapterProfileFileName(packageMetadata.version);
 const runManifest = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   scenarioId,
   createdAt: new Date().toISOString(),
   blackglassVersion: releaseManifest.blackglassVersion,
@@ -247,7 +246,7 @@ const runManifest = {
     .digest("hex"),
   endpoints: releaseManifest.endpoints,
   network: deriveE2ENetworkPlan(releaseManifest.endpoints),
-  explicitUserDataDirHonored: true,
+  explicitUserDataDirRequired: true,
 };
 await mkdir(root, { recursive: false });
 await writeFile(

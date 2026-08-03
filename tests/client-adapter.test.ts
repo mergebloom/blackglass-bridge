@@ -85,7 +85,8 @@ test("builds and reopens an exact ASAR from reviewed incisions", () => {
   const generated = patchAsar(archive, endpoints, incisions);
   expect(generated.buffer.length).toBe(archive.length);
   expect(generated.report).toMatchObject({
-    patchFormatVersion: 8,
+    patchFormatVersion: 9,
+    cliExecutableEnvironment: "BGCLI",
     incisionCount: 6,
     controlOrigin: endpoints.controlOrigin,
     dataHost: endpoints.dataHost,

@@ -5,9 +5,9 @@ profiles, vaults, screenshots, credentials, databases, patched ASARs, and app
 bundles stay under ignored `.data/` storage and must never be committed.
 
 A current release record is valid only when it names the bound Blackglass release
-manifest plus the exact renderer, wrapper, packaged app, endpoint, patcher, and
-server artifact identities, including the official DMG and complete source and
-packaged application tree hashes. It also binds the clean Git revision and
+manifest plus the exact renderer, reviewed official wrapper, standalone launcher,
+packaged app, endpoint, patcher, and server artifact identities, including the
+official DMG, private unmodified runtime, and complete launcher tree hashes. It also binds the clean Git revision and
 deterministic release-critical tooling tree used for packaging and E2E. The
 client evidence embeds a path-free proof that two distinct package invocation
 receipts produced identical complete app and release-manifest identities. The
@@ -23,7 +23,8 @@ matching the current `package.json` version, and validates the record fully when
 present. This lets the clean source commit pass before its evidence-only record
 is generated. A tag is release-eligible only when
 `bun run release:verify-eligibility -- <full-tag-commit>` finds exactly one
-current canonical record and proves that the tag is the direct child of its
-qualified tooling source. That one commit must create the exact record being
-validated, byte for byte, without changing any historical record or other
-path. Both paths reject multiple or manually weakened current claims.
+current canonical records and proves that the tag is the direct child of its
+qualified tooling source. That one qualification commit may create only the
+exact validation reports and compatibility records being validated, byte for
+byte, without changing historical records or implementation paths. Both paths
+reject multiple or manually weakened current claims.

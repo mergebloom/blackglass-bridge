@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { readFile, stat, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import {
   readClientLaunchIdentity,
   verifyLiveClientLaunchBinding,
@@ -14,7 +14,7 @@ import {
   type E2ENetworkCaptureFinalize,
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
-import { preparedE2EScenarioId } from "./e2e-scenario";
+import { preparedE2EScenarioId, scenarioValidationFileName } from "./e2e-scenario";
 import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
 import { inspectMacOSPackagingToolchain } from "./packaging-toolchain";
 import {
@@ -29,6 +29,7 @@ import {
 } from "./recovery-corpus";
 import { inspectServerArtifact, publicServerArtifact } from "./server-artifact";
 import { parseBlackglassReleaseManifest } from "./release-manifest";
+import { readPackagedBridgeConfig } from "./launcher-runtime";
 import {
   assertRecoveryReportResetBinding,
   assertSourceLossResetRecord,
@@ -96,7 +97,7 @@ const [
 ]);
 
 if (
-  runManifest.schemaVersion !== 4 ||
+  runManifest.schemaVersion !== 5 ||
   syncReport.schemaVersion !== 2 ||
   syncReport.passed !== true ||
   recoveryManifest.schemaVersion !== 3 ||
@@ -203,11 +204,14 @@ const finderSmokePath = finderLaunchSmokeLayout(root).evidencePath;
 const verifiedTls = await readVerifiedE2ETls(root);
 const finderSmokeBytes = await readFile(finderSmokePath);
 const finderSmoke = JSON.parse(finderSmokeBytes.toString("utf8")) as unknown;
+const finderLaunchConfig = await readPackagedBridgeConfig(recordedClient.appPath);
 assertFinderLaunchSmokeEvidence(finderSmoke, {
   root,
   runManifestSha256: preparedRun.manifestSha256,
   releaseManifestSha256: preparedRun.manifest.releaseManifestSha256,
   appPath: recordedClient.appPath,
+  officialAppPath: finderLaunchConfig.officialAppPath,
+  launcherExecutablePath: join(recordedClient.appPath, "Contents/MacOS/blackglass-bridge"),
   artifact: publicMacOSArtifact(recordedClient),
   controlOrigin: preparedRun.manifest.endpoints.controlOrigin,
   tlsMetadataSha256: verifiedTls.metadataSha256,
@@ -422,13 +426,20 @@ for (const file of [
 }
 
 const qualification = {
-  schemaVersion: 9,
+  schemaVersion: 10,
   scenarioId: preparedE2EScenarioId(runManifest.scenarioId),
   qualifiedAt: new Date().toISOString(),
   passed: true,
   platform: "macOS Apple Silicon",
   blackglassVersion: runManifest.blackglassVersion,
   rendererVersion: runManifest.rendererVersion,
+  validationFileName: scenarioValidationFileName(
+    "E2E-RELEASE-SYNC-RECOVERY",
+    runManifest.rendererVersion,
+    runManifest.blackglassVersion,
+    releaseManifest.toolingSource.gitRevision!,
+    recordedServer.sourceRevision,
+  ),
   endpoints: runManifest.endpoints,
   toolingSource: releaseManifest.toolingSource,
   artifacts: {

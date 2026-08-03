@@ -11,6 +11,7 @@ import {
   computeToolingSourceIdentityAtRevision,
   toolingSourceTreeEqual,
 } from "./tooling-source";
+import { verifyCompatibilityMatrix } from "./compatibility-matrix";
 
 export interface QualifiedToolingVerification {
   validated: true;
@@ -63,6 +64,7 @@ export async function verifyQualifiedTooling(
   if (records.some(({ record }) => record.toolingSource.gitRevision !== sourceRevision)) {
     throw new Error("Qualification records bind different tooling source revisions");
   }
+  const matrix = await verifyCompatibilityMatrix(root);
   const current = await computeToolingSourceIdentity(root);
   if (current.worktreeClean !== true || current.gitRevision !== tagRevision) {
     throw new Error("Qualified tooling verification requires a clean exact tag checkout");
@@ -79,6 +81,24 @@ export async function verifyQualifiedTooling(
   const bundle = new Map<string, Uint8Array>();
   for (const { recordPath, recordBytes } of records) {
     bundle.set(`docs/validation/${basename(recordPath)}`, recordBytes);
+  }
+  for (const { record } of records) {
+    const matches = matrix.entries.filter((entry) =>
+      entry.rendererVersion === record.rendererVersion &&
+      entry.bridge.version === record.blackglassVersion &&
+      entry.bridge.revision === record.toolingSource.gitRevision &&
+      entry.server.version === record.artifacts.server.version &&
+      entry.server.revision === record.artifacts.server.sourceRevision
+    );
+    if (matches.length !== 1) {
+      throw new Error("Qualification matrix must contain exactly one row for every validation record");
+    }
+    for (const scenario of matches[0]!.scenarios) {
+      if (bundle.has(scenario.report.path)) {
+        throw new Error("Qualification matrix reuses a scenario report across validation records");
+      }
+      bundle.set(scenario.report.path, await readFile(resolve(root, scenario.report.path)));
+    }
   }
   for (const path of ["compatibility/matrix.json", "compatibility/MATRIX.md"]) {
     bundle.set(path, await readFile(resolve(root, path)));

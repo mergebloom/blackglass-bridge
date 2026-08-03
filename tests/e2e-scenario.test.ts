@@ -34,9 +34,11 @@ describe("E2E scenario identity", () => {
       scenarioValidationFileName(
         definition.id,
         "1.13.4",
+        "0.4.0",
+        "b".repeat(40),
         "a".repeat(40),
       ),
-    ).toBe(`phase-4-custom-e2ee-obsidian-1.13.4-${"a".repeat(40)}.json`);
+    ).toBe(`phase-4-custom-e2ee-obsidian-1.13.4-bridge-0.4.0-${"b".repeat(40)}-server-${"a".repeat(40)}.json`);
   });
 
   test("gives every phase checkpoint an executable client and UI contract", () => {

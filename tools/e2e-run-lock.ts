@@ -8,6 +8,7 @@ const PROCESS_OWNER_NONCE = randomUUID();
 const PROCESS_ARGUMENTS_SHA256 = createHash("sha256")
   .update(JSON.stringify(process.argv))
   .digest("hex");
+const PROCESS_START_IDENTITY = processStartIdentity(process.pid);
 
 export function sourceLossResetLockPath(runRoot: string): string {
   return join(runRoot, ".source-loss-reset.lock");
@@ -37,13 +38,14 @@ export async function acquirePreparedClientLease(
   await writeFile(
     leasePath,
     `${JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       pid: process.pid,
       clientName,
       acquiredAt: new Date().toISOString(),
       ownerNonce: PROCESS_OWNER_NONCE,
       executable: process.execPath,
       argumentsSha256: PROCESS_ARGUMENTS_SHA256,
+      processStartIdentity: PROCESS_START_IDENTITY,
     })}\n`,
     { flag: "wx", mode: 0o600 },
   );
@@ -57,11 +59,12 @@ export async function acquirePreparedClientLease(
 export async function releasePreparedClientLease(leasePath: string): Promise<void> {
   const lease = JSON.parse(await readFile(leasePath, "utf8")) as any;
   if (
-    lease.schemaVersion !== 2 ||
+    lease.schemaVersion !== 3 ||
     lease.pid !== process.pid ||
     lease.ownerNonce !== PROCESS_OWNER_NONCE ||
     lease.executable !== process.execPath ||
     lease.argumentsSha256 !== PROCESS_ARGUMENTS_SHA256 ||
+    lease.processStartIdentity !== PROCESS_START_IDENTITY ||
     !["client-a", "client-b", "client-c"].includes(lease.clientName)
   ) {
     throw new Error("Refusing to remove a changed prepared-client launch lease");
@@ -82,13 +85,14 @@ export async function acquireSourceLossResetLock(
   await writeFile(
     lockPath,
     `${JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       pid: process.pid,
       runManifestSha256,
       acquiredAt: new Date().toISOString(),
       ownerNonce: PROCESS_OWNER_NONCE,
       executable: process.execPath,
       argumentsSha256: PROCESS_ARGUMENTS_SHA256,
+      processStartIdentity: PROCESS_START_IDENTITY,
     })}\n`,
     { flag: "wx", mode: 0o600 },
   );
@@ -107,11 +111,12 @@ export async function releaseSourceLossResetLock(
 ): Promise<void> {
   const lock = JSON.parse(await readFile(lockPath, "utf8")) as any;
   if (
-    lock.schemaVersion !== 2 ||
+    lock.schemaVersion !== 3 ||
     lock.pid !== process.pid ||
     lock.ownerNonce !== PROCESS_OWNER_NONCE ||
     lock.executable !== process.execPath ||
     lock.argumentsSha256 !== PROCESS_ARGUMENTS_SHA256 ||
+    lock.processStartIdentity !== PROCESS_START_IDENTITY ||
     lock.runManifestSha256 !== runManifestSha256
   ) {
     throw new Error("Refusing to remove a changed source-loss reset lock");
@@ -128,7 +133,10 @@ async function recoverDeadOwnerLock(path: string, label: string): Promise<void> 
     throw error;
   }
   const metadata = await lstat(path);
-  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+  if (
+    !metadata.isFile() || metadata.isSymbolicLink() ||
+    metadata.uid !== process.getuid!() || (metadata.mode & 0o777) !== 0o600
+  ) {
     throw new Error(`Refusing non-regular ${label}: ${path}`);
   }
   let lock: Record<string, unknown>;
@@ -138,19 +146,22 @@ async function recoverDeadOwnerLock(path: string, label: string): Promise<void> 
     throw new Error(`Refusing malformed ${label}: ${path}`);
   }
   if (
-    lock.schemaVersion !== 2 ||
+    lock.schemaVersion !== 3 ||
     !Number.isSafeInteger(lock.pid) ||
     Number(lock.pid) < 1 ||
     typeof lock.ownerNonce !== "string" || lock.ownerNonce.length < 16 ||
     typeof lock.executable !== "string" || lock.executable.length === 0 ||
     typeof lock.argumentsSha256 !== "string" ||
     !/^[a-f0-9]{64}$/u.test(lock.argumentsSha256) ||
+    typeof lock.processStartIdentity !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(lock.processStartIdentity) ||
     typeof lock.acquiredAt !== "string" ||
     !Number.isFinite(Date.parse(lock.acquiredAt))
   ) {
     throw new Error(`Refusing malformed ${label}: ${path}`);
   }
-  if (processIsAlive(Number(lock.pid))) {
+  if (processIsAlive(Number(lock.pid)) &&
+      processStartIdentity(Number(lock.pid)) === lock.processStartIdentity) {
     throw new Error(`Active ${label} already exists: ${path}`);
   }
   const current = await readFile(path);
@@ -173,11 +184,33 @@ export async function assertNoPreparedClientLeases(
 ): Promise<void> {
   const active: string[] = [];
   for (const client of clientNames) {
-    if (await pathExists(preparedClientLeasePath(runRoot, client))) active.push(client);
+    const path = preparedClientLeasePath(runRoot, client);
+    if (!(await pathExists(path))) continue;
+    try {
+      await recoverDeadOwnerLock(path, "prepared-client launch lease");
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Active prepared-client launch lease")) {
+        active.push(client);
+      } else {
+        throw error;
+      }
+    }
   }
   if (active.length !== 0) {
     throw new Error(
       `Stop prepared clients before source-loss reset: ${active.join(", ")}`,
     );
   }
+}
+
+function processStartIdentity(pid: number): string {
+  try {
+    const result = Bun.spawnSync([
+      "/bin/ps", "-ww", "-p", String(pid), "-o", "lstart=", "-o", "command=",
+    ], { stdout: "pipe", stderr: "pipe" });
+    if (result.exitCode === 0) {
+      return createHash("sha256").update(result.stdout).digest("hex");
+    }
+  } catch { /* Restricted unit-test sandboxes can deny process inspection. */ }
+  return createHash("sha256").update(`unavailable:${pid}`).digest("hex");
 }

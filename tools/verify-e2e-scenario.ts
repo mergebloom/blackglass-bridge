@@ -12,6 +12,7 @@ import {
   scenarioValidationFileName,
 } from "./e2e-scenario";
 import { inspectServerArtifact } from "./server-artifact";
+import { readBlackglassReleaseManifest } from "./release-manifest";
 
 const [rootArgument, ...extra] = Bun.argv.slice(2);
 if (!rootArgument || extra.length !== 0) {
@@ -62,17 +63,28 @@ const serverRecord = JSON.parse(
   await readFile(resolve(run.root, "server-artifact.json"), "utf8"),
 ) as { binaryPath: string };
 const server = await inspectServerArtifact(serverRecord.binaryPath);
+const { manifest: releaseManifest } = await readBlackglassReleaseManifest(
+  resolve(run.root, run.manifest.releaseManifestFileName),
+);
+if (!releaseManifest.toolingSource.gitRevision) {
+  throw new Error("Scenario release manifest is not bound to a Bridge revision");
+}
 const report = {
   schemaVersion: 1,
   passed: true,
   scenarioId: scenario.id,
   rendererVersion: String(run.manifest.rendererVersion),
+  bridgeVersion: releaseManifest.blackglassVersion,
+  bridgeRevision: releaseManifest.toolingSource.gitRevision,
   serverRevision: server.sourceRevision,
+  serverBinarySha256: server.sha256,
   runManifestSha256: run.manifestSha256,
   releaseManifestSha256: run.manifest.releaseManifestSha256,
   validationFileName: scenarioValidationFileName(
     scenario.id,
     String(run.manifest.rendererVersion),
+    releaseManifest.blackglassVersion,
+    releaseManifest.toolingSource.gitRevision,
     server.sourceRevision,
   ),
   checkpoints,

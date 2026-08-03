@@ -4,7 +4,7 @@ import { inspectMacOSArtifact } from "./macos-artifact";
 
 const [appArgument, outputArgument] = Bun.argv.slice(2);
 if (!appArgument || !outputArgument) {
-  console.error("Usage: bun run tools/inspect-macos-app.ts <Blackglass.app> <output.json>");
+  console.error("Usage: bun run tools/inspect-macos-app.ts <Blackglass Bridge.app> <output.json>");
   process.exit(2);
 }
 

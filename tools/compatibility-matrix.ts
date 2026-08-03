@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { E2E_SCENARIO_IDS, parseE2EScenarioId } from "./e2e-scenario";
+import { basename, resolve } from "node:path";
+import { E2E_SCENARIO_IDS, parseE2EScenarioId, scenarioValidationFileName } from "./e2e-scenario";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
+import { validateMatrixScenarioReport } from "./compatibility-matrix-entry";
+import { assertReleaseValidationRecord, type ReleaseValidationRecord } from "./release-validation";
 
 if (import.meta.main) {
   const [mode = "--check", ...extra] = Bun.argv.slice(2);
@@ -14,7 +16,7 @@ if (import.meta.main) {
 }
 
 export interface Matrix {
-  schemaVersion: 1;
+  schemaVersion: 2;
   requiredScenarios: string[];
   entries: Array<{
     rendererVersion: string;
@@ -22,7 +24,7 @@ export interface Matrix {
     bridge: { version: string; revision: string };
     server: { version: string; revision: string };
     platform: { operatingSystem: "macOS"; architecture: "arm64" };
-    scenarios: Array<{ id: string; result: "passed"; reportSha256: string }>;
+    scenarios: Array<{ id: string; result: "passed"; report: { path: string; sha256: string } }>;
     qualificationResult: "supported";
     validationReport: { path: string; sha256: string };
     qualifiedAt: string;
@@ -50,7 +52,7 @@ export async function verifyCompatibilityMatrix(
 }
 
 function assertMatrix(value: Matrix): void {
-  if (value.schemaVersion !== 1 || !Array.isArray(value.requiredScenarios) || !Array.isArray(value.entries)) {
+  if (value.schemaVersion !== 2 || !Array.isArray(value.requiredScenarios) || !Array.isArray(value.entries)) {
     throw new Error("Compatibility matrix is malformed");
   }
   if (JSON.stringify(value.requiredScenarios) !== JSON.stringify(E2E_SCENARIO_IDS)) {
@@ -72,7 +74,9 @@ function assertMatrix(value: Matrix): void {
     ) throw new Error("Compatibility matrix entry is malformed");
     const scenarioIds = entry.scenarios.map((scenario) => {
       parseE2EScenarioId(scenario.id);
-      if (scenario.result !== "passed" || !sha(scenario.reportSha256)) {
+      if (scenario.result !== "passed" ||
+        !scenario.report?.path.startsWith("docs/validation/") ||
+        !sha(scenario.report.sha256)) {
         throw new Error("Compatibility matrix contains an unpassed scenario");
       }
       return scenario.id;
@@ -116,6 +120,43 @@ async function validateMatrixFiles(root: string, matrix: Matrix): Promise<void> 
     const report = await readFile(resolve(root, entry.validationReport.path));
     if (createHash("sha256").update(report).digest("hex") !== entry.validationReport.sha256) {
       throw new Error("Compatibility matrix validation report identity changed");
+    }
+    const record = JSON.parse(report.toString("utf8")) as ReleaseValidationRecord;
+    assertReleaseValidationRecord(record);
+    if (
+      record.rendererVersion !== entry.rendererVersion ||
+      record.blackglassVersion !== entry.bridge.version ||
+      record.toolingSource.gitRevision !== entry.bridge.revision ||
+      record.artifacts.server.version !== entry.server.version ||
+      record.artifacts.server.sourceRevision !== entry.server.revision
+    ) {
+      throw new Error("Compatibility matrix validation report does not bind its row");
+    }
+    const scenarioRunHashes = new Set<string>();
+    for (const scenario of entry.scenarios) {
+      const expectedName = scenarioValidationFileName(
+        scenario.id,
+        entry.rendererVersion,
+        entry.bridge.version,
+        entry.bridge.revision,
+        entry.server.revision,
+      );
+      if (basename(scenario.report.path) !== expectedName) {
+        throw new Error(`Compatibility matrix scenario report must be named ${expectedName}`);
+      }
+      const scenarioBytes = await readFile(resolve(root, scenario.report.path));
+      if (createHash("sha256").update(scenarioBytes).digest("hex") !== scenario.report.sha256) {
+        throw new Error("Compatibility matrix scenario report identity changed");
+      }
+      const validated = validateMatrixScenarioReport(
+        JSON.parse(scenarioBytes.toString("utf8")) as unknown,
+        scenario.id,
+        record,
+      );
+      scenarioRunHashes.add(validated.runManifestSha256);
+    }
+    if (scenarioRunHashes.size !== matrix.requiredScenarios.length) {
+      throw new Error("Compatibility matrix scenarios do not use distinct immutable runs");
     }
     const baseline = JSON.parse(await readFile(
       resolve(root, `compatibility/obsidian-${entry.rendererVersion}.json`),

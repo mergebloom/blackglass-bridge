@@ -42,8 +42,8 @@ jobs:
 
   release:
     needs: [release-static-gate, macos-gate]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    runs-on: macos-14
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -85,11 +85,11 @@ jobs:
           done
           (
             cd dist/release
-            sha256sum --check \
+            shasum -a 256 -c \
               "blackglass-${GITHUB_REF_NAME}-tooling.zip.sha256"
-            sha256sum --check \
+            shasum -a 256 -c \
               "blackglass-bridge-${GITHUB_REF_NAME}-macos-arm64.sha256"
-            sha256sum --check \
+            shasum -a 256 -c \
               "blackglass-bridge-${GITHUB_REF_NAME}-macos-arm64.zip.sha256"
           )
       - name: Create or resume verified GitHub release

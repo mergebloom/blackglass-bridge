@@ -25,12 +25,23 @@ upstream provenance required for formal conformance and publication.
 
 The command fails if the upstream identity, renderer inventory, wrapper,
 incision hashes, code inventory, endpoint format, or output path differs from
-the reviewed contract. It creates a new `Blackglass.app`, release manifest, and
-package receipt. The source app is never modified. The generated app uses an
-isolated Blackglass profile, disables upstream application updates, and keeps
-the upstream executable/helper names required for Electron stability.
+the reviewed contract. It creates `Blackglass Bridge.app`, a release manifest,
+and a package receipt. It also installs an owner-only, hash-addressed copy of the
+official runtime under `~/Library/Application Support/Blackglass Runtimes/Official`;
+neither the supplied artifact nor an installed Obsidian app is
+modified.
 
-The output app contains the user-supplied proprietary application and is for
-that user’s local use. Do not redistribute it. Blackglass is independent from
-and not endorsed by Obsidian; users must supply their own legitimate Obsidian
-installation. This is a distribution boundary, not a legal conclusion.
+The launcher contains only the standalone Blackglass executable and the
+locally adapted renderer. It verifies the private official runtime before every
+launch, refuses to run beside an unmanaged Obsidian instance, selects one exact
+reviewed renderer alias, uses an isolated Blackglass profile, disables renderer
+updates, generates a local `blackglass` CLI from the verified upstream CLI, and
+supervises the official child until shutdown. The private runtime preserves the
+upstream executable, helper, and application identity required for Electron
+stability; native menus and windows therefore retain Obsidian's identity.
+
+Do not redistribute the locally generated launcher or adapted renderer.
+Official Blackglass Bridge release assets contain neither. Blackglass is
+independent from and not endorsed by Obsidian; users must supply their own
+legitimate Obsidian installation. This is a distribution boundary, not a legal
+conclusion.

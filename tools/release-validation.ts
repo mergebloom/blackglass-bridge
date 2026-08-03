@@ -5,20 +5,12 @@ import {
   RENDERER_PATCH_FORMAT_VERSION,
   type AdapterOptions,
 } from "../packages/client-adapter/src/patch";
-import {
-  WRAPPER_INCISION_COUNT,
-  WRAPPER_PATCH_FORMAT_VERSION,
-} from "../packages/client-adapter/src/wrapper";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
 import {
   BLACKGLASS_CLI_SOCKET_NAME,
-  CLI_BINARY_INCISION_COUNT,
-  CLI_BINARY_PATCH_FORMAT_VERSION,
 } from "./cli-binary";
-import { assertMacOSCodeSigningEvidence } from "./macos-code-signing";
 import {
   assertMacOSCodeInventory,
-  macOSCodeInventoriesEqual,
 } from "./macos-code-inventory";
 import { assertMacOSRootMetadata } from "./macos-root-metadata";
 import type { MacOSArtifact } from "./macos-artifact";
@@ -39,24 +31,26 @@ import {
 } from "./tooling-source";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
+import { scenarioValidationFileName } from "./e2e-scenario";
 import {
   assertMacOSReproducibilityEvidenceBindsRelease,
   type MacOSReproducibilityEvidence,
 } from "./verify-macos-reproducibility";
 
-export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 12;
+export const RELEASE_VALIDATION_RECORD_SCHEMA_VERSION = 13;
 
 type PublicMacOSArtifact = Omit<MacOSArtifact, "appPath">;
 type PublicServerArtifact = Omit<ServerArtifact, "binaryPath">;
 
 export interface ReleaseQualification {
-  schemaVersion: 9;
+  schemaVersion: 10;
   scenarioId: "E2E-RELEASE-SYNC-RECOVERY";
   qualifiedAt: string;
   passed: true;
   platform: "macOS Apple Silicon";
   blackglassVersion: string;
   rendererVersion: string;
+  validationFileName: string;
   endpoints: AdapterOptions;
   toolingSource: ToolingSourceIdentity;
   artifacts: {
@@ -128,8 +122,6 @@ export interface ReleaseValidationRecord {
   artifacts: {
     compatibilityAsarSha256: string;
     releaseManifestSha256: string;
-    wrapperAsarSha256: string;
-    wrapperHeaderSha256: string;
     macOS: PublicMacOSArtifact;
     server: PublicServerArtifact;
   };
@@ -178,8 +170,6 @@ export function buildReleaseValidationRecord(input: {
     artifacts: {
       compatibilityAsarSha256: manifest.renderer.patchedSha256,
       releaseManifestSha256: qualification.artifacts.releaseManifestSha256,
-      wrapperAsarSha256: manifest.wrapper.patchedSha256,
-      wrapperHeaderSha256: manifest.wrapper.patchedHeaderSha256,
       macOS: manifest.macOS,
       server: qualification.artifacts.server,
     },
@@ -201,12 +191,19 @@ export function assertReleaseQualification(
 ): asserts value is ReleaseQualification {
   if (
     !isRecord(value) ||
-    value.schemaVersion !== 9 ||
+    value.schemaVersion !== 10 ||
     value.scenarioId !== "E2E-RELEASE-SYNC-RECOVERY" ||
     value.passed !== true ||
     value.platform !== "macOS Apple Silicon" ||
     value.blackglassVersion !== manifest.blackglassVersion ||
     value.rendererVersion !== manifest.rendererVersion ||
+    value.validationFileName !== scenarioValidationFileName(
+      "E2E-RELEASE-SYNC-RECOVERY",
+      manifest.rendererVersion,
+      manifest.blackglassVersion,
+      manifest.toolingSource.gitRevision!,
+      (value.artifacts as Record<string, any> | undefined)?.server?.sourceRevision,
+    ) ||
     manifest.reproduction.officialDmgMatchedBaseline !== true ||
     !isIsoDate(value.qualifiedAt) ||
     !same(value.endpoints, manifest.endpoints) ||
@@ -275,8 +272,6 @@ export function assertReleaseValidationRecord(
     !isRecord(value.artifacts) ||
     !isSha256(value.artifacts.compatibilityAsarSha256) ||
     !isSha256(value.artifacts.releaseManifestSha256) ||
-    !isSha256(value.artifacts.wrapperAsarSha256) ||
-    !isSha256(value.artifacts.wrapperHeaderSha256) ||
     !isRecord(value.artifacts.macOS) ||
     !isPublicServerArtifact(value.artifacts.server) ||
     !isRecord(value.packagedClientE2E) ||
@@ -305,13 +300,7 @@ export function assertReleaseValidationRecord(
     value.compatibilityBaseline.id !== `obsidian-macos-${value.rendererVersion}` ||
     !isRecord(value.patcher.renderer) ||
     value.patcher.renderer.formatVersion !== RENDERER_PATCH_FORMAT_VERSION ||
-    value.patcher.renderer.incisions !== RENDERER_INCISION_COUNT ||
-    !isRecord(value.patcher.wrapper) ||
-    value.patcher.wrapper.formatVersion !== WRAPPER_PATCH_FORMAT_VERSION ||
-    value.patcher.wrapper.incisions !== WRAPPER_INCISION_COUNT ||
-    !isRecord(value.patcher.cli) ||
-    value.patcher.cli.formatVersion !== CLI_BINARY_PATCH_FORMAT_VERSION ||
-    value.patcher.cli.incisions !== CLI_BINARY_INCISION_COUNT
+    value.patcher.renderer.incisions !== RENDERER_INCISION_COUNT
   ) {
     throw new Error("Release validation record has inconsistent compatibility metadata");
   }
@@ -323,31 +312,32 @@ export function assertReleaseValidationRecord(
   }
   assertEvidence(value.packagedClientE2E.evidence);
   const macOS = value.artifacts.macOS;
-  assertMacOSCodeSigningEvidence(macOS.codeSigning);
   assertMacOSCodeInventory(macOS.codeInventory);
   assertMacOSRootMetadata(macOS.rootMetadata);
   if (
-    macOS.schemaVersion !== 8 ||
-    macOS.appBundleName !== "Blackglass.app" ||
-    macOS.bundleIdentifier !== "com.blackglass.app" ||
-    macOS.bundleName !== "Obsidian" ||
-    macOS.displayName !== "Blackglass" ||
-    macOS.executableName !== "Obsidian" ||
-    macOS.cliExecutableName !== "obsidian-cli" ||
+    macOS.schemaVersion !== 9 ||
+    macOS.appBundleName !== "Blackglass Bridge.app" ||
+    macOS.bundleIdentifier !== "com.blackglass.bridge" ||
+    macOS.bundleName !== "Blackglass Bridge" ||
+    macOS.displayName !== "Blackglass Bridge" ||
+    macOS.executableName !== "blackglass-bridge" ||
+    macOS.cliExecutableName !== "blackglass-cli" ||
     macOS.cliSocketName !== BLACKGLASS_CLI_SOCKET_NAME ||
-    macOS.cliSocketOccurrences !== CLI_BINARY_INCISION_COUNT ||
-    macOS.rendererRuntimeHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
-    macOS.rendererCliRuntimeRootValidated !== true ||
     macOS.version !== value.rendererVersion ||
-    macOS.profileDirectory !== "Blackglass" ||
+    macOS.blackglassVersion !== value.blackglassVersion ||
+    macOS.rendererVersion !== value.rendererVersion ||
+    macOS.officialExecutableName !== "Obsidian" ||
+    macOS.profileDirectory !== "Blackglass Profile" ||
     macOS.profileMode !== 448 ||
-    macOS.profilePathCanonicalAtSetup !== true ||
-    macOS.explicitUserDataDirHonored !== true ||
+    macOS.canonicalProfileRequired !== true ||
+    macOS.explicitUserDataDirRequired !== true ||
     macOS.profileHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
-    macOS.dedicatedHomeValidated !== true ||
+    macOS.dedicatedRuntimeHomeRequired !== true ||
     macOS.nativeHomeFallbackPreserved !== true ||
-    macOS.upstreamUpdatesDisabled !== true ||
-    macOS.embeddedRendererOnly !== true ||
+    macOS.updateDisableSettingRequired !== true ||
+    macOS.exactOfficialAppVerifiedAtEveryLaunch !== true ||
+    macOS.officialAppUnmodified !== true ||
+    macOS.officialChildSupervisionRequired !== true ||
     !Array.isArray(macOS.registeredUrlSchemes) ||
     macOS.registeredUrlSchemes.length !== 0 ||
     macOS.upstreamICloudContainerRegistered !== false ||
@@ -355,27 +345,18 @@ export function assertReleaseValidationRecord(
     !isSha256(macOS.executableSha256) ||
     !isSha256(macOS.cliExecutableSha256) ||
     !isSha256(macOS.embeddedAsarSha256) ||
-    !isSha256(macOS.embeddedWrapperAsarSha256) ||
-    !isSha256(macOS.embeddedWrapperHeaderSha256) ||
+    !isSha256(macOS.launchConfigSha256) ||
+    !isSha256(macOS.officialAppTreeSha256) ||
+    !isSha256(macOS.officialCodeInventorySha256) ||
+    !isSha256(macOS.officialExecutableSha256) ||
     typeof macOS.codeDirectoryHash !== "string" ||
     !/^[a-f0-9]{40,64}$/u.test(macOS.codeDirectoryHash) ||
     !isSha256(macOS.applicationTreeSha256) ||
     !isTreeIdentity(macOS.applicationTreeIdentity) ||
-    !Array.isArray(macOS.helperBundleIdentifiers) ||
-    !same(macOS.helperBundleIdentifiers, [
-      "md.obsidian.helper",
-      "md.obsidian.helper.GPU",
-      "md.obsidian.helper.Plugin",
-      "md.obsidian.helper.Renderer",
-    ]) ||
     macOS.applicationTreeSha256 !== macOS.applicationTreeIdentity.sha256 ||
-    macOS.codeSigning.strictInventoryTargets !== macOS.codeInventory.entries.length ||
-    macOS.codeSigning.strictMachOTargets !==
-      macOS.codeInventory.entries.filter((entry) => entry.kind === "mach-o").length ||
-    !macOSCodeInventoriesEqual(macOS.codeInventory, value.source.macOSCodeInventory) ||
-    macOS.embeddedAsarSha256 !== value.artifacts.compatibilityAsarSha256 ||
-    macOS.embeddedWrapperAsarSha256 !== value.artifacts.wrapperAsarSha256 ||
-    macOS.embeddedWrapperHeaderSha256 !== value.artifacts.wrapperHeaderSha256
+    macOS.officialAppTreeSha256 !== value.source.appTree.sha256 ||
+    macOS.officialCodeInventorySha256 !== value.source.macOSCodeInventory.sha256 ||
+    macOS.embeddedAsarSha256 !== value.artifacts.compatibilityAsarSha256
   ) {
     throw new Error("Release validation record has an inconsistent macOS artifact");
   }
@@ -391,11 +372,9 @@ export function assertReleaseValidationRecord(
     },
   );
   if (
-    value.source.rendererAsarSha256 === value.artifacts.compatibilityAsarSha256 ||
-    value.source.wrapperAsarSha256 === value.artifacts.wrapperAsarSha256 ||
-    value.source.cliExecutableSha256 === macOS.cliExecutableSha256
+    value.source.rendererAsarSha256 === value.artifacts.compatibilityAsarSha256
   ) {
-    throw new Error("Release validation record does not prove both client incisions");
+    throw new Error("Release validation record does not prove the renderer incision");
   }
 }
 

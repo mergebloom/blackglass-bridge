@@ -374,8 +374,8 @@ if (import.meta.main) {
 function usage(): never {
   console.error(
     "Usage: bun run tools/verify-macos-reproducibility.ts " +
-      "<first/Blackglass.app> <first-release.json> <first-receipt.json> " +
-      "<second/Blackglass.app> <second-release.json> " +
+      "<first/Blackglass Bridge.app> <first-release.json> <first-receipt.json> " +
+      "<second/Blackglass Bridge.app> <second-release.json> " +
       "<second-receipt.json> <evidence.json>",
   );
   process.exit(2);

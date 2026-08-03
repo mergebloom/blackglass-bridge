@@ -31,19 +31,18 @@ Six fixed-length client-ASAR incisions implement two endpoint changes: the
 control-plane origin is replaced in both `app.js` and the independent no-vault
 `starter.js`, and the data-host authorization condition is replaced in
 `app.js`. The main process CLI socket is replaced with the same-length dedicated
-`.blackglass-c.sock` name, its registration target becomes the distinct
-`/usr/local/bin/blackglass` command, and its macOS runtime root prefers
-`BLACKGLASS_HOME`. That sixth incision is qualified only for the current macOS
-target. The copied desktop wrapper receives three safety incisions:
-isolated/default-or-explicit profile selection with mode-0700 enforcement, a
-disabled updater queue, and an embedded-renderer pin. Explicit
-`--user-data-dir` remains authoritative; otherwise the profile uses
-`BLACKGLASS_HOME` with native `HOME` as the ordinary-launch fallback. The GUI's
-native `HOME` is preserved for login Keychain access, and only a packaged CLI
-subprocess receives `HOME=BLACKGLASS_HOME`. The profile incision is located by
-short start/end markers and a reviewed span digest rather than a large embedded
-upstream excerpt. All protocol compatibility lives in named, tested server
-code. Minified identifiers and byte offsets are not treated as stable APIs.
+`.blackglass-c.sock` name, its registration target becomes the distinct local
+`blackglass-cli` command, and its macOS runtime root prefers `BLACKGLASS_HOME`.
+That sixth incision is qualified only for the current macOS target. The
+official desktop wrapper is inspected and hash-bound but is never copied or
+patched into a Blackglass release. A separate open-source launcher enforces the
+three reviewed wrapper policies: an explicit mode-0700 isolated profile,
+`updateDisabled: true`, and one exact renderer alias. It verifies and supervises
+a private byte-identical official runtime supplied by the user. The GUI's native
+`HOME` is preserved for login Keychain access; the dedicated short
+`BLACKGLASS_HOME` holds only runtime sockets and a launch lease. All protocol
+compatibility lives in named, tested server code. Minified identifiers and byte
+offsets are not treated as stable APIs.
 
 For a new release, the analyzer must rediscover each semantic anchor exactly
 once and exactly match every packed JavaScript identity, every explicitly

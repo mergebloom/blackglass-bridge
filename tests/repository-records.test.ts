@@ -119,14 +119,6 @@ describe("committed release records", () => {
         formatVersion: RENDERER_PATCH_FORMAT_VERSION,
         incisions: RENDERER_INCISION_COUNT,
       },
-      wrapper: {
-        formatVersion: WRAPPER_PATCH_FORMAT_VERSION,
-        incisions: WRAPPER_INCISION_COUNT,
-      },
-      cli: {
-        formatVersion: CLI_BINARY_PATCH_FORMAT_VERSION,
-        incisions: CLI_BINARY_INCISION_COUNT,
-      },
     });
     expect(canonicalAdapterOptions(validation.endpoints)).toEqual({
       controlOrigin: "https://sync-control.example.com",
@@ -135,8 +127,6 @@ describe("committed release records", () => {
     for (const hash of [
       validation.artifacts.compatibilityAsarSha256,
       validation.artifacts.releaseManifestSha256,
-      validation.artifacts.wrapperAsarSha256,
-      validation.artifacts.wrapperHeaderSha256,
       validation.artifacts.server.sha256,
       validation.packagedClientE2E.qualificationSha256,
     ]) {
@@ -145,7 +135,7 @@ describe("committed release records", () => {
     expect(validation.artifacts.server).toMatchObject({
       schemaVersion: 2,
       name: "blackglass-server",
-      version: "0.3.0",
+      version: "0.4.0",
       sourceRevision: expect.stringMatching(/^[a-f0-9]{40}$/u),
       binaryName: "blackglass-server",
       architecture: "arm64",

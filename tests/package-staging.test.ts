@@ -7,7 +7,7 @@ import { withPackageStaging } from "../tools/package-staging";
 describe("macOS package staging", () => {
   test("removes the exact staging tree after a post-copy failure", async () => {
     const outputDirectory = await mkdtemp(join(tmpdir(), "blackglass-package-test-"));
-    const outputApp = join(outputDirectory, "Blackglass.app");
+    const outputApp = join(outputDirectory, "Blackglass Bridge.app");
     const sentinel = join(outputDirectory, "keep.txt");
     await writeFile(sentinel, "keep\n");
     let stagingRoot = "";
@@ -31,7 +31,7 @@ describe("macOS package staging", () => {
     const outputDirectory = await mkdtemp(join(tmpdir(), "blackglass-package-test-"));
     try {
       const result = await withPackageStaging(
-        join(outputDirectory, "Blackglass.app"),
+        join(outputDirectory, "Blackglass Bridge.app"),
         async (root) => {
           await writeFile(join(root, "temporary"), "temporary\n");
           return "published";

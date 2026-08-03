@@ -27,12 +27,19 @@ base="blackglass-bridge-v${version}-macos-arm64"
 binary="$output/$base"
 archive="$output/$base.zip"
 manifest="$output/$base.json"
+existing=0
 for path in "$binary" "$binary.sha256" "$archive" "$archive.sha256" "$manifest"; do
-  [[ ! -e "$path" && ! -L "$path" ]] || {
-    echo "refusing existing standalone release output: $path" >&2
-    exit 1
-  }
+  [[ ! -e "$path" && ! -L "$path" ]] || existing=$((existing + 1))
 done
+if [[ $existing -gt 0 ]]; then
+  if [[ $existing -ne 5 ]]; then
+    echo "refusing partial standalone release output in $output" >&2
+    exit 1
+  fi
+  cd -- "$root"
+  bun run tools/verify-standalone-bridge.ts "$output" "$revision"
+  exit 0
+fi
 
 cd -- "$root"
 bun build --compile --target=bun-darwin-arm64 tools/bridge-cli.ts \
@@ -46,12 +53,13 @@ binary_sha=$(shasum -a 256 "$binary" | awk '{print $1}')
 baseline_1127=$(shasum -a 256 compatibility/obsidian-1.12.7.json | awk '{print $1}')
 baseline_1134=$(shasum -a 256 compatibility/obsidian-1.13.4.json | awk '{print $1}')
 bun -e '
-  const [path, version, revision, binary, binarySha, first, second] = Bun.argv.slice(1);
+  const [path, version, revision, binary, binarySha, first, second, toolingSource] = Bun.argv.slice(1);
   await Bun.write(path, JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     name: "blackglass-bridge",
     version,
     sourceRevision: revision,
+    toolingSource: JSON.parse(toolingSource),
     target: { operatingSystem: "macOS", architecture: "arm64" },
     executable: binary,
     executableSha256: binarySha,
@@ -60,7 +68,7 @@ bun -e '
       { rendererVersion: "1.13.4", sha256: second },
     ],
   }, null, 2) + "\n");
-' "$manifest" "$version" "$revision" "$base" "$binary_sha" "$baseline_1127" "$baseline_1134"
+' "$manifest" "$version" "$revision" "$base" "$binary_sha" "$baseline_1127" "$baseline_1134" "$tooling_source"
 
 staging=$(mktemp -d "${TMPDIR:-/tmp}/blackglass-bridge-release.XXXXXX")
 trap 'rm -rf "$staging"' EXIT
@@ -71,5 +79,7 @@ find "$staging" -exec touch -t 198001010000 {} +
 
 (cd -- "$output" && shasum -a 256 "$base" > "$base.sha256")
 (cd -- "$output" && shasum -a 256 "$base.zip" > "$base.zip.sha256")
+cd -- "$root"
+bun run tools/verify-standalone-bridge.ts "$output" "$revision"
 printf '%s\n%s\n%s\n%s\n%s\n' \
   "$binary" "$binary.sha256" "$archive" "$archive.sha256" "$manifest"

@@ -1,60 +1,30 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
+  BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT,
   canonicalAdapterOptions,
-  BLACKGLASS_CLI_COMMAND_NAME,
-  BLACKGLASS_CLI_COMMAND_PATH,
   RENDERER_INCISION_COUNT,
   RENDERER_PATCH_FORMAT_VERSION,
   type AdapterOptions,
   type AdapterReport,
 } from "../packages/client-adapter/src/patch";
-import {
-  WRAPPER_INCISION_COUNT,
-  WRAPPER_PATCH_FORMAT_VERSION,
-  type WrapperPatchReport,
-} from "../packages/client-adapter/src/wrapper";
-import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
-import {
-  BLACKGLASS_CLI_SOCKET_NAME,
-  CLI_BINARY_INCISION_COUNT,
-  CLI_BINARY_PATCH_FORMAT_VERSION,
-  type CliBinaryPatchReport,
-} from "./cli-binary";
-import { assertMacOSCodeSigningEvidence } from "./macos-code-signing";
-import {
-  assertMacOSCodeInventory,
-  macOSCodeInventoriesEqual,
-  type MacOSCodeInventory,
-} from "./macos-code-inventory";
-import { assertMacOSRootMetadata } from "./macos-root-metadata";
+import { assertMacOSCodeInventory, type MacOSCodeInventory } from "./macos-code-inventory";
 import type { MacOSArtifact } from "./macos-artifact";
-import {
-  assertMacOSPackagingToolchain,
-  type MacOSPackagingToolchain,
-} from "./packaging-toolchain";
-import {
-  assertToolingSourceIdentity,
-  type ToolingSourceIdentity,
-} from "./tooling-source";
-import {
-  TREE_IDENTITY_FORMAT_VERSION,
-  type TreeIdentity,
-} from "./tree-identity";
-import { isSupportedSemver, isSupportedStableSemver } from "./semver";
+import { assertMacOSRootMetadata } from "./macos-root-metadata";
+import { assertMacOSPackagingToolchain, type MacOSPackagingToolchain } from "./packaging-toolchain";
 import { COMPATIBILITY_BASELINE_SCHEMA_VERSION } from "./release-compatibility";
+import { isSupportedSemver, isSupportedStableSemver } from "./semver";
+import { assertToolingSourceIdentity, type ToolingSourceIdentity } from "./tooling-source";
+import { TREE_IDENTITY_FORMAT_VERSION, type TreeIdentity } from "./tree-identity";
+import { BRIDGE_PROFILE_DIRECTORY } from "./launcher-config";
 
-export const BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION = 9;
+export const BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION = 10;
 
 export interface BlackglassReleaseManifest {
   schemaVersion: typeof BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION;
   blackglassVersion: string;
   rendererVersion: string;
-  compatibilityBaseline: {
-    id: string;
-    schemaVersion: number;
-    sha256: string;
-  };
+  compatibilityBaseline: { id: string; schemaVersion: number; sha256: string };
   source: {
     officialDmgSha256: string;
     appTree: TreeIdentity;
@@ -62,302 +32,167 @@ export interface BlackglassReleaseManifest {
     wrapperAsarSha256: string;
     cliExecutableSha256: string;
     macOSCodeInventory: MacOSCodeInventory;
+    unchanged: true;
   };
   patcher: {
-    renderer: {
-      formatVersion: typeof RENDERER_PATCH_FORMAT_VERSION;
-      incisions: typeof RENDERER_INCISION_COUNT;
-    };
-    wrapper: {
-      formatVersion: typeof WRAPPER_PATCH_FORMAT_VERSION;
-      incisions: typeof WRAPPER_INCISION_COUNT;
-    };
-    cli: {
-      formatVersion: typeof CLI_BINARY_PATCH_FORMAT_VERSION;
-      incisions: typeof CLI_BINARY_INCISION_COUNT;
-    };
+    renderer: { formatVersion: typeof RENDERER_PATCH_FORMAT_VERSION; incisions: typeof RENDERER_INCISION_COUNT };
   };
   endpoints: AdapterOptions;
   packagingToolchain: MacOSPackagingToolchain;
   toolingSource: ToolingSourceIdentity;
   renderer: AdapterReport;
-  wrapper: WrapperPatchReport;
-  cli: CliBinaryPatchReport;
   macOS: Omit<MacOSArtifact, "appPath">;
+  launchPolicy: {
+    profileDirectory: typeof BRIDGE_PROFILE_DIRECTORY;
+    profileMode: 448;
+    explicitUserDataDir: true;
+    nativeHomePreserved: true;
+    blackglassHomeEnvironment: "BLACKGLASS_HOME";
+    updatesDisabledBeforeLaunch: true;
+    exactOfficialAppVerifiedAtEveryLaunch: true;
+    exclusiveOfficialInstance: true;
+    officialChildSupervisionRequired: true;
+  };
+  distribution: {
+    officialApplicationRedistributed: false;
+    officialWrapperRedistributed: false;
+    officialCliRedistributed: false;
+    proprietaryAssetsRedistributed: false;
+    adaptedRendererGeneratedLocally: true;
+  };
   reproduction: {
     officialDmgMatchedBaseline: boolean;
     sourceAppTreeMatchedBaseline: true;
-    stagedCopyTreeMatchedSource: true;
-    reviewedSourceRenderer: true;
-    sourceWrapperMatchesBaseline: true;
-    rendererByteIdentical: true;
-    packagedRendererByteIdentical: true;
-    packagedWrapperIntegrityVerified: true;
-    packagedCliSocketVerified: true;
-    reviewedCodeSigningPreserved: true;
     sourceCodeInventoryMatchedBaseline: true;
-    packagedCodeInventoryMatchedSource: true;
+    sourceWrapperMatchesBaseline: true;
+    sourceCliMatchesBaseline: true;
+    rendererByteIdentical: true;
+    launcherContainsOnlyBridgeCodeAndLocalAdapter: true;
+    officialAppUnmodified: true;
   };
 }
 
-export async function readBlackglassReleaseManifest(
-  path: string,
-): Promise<{ path: string; manifest: BlackglassReleaseManifest }> {
-  const resolvedPath = resolve(path);
-  return {
-    path: resolvedPath,
-    manifest: parseBlackglassReleaseManifest(await readFile(resolvedPath)),
-  };
+export async function readBlackglassReleaseManifest(path: string): Promise<{ path: string; manifest: BlackglassReleaseManifest }> {
+  const resolved = resolve(path);
+  return { path: resolved, manifest: parseBlackglassReleaseManifest(await readFile(resolved)) };
 }
 
-export function parseBlackglassReleaseManifest(
-  bytes: Uint8Array,
-): BlackglassReleaseManifest {
+export function parseBlackglassReleaseManifest(bytes: Uint8Array): BlackglassReleaseManifest {
   const value = JSON.parse(Buffer.from(bytes).toString("utf8")) as unknown;
   assertBlackglassReleaseManifest(value);
   return value;
 }
 
-export function assertBlackglassReleaseManifest(
-  value: unknown,
-): asserts value is BlackglassReleaseManifest {
+export function assertBlackglassReleaseManifest(value: unknown): asserts value is BlackglassReleaseManifest {
   if (!isRecord(value) || value.schemaVersion !== BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION) {
     throw new Error("Unsupported Blackglass release manifest schema");
   }
   if (
-    typeof value.blackglassVersion !== "string" ||
-    !isSupportedSemver(value.blackglassVersion) ||
-    typeof value.rendererVersion !== "string" ||
-    !isSupportedStableSemver(value.rendererVersion)
-  ) {
-    throw new Error("Blackglass release manifest has invalid versions");
-  }
+    typeof value.blackglassVersion !== "string" || !isSupportedSemver(value.blackglassVersion) ||
+    typeof value.rendererVersion !== "string" || !isSupportedStableSemver(value.rendererVersion)
+  ) throw new Error("Blackglass release manifest has invalid versions");
   if (
-    !isRecord(value.compatibilityBaseline) ||
-    typeof value.compatibilityBaseline.id !== "string" ||
+    !isRecord(value.compatibilityBaseline) || typeof value.compatibilityBaseline.id !== "string" ||
     value.compatibilityBaseline.schemaVersion !== COMPATIBILITY_BASELINE_SCHEMA_VERSION ||
     !isSha256(value.compatibilityBaseline.sha256)
-  ) {
-    throw new Error("Blackglass release manifest has an invalid compatibility baseline");
-  }
+  ) throw new Error("Blackglass release manifest has an invalid compatibility baseline");
   if (
-    !isRecord(value.source) ||
-    !isSha256(value.source.officialDmgSha256) ||
-    !isSha256(value.source.rendererAsarSha256) ||
-    !isSha256(value.source.wrapperAsarSha256) ||
-    !isSha256(value.source.cliExecutableSha256)
-  ) {
-    throw new Error("Blackglass release manifest has invalid source provenance");
-  }
+    !isRecord(value.source) || !isSha256(value.source.officialDmgSha256) ||
+    !isSha256(value.source.rendererAsarSha256) || !isSha256(value.source.wrapperAsarSha256) ||
+    !isSha256(value.source.cliExecutableSha256) || value.source.unchanged !== true
+  ) throw new Error("Blackglass release manifest has invalid upstream provenance");
   assertTreeIdentity(value.source.appTree);
   assertMacOSCodeInventory(value.source.macOSCodeInventory);
   if (
-    !isRecord(value.patcher) ||
-    !isRecord(value.patcher.renderer) ||
+    !isRecord(value.patcher) || !isRecord(value.patcher.renderer) ||
     value.patcher.renderer.formatVersion !== RENDERER_PATCH_FORMAT_VERSION ||
-    value.patcher.renderer.incisions !== RENDERER_INCISION_COUNT ||
-    !isRecord(value.patcher.wrapper) ||
-    value.patcher.wrapper.formatVersion !== WRAPPER_PATCH_FORMAT_VERSION ||
-    value.patcher.wrapper.incisions !== WRAPPER_INCISION_COUNT ||
-    !isRecord(value.patcher.cli) ||
-    value.patcher.cli.formatVersion !== CLI_BINARY_PATCH_FORMAT_VERSION ||
-    value.patcher.cli.incisions !== CLI_BINARY_INCISION_COUNT
-  ) {
-    throw new Error("Blackglass release manifest has an unsupported patcher version");
-  }
-  if (!isRecord(value.endpoints)) {
-    throw new Error("Blackglass release manifest has no endpoints");
-  }
-  assertToolingSourceIdentity(value.toolingSource);
-  assertMacOSPackagingToolchain(value.packagingToolchain);
+    value.patcher.renderer.incisions !== RENDERER_INCISION_COUNT
+  ) throw new Error("Blackglass release manifest has an unsupported renderer patcher");
+  if (!isRecord(value.endpoints)) throw new Error("Blackglass release manifest has no endpoints");
   const endpoints = canonicalAdapterOptions({
     controlOrigin: String(value.endpoints.controlOrigin ?? ""),
     dataHost: String(value.endpoints.dataHost ?? ""),
   });
-  if (
-    endpoints.controlOrigin !== value.endpoints.controlOrigin ||
-    endpoints.dataHost !== value.endpoints.dataHost
-  ) {
-    throw new Error("Blackglass release manifest endpoints are not canonical");
+  if (endpoints.controlOrigin !== value.endpoints.controlOrigin || endpoints.dataHost !== value.endpoints.dataHost) {
+    throw new Error("Blackglass release endpoints are not canonical");
   }
-  if (
-    !isRecord(value.renderer) ||
-    !isRecord(value.wrapper) ||
-    !isRecord(value.cli) ||
-    !isRecord(value.macOS)
-  ) {
-    throw new Error("Blackglass release manifest is missing artifact identities");
-  }
-  assertMacOSCodeSigningEvidence(value.macOS.codeSigning);
+  assertMacOSPackagingToolchain(value.packagingToolchain);
+  assertToolingSourceIdentity(value.toolingSource);
+  if (!isRecord(value.renderer) || !isRecord(value.macOS)) throw new Error("Blackglass release artifacts are missing");
+  for (const hash of [
+    value.renderer.upstreamSha256, value.renderer.patchedSha256,
+    value.renderer.rendererBeforeSha256, value.renderer.rendererAfterSha256,
+    value.renderer.starterBeforeSha256, value.renderer.starterAfterSha256,
+    value.renderer.mainBeforeSha256, value.renderer.mainAfterSha256,
+    value.macOS.infoPlistSha256, value.macOS.executableSha256, value.macOS.embeddedAsarSha256,
+    value.macOS.launchConfigSha256, value.macOS.officialAppTreeSha256, value.macOS.officialExecutableSha256,
+    value.macOS.officialCodeInventorySha256, value.macOS.applicationTreeSha256,
+    value.macOS.codeInventory?.sha256, value.macOS.rootMetadata?.sha256,
+  ]) if (!isSha256(hash)) throw new Error("Blackglass release manifest contains an invalid SHA-256");
   assertMacOSCodeInventory(value.macOS.codeInventory);
   assertMacOSRootMetadata(value.macOS.rootMetadata);
-  for (const hash of [
-    value.renderer.upstreamSha256,
-    value.renderer.patchedSha256,
-    value.renderer.rendererBeforeSha256,
-    value.renderer.rendererAfterSha256,
-    value.renderer.starterBeforeSha256,
-    value.renderer.starterAfterSha256,
-    value.renderer.mainBeforeSha256,
-    value.renderer.mainAfterSha256,
-    value.wrapper.upstreamSha256,
-    value.wrapper.patchedSha256,
-    value.wrapper.upstreamHeaderSha256,
-    value.wrapper.patchedHeaderSha256,
-    value.wrapper.mainBeforeSha256,
-    value.wrapper.mainAfterSha256,
-    value.cli.upstreamSha256,
-    value.cli.patchedSha256,
-    value.macOS.infoPlistSha256,
-    value.macOS.executableSha256,
-    value.macOS.cliExecutableSha256,
-    value.macOS.embeddedAsarSha256,
-    value.macOS.embeddedWrapperAsarSha256,
-    value.macOS.embeddedWrapperHeaderSha256,
-    value.macOS.applicationTreeSha256,
-    value.macOS.codeInventory.sha256,
-    value.macOS.rootMetadata.sha256,
-  ]) {
-    if (!isSha256(hash)) throw new Error("Blackglass release manifest contains an invalid SHA-256");
-  }
-  assertTreeIdentity(value.macOS.applicationTreeIdentity, "packaged app tree");
+  assertTreeIdentity(value.macOS.applicationTreeIdentity);
   if (
     value.renderer.patchFormatVersion !== RENDERER_PATCH_FORMAT_VERSION ||
     value.renderer.incisionCount !== RENDERER_INCISION_COUNT ||
-    value.renderer.controlOrigin !== endpoints.controlOrigin ||
-    value.renderer.dataHost !== endpoints.dataHost ||
-    value.renderer.cliSocketName !== BLACKGLASS_CLI_SOCKET_NAME ||
-    value.renderer.cliCommandName !== BLACKGLASS_CLI_COMMAND_NAME ||
-    value.renderer.cliCommandPath !== BLACKGLASS_CLI_COMMAND_PATH ||
-    value.renderer.runtimeHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
-    value.wrapper.patchFormatVersion !== WRAPPER_PATCH_FORMAT_VERSION ||
-    value.wrapper.incisionCount !== WRAPPER_INCISION_COUNT ||
-    value.wrapper.profileHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
-    value.wrapper.dedicatedHomeValidated !== true ||
-    value.wrapper.nativeHomeFallbackPreserved !== true ||
-    value.cli.patchFormatVersion !== CLI_BINARY_PATCH_FORMAT_VERSION ||
-    value.cli.incisionCount !== CLI_BINARY_INCISION_COUNT ||
-    value.cli.socketName !== BLACKGLASS_CLI_SOCKET_NAME ||
-    value.renderer.upstreamSha256 === value.renderer.patchedSha256 ||
-    value.wrapper.upstreamSha256 === value.wrapper.patchedSha256 ||
-    value.cli.upstreamSha256 === value.cli.patchedSha256 ||
-    value.source.rendererAsarSha256 !== value.renderer.upstreamSha256 ||
-    value.source.wrapperAsarSha256 !== value.wrapper.upstreamSha256 ||
-    value.source.cliExecutableSha256 !== value.cli.upstreamSha256 ||
-    value.macOS.embeddedAsarSha256 !== value.renderer.patchedSha256 ||
-    value.macOS.rendererRuntimeHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
-    value.macOS.rendererCliRuntimeRootValidated !== true ||
-    value.macOS.embeddedWrapperAsarSha256 !== value.wrapper.patchedSha256 ||
-    value.macOS.embeddedWrapperHeaderSha256 !== value.wrapper.patchedHeaderSha256 ||
-    // Explicit ad-hoc signing rewrites the Mach-O code signature after the
-    // byte-for-byte socket patch. Preserve both phase identities while
-    // rejecting an unchanged packaged CLI; inspectMacOSArtifact separately
-    // proves the signed executable still has the exact patched socket inventory.
-    value.macOS.cliExecutableSha256 === value.cli.upstreamSha256 ||
-    value.macOS.schemaVersion !== 8 ||
+    value.renderer.controlOrigin !== endpoints.controlOrigin || value.renderer.dataHost !== endpoints.dataHost ||
+    value.renderer.cliExecutableEnvironment !== BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT ||
+    value.renderer.upstreamSha256 !== value.source.rendererAsarSha256 ||
+    value.renderer.patchedSha256 !== value.macOS.embeddedAsarSha256 ||
+    value.macOS.schemaVersion !== 9 || value.macOS.appBundleName !== "Blackglass Bridge.app" ||
+    value.macOS.bundleIdentifier !== "com.blackglass.bridge" ||
+    value.macOS.bundleName !== "Blackglass Bridge" || value.macOS.displayName !== "Blackglass Bridge" ||
+    value.macOS.blackglassVersion !== value.blackglassVersion || value.macOS.rendererVersion !== value.rendererVersion ||
+    value.macOS.executableName !== "blackglass-bridge" || value.macOS.officialExecutableName !== "Obsidian" ||
+    value.macOS.officialAppTreeSha256 !== value.source.appTree.sha256 ||
+    value.macOS.officialCodeInventorySha256 !== value.source.macOSCodeInventory.sha256 ||
     value.macOS.applicationTreeSha256 !== value.macOS.applicationTreeIdentity.sha256 ||
-    value.macOS.codeSigning.strictInventoryTargets !==
-      value.macOS.codeInventory.entries.length ||
-    value.macOS.codeSigning.strictMachOTargets !==
-      value.macOS.codeInventory.entries.filter((entry) => entry.kind === "mach-o").length ||
-    !macOSCodeInventoriesEqual(
-      value.macOS.codeInventory,
-      value.source.macOSCodeInventory,
-    )
-  ) {
-    throw new Error("Blackglass release manifest artifact bindings are inconsistent");
-  }
-  if (
-    value.macOS.bundleIdentifier !== "com.blackglass.app" ||
-    value.macOS.appBundleName !== "Blackglass.app" ||
-    value.macOS.bundleName !== "Obsidian" ||
-    value.macOS.displayName !== "Blackglass" ||
-    value.macOS.executableName !== "Obsidian" ||
-    value.macOS.cliExecutableName !== "obsidian-cli" ||
-    value.macOS.cliSocketName !== BLACKGLASS_CLI_SOCKET_NAME ||
-    value.macOS.cliSocketOccurrences !== CLI_BINARY_INCISION_COUNT ||
-    value.macOS.rendererRuntimeHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
-    value.macOS.rendererCliRuntimeRootValidated !== true ||
-    !isSha256(value.macOS.cliExecutableSha256) ||
-    value.macOS.version !== value.rendererVersion ||
-    value.macOS.profileDirectory !== "Blackglass" ||
-    value.macOS.profileMode !== 448 ||
-    value.macOS.profilePathCanonicalAtSetup !== true ||
-    value.macOS.explicitUserDataDirHonored !== true ||
-    value.macOS.profileHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
-    value.macOS.dedicatedHomeValidated !== true ||
-    value.macOS.nativeHomeFallbackPreserved !== true ||
-    value.macOS.upstreamUpdatesDisabled !== true ||
-    value.macOS.embeddedRendererOnly !== true ||
-    value.wrapper.profileDirectory !== "Blackglass" ||
-    value.wrapper.applicationName !== "Blackglass" ||
-    value.wrapper.profileMode !== 448 ||
-    value.wrapper.profilePathCanonicalAtSetup !== true ||
-    value.wrapper.explicitUserDataDirHonored !== true ||
-    value.wrapper.profileHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
-    value.wrapper.dedicatedHomeValidated !== true ||
-    value.wrapper.nativeHomeFallbackPreserved !== true ||
-    value.wrapper.upstreamUpdatesDisabled !== true ||
-    value.wrapper.embeddedRendererOnly !== true ||
-    !Array.isArray(value.macOS.registeredUrlSchemes) ||
-    value.macOS.registeredUrlSchemes.length !== 0 ||
+    value.macOS.profileDirectory !== BRIDGE_PROFILE_DIRECTORY || value.macOS.profileMode !== 0o700 ||
+    value.macOS.explicitUserDataDir !== true || value.macOS.nativeHomePreserved !== true ||
+    value.macOS.blackglassHomeEnvironment !== "BLACKGLASS_HOME" ||
+    value.macOS.updateDisableSettingRequired !== true ||
+    value.macOS.exactOfficialAppVerifiedAtEveryLaunch !== true ||
+    value.macOS.officialAppUnmodified !== true || value.macOS.officialChildSupervisionRequired !== true ||
+    !Array.isArray(value.macOS.registeredUrlSchemes) || value.macOS.registeredUrlSchemes.length !== 0 ||
     value.macOS.upstreamICloudContainerRegistered !== false
-  ) {
-    throw new Error("Blackglass release manifest contains an unsafe macOS identity");
-  }
+  ) throw new Error("Blackglass release manifest artifact bindings are inconsistent");
   if (
-    !isRecord(value.reproduction) ||
-    typeof value.reproduction.officialDmgMatchedBaseline !== "boolean" ||
-    value.reproduction.sourceAppTreeMatchedBaseline !== true ||
-    value.reproduction.stagedCopyTreeMatchedSource !== true ||
-    value.reproduction.reviewedSourceRenderer !== true ||
-    value.reproduction.sourceWrapperMatchesBaseline !== true ||
-    value.reproduction.rendererByteIdentical !== true ||
-    value.reproduction.packagedRendererByteIdentical !== true ||
-    value.reproduction.packagedWrapperIntegrityVerified !== true ||
-    value.reproduction.packagedCliSocketVerified !== true ||
-    value.reproduction.reviewedCodeSigningPreserved !== true ||
-    value.reproduction.sourceCodeInventoryMatchedBaseline !== true ||
-    value.reproduction.packagedCodeInventoryMatchedSource !== true
-  ) {
-    throw new Error("Blackglass release manifest does not attest deterministic reproduction");
-  }
+    !isRecord(value.macOS.codeSigning) || value.macOS.codeSigning.signature !== "ad-hoc" ||
+    value.macOS.codeSigning.strictVerification !== true || value.macOS.codeSigning.allArchitecturesVerified !== true ||
+    value.macOS.codeSigning.bundleIdentifier !== "com.blackglass.bridge" ||
+    value.macOS.codeSigning.executableIdentifier !== "com.blackglass.bridge" ||
+    !Array.isArray(value.macOS.codeSigning.executableArchitectures) ||
+    value.macOS.codeSigning.executableArchitectures.length !== 1 ||
+    value.macOS.codeSigning.executableArchitectures[0] !== "arm64"
+  ) throw new Error("Blackglass release manifest launcher signing evidence is invalid");
+  if (
+    !isRecord(value.launchPolicy) || value.launchPolicy.profileDirectory !== BRIDGE_PROFILE_DIRECTORY ||
+    value.launchPolicy.profileMode !== 0o700 || value.launchPolicy.explicitUserDataDir !== true ||
+    value.launchPolicy.nativeHomePreserved !== true || value.launchPolicy.blackglassHomeEnvironment !== "BLACKGLASS_HOME" ||
+    value.launchPolicy.updatesDisabledBeforeLaunch !== true || value.launchPolicy.exactOfficialAppVerifiedAtEveryLaunch !== true ||
+    value.launchPolicy.exclusiveOfficialInstance !== true || value.launchPolicy.officialChildSupervisionRequired !== true
+  ) throw new Error("Blackglass release manifest launch policy is unsafe");
+  if (
+    !isRecord(value.distribution) || value.distribution.officialApplicationRedistributed !== false ||
+    value.distribution.officialWrapperRedistributed !== false || value.distribution.officialCliRedistributed !== false ||
+    value.distribution.proprietaryAssetsRedistributed !== false || value.distribution.adaptedRendererGeneratedLocally !== true
+  ) throw new Error("Blackglass release manifest distribution boundary is invalid");
+  if (
+    !isRecord(value.reproduction) || typeof value.reproduction.officialDmgMatchedBaseline !== "boolean" ||
+    value.reproduction.sourceAppTreeMatchedBaseline !== true || value.reproduction.sourceCodeInventoryMatchedBaseline !== true ||
+    value.reproduction.sourceWrapperMatchesBaseline !== true || value.reproduction.sourceCliMatchesBaseline !== true ||
+    value.reproduction.rendererByteIdentical !== true || value.reproduction.launcherContainsOnlyBridgeCodeAndLocalAdapter !== true ||
+    value.reproduction.officialAppUnmodified !== true
+  ) throw new Error("Blackglass release manifest reproduction evidence is incomplete");
 }
 
-function assertTreeIdentity(
-  value: unknown,
-  label = "source app tree",
-): asserts value is TreeIdentity {
-  if (
-    !isRecord(value) ||
-    value.formatVersion !== TREE_IDENTITY_FORMAT_VERSION ||
-    !isSha256(value.sha256)
-  ) {
-    throw new Error(`Blackglass release manifest has an invalid ${label} identity`);
+function assertTreeIdentity(value: unknown): asserts value is TreeIdentity {
+  if (!isRecord(value) || value.formatVersion !== TREE_IDENTITY_FORMAT_VERSION || !isSha256(value.sha256)) {
+    throw new Error("Invalid tree identity");
   }
-  for (const field of [
-    "entries",
-    "files",
-    "directories",
-    "symlinks",
-    "fileBytes",
-  ] as const) {
-    if (!Number.isSafeInteger(value[field]) || (value[field] as number) < 0) {
-      throw new Error(`Blackglass release manifest ${label} has invalid ${field}`);
-    }
-  }
-  if (
-    (value.entries as number) !==
-    (value.files as number) + (value.directories as number) + (value.symlinks as number)
-  ) {
-    throw new Error(`Blackglass release manifest ${label} counts are inconsistent`);
+  for (const key of ["entries", "files", "directories", "symlinks", "fileBytes"] as const) {
+    if (!Number.isSafeInteger(value[key]) || (value[key] as number) < 0) throw new Error("Invalid tree identity count");
   }
 }
-
-function isSha256(value: unknown): value is string {
-  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
+function isSha256(value: unknown): value is string { return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value); }
+function isRecord(value: unknown): value is Record<string, any> { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }

@@ -3,7 +3,7 @@ import { lstat, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { verifyCompatibilityMatrix, type Matrix } from "./compatibility-matrix";
 import { validateMatrixScenarioReport } from "./compatibility-matrix-entry";
-import { E2E_SCENARIO_IDS } from "./e2e-scenario";
+import { E2E_SCENARIO_IDS, scenarioValidationFileName } from "./e2e-scenario";
 import { assertReleaseValidationRecord } from "./release-validation";
 import { stableJson } from "./stable-json";
 
@@ -26,11 +26,30 @@ const reports = await Promise.all([
 const reportScenarios = reports.map(({ value }, index) =>
   validateMatrixScenarioReport(value, E2E_SCENARIO_IDS[index]!, record),
 );
+for (const [index, report] of reports.entries()) {
+  const expectedName = scenarioValidationFileName(
+    E2E_SCENARIO_IDS[index]!,
+    record.rendererVersion,
+    record.blackglassVersion,
+    record.toolingSource.gitRevision!,
+    record.artifacts.server.sourceRevision,
+  );
+  if (report.path.split("/").at(-1) !== expectedName) {
+    throw new Error(`Scenario report must be named ${expectedName}`);
+  }
+}
+if (new Set(reportScenarios.map((report) => report.runManifestSha256)).size !== E2E_SCENARIO_IDS.length) {
+  throw new Error("Every compatibility scenario must come from its own immutable prepared run");
+}
 if (reports[0]!.sha256 !== record.packagedClientE2E.qualificationSha256) {
   throw new Error("Release qualification differs from the validation record");
 }
-if (matrix.entries.some((entry) => entry.rendererVersion === record.rendererVersion)) {
-  throw new Error(`Compatibility matrix already contains renderer ${record.rendererVersion}`);
+if (matrix.entries.some((entry) =>
+  entry.rendererVersion === record.rendererVersion &&
+  entry.bridge.revision === record.toolingSource.gitRevision &&
+  entry.server.revision === record.artifacts.server.sourceRevision
+)) {
+  throw new Error(`Compatibility matrix already contains this exact renderer/Bridge/Server combination`);
 }
 const recordPath = `docs/validation/${recordFile.path.split("/").at(-1)}`;
 if (resolve(root, recordPath) !== recordFile.path) {
@@ -51,11 +70,14 @@ const entry: Matrix["entries"][number] = {
     revision: record.artifacts.server.sourceRevision,
   },
   platform: { operatingSystem: "macOS", architecture: "arm64" },
-  scenarios: E2E_SCENARIO_IDS.map((id, index) => ({
-    id,
-    result: "passed" as const,
-    reportSha256: reports[index]!.sha256,
-  })),
+  scenarios: E2E_SCENARIO_IDS.map((id, index) => {
+    const report = reports[index]!;
+    const reportPath = `docs/validation/${report.path.split("/").at(-1)}`;
+    if (resolve(root, reportPath) !== report.path) {
+      throw new Error("Scenario reports must be directly under docs/validation");
+    }
+    return { id, result: "passed" as const, report: { path: reportPath, sha256: report.sha256 } };
+  }),
   qualificationResult: "supported",
   validationReport: { path: recordPath, sha256: recordFile.sha256 },
   qualifiedAt: observed.at(-1)!,

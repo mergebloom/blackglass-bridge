@@ -7,11 +7,13 @@ full control of service location and stored data, and a repeatable maintenance
 path as new Obsidian releases appear.
 
 The Bridge verifies an exact reviewed upstream artifact, applies narrow
-endpoint/update/CLI/profile/branding incisions, and emits an independently
-identified `Blackglass.app` plus an auditable manifest and receipt. It preserves
-the upstream executable and helper names needed for Electron stability, uses a
-separate mode-`0700` profile, and disables upstream application updates in the
-generated build.
+endpoint and CLI incisions to a local renderer, and emits an independently
+identified `Blackglass Bridge.app` launcher plus an auditable manifest and
+receipt. The launcher uses a private, byte-verified copy of the official runtime
+without modifying the installed app, starts it with a separate mode-`0700`
+profile, disables upstream renderer updates, and supervises the complete
+session. Keeping the official executable and helper identity avoids the runtime
+instability caused by renaming proprietary Electron components.
 
 ## Install and adapt
 
@@ -78,10 +80,12 @@ operations. Detailed concerns live in their owning repository and are linked
 rather than duplicated.
 
 The public project does not contain or distribute Obsidian applications,
-ASARs, extracted/minified source, proprietary assets, generated client apps, or
-private deployment data. Reviewed incisions are stored as hashes, byte ranges,
-and independent replacement semantics. Release and repository gates scan for
-forbidden artifacts, private identifiers, domains, and secret patterns.
+ASARs, extracted/minified source, proprietary assets, locally generated adapted
+renderers, or private deployment data. Official Bridge releases contain only
+Blackglass code and reviewed hash/offset baselines. The locally generated
+launcher contains the user's adapted renderer and is not a public release
+asset. Release and repository gates scan for forbidden artifacts, private
+identifiers, domains, and secret patterns.
 
 Obsidian is a third-party product. Blackglass is independent and is not
 affiliated with or endorsed by Obsidian. Users must supply their own legitimate

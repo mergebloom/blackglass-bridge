@@ -7,8 +7,8 @@ the project E2E area.
 
 ## What must pass
 
-- the exact official DMG, reviewed compatibility baseline, six-incision client ASAR,
-  two independently packaged app/manifest/receipt outputs, and Rust server binary all
+- the exact official DMG, reviewed compatibility baseline, reviewed client adapter,
+  two independently packaged launcher/manifest/receipt outputs, and Rust server binary all
   match by SHA-256,
   with the server binary also reporting its exact source revision;
 - two separately identified live app processes use the intended renderer,
@@ -68,14 +68,14 @@ bidirectional Sync and cold-recovery release gate. The selected scenario is
 stored in `run-manifest.json`; changing it requires a fresh run directory.
 
 The runner always repeats its release doctor, then resumes candidate-bound
-checks, exact server builds, two independent client packages,
+checks, exact server builds, two independent standalone Bridge builds and client packages,
 reproducibility verification, E2E preparation, and TLS setup. It refuses a
 changed checkout or partial output set. Add `--require-gui` only from the
 unlocked desktop session; that final preflight checks conflicting processes
 and ports before the interactive qualification below. To retry a failed GUI
 qualification, pass a fresh `--run` directory: candidate checks, builds, and
 packages are reused while only that run's E2E and TLS outputs are prepared.
-The preflight finds generated `Blackglass.app` processes even when
+The preflight finds generated `Blackglass Bridge.app` processes even when
 LaunchServices omits them. Generated state remains under ignored `.data` paths
 and contains no credentials.
 
@@ -87,9 +87,9 @@ or release manifest differs:
 
 ```sh
 bun run package:macos:verify-reproducibility -- \
-  '/path/to/build-a/Blackglass.app' /path/to/build-a/release.json \
+  '/path/to/build-a/Blackglass Bridge.app' /path/to/build-a/release.json \
   /path/to/build-a/package-receipt.json \
-  '/path/to/build-b/Blackglass.app' /path/to/build-b/release.json \
+  '/path/to/build-b/Blackglass Bridge.app' /path/to/build-b/release.json \
   /path/to/build-b/package-receipt.json \
   /path/to/client-reproducibility.json
 ```
@@ -98,10 +98,10 @@ Then create a fresh run and its scoped TLS material:
 
 ```sh
 bun run e2e:prepare -- .data/e2e/<run> /path/to/blackglass.asar \
-  --app '/path/to/build-a/Blackglass.app' \
+  --app '/path/to/build-a/Blackglass Bridge.app' \
   --release-manifest /path/to/build-a/release.json \
   --package-receipt /path/to/build-a/package-receipt.json \
-  --second-app '/path/to/build-b/Blackglass.app' \
+  --second-app '/path/to/build-b/Blackglass Bridge.app' \
   --second-release-manifest /path/to/build-b/release.json \
   --second-package-receipt /path/to/build-b/package-receipt.json \
   --reproducibility-evidence /path/to/client-reproducibility.json
@@ -141,7 +141,7 @@ packaged-app smoke in a third terminal and let it finish before launching the
 two E2E clients:
 
 Run the smoke from the active, unlocked macOS desktop session with Xcode Command
-Line Tools available. Quit every Obsidian and Blackglass application
+Line Tools available. Quit every Obsidian and Blackglass Bridge application
 first; the smoke fails closed before launch if either bundle identifier is
 running. It also requires its loopback debugging port to be unused.
 
@@ -155,9 +155,9 @@ its native login `HOME`, authenticates through the starter renderer using the
 run's owner-only credentials, verifies a successful vault list through the
 run's TLS route, verifies that DevTools listens only on loopback, observes a
 full eight-second post-readiness health interval, checks for crash reports and
-profile leakage, forwards a
-packaged-CLI probe with `HOME` set only for that subprocess, and terminates the
-exact generated app by PID through `NSRunningApplication.terminate()`.
+profile leakage, forwards a profile-local CLI probe with `HOME` set only for
+that subprocess, and terminates the exact official child by PID through
+`NSRunningApplication.terminate()` while proving its launcher supervisor exits.
 
 Launch client A and B from their prepared profiles with distinct debug ports,
 the run's `tls-metadata.json`, and identity outputs named
@@ -176,7 +176,7 @@ bun run client:launch -- \
   .data/e2e/<run>/client-a/user-data/obsidian-1.12.7.asar \
   .data/e2e/<run>/client-a/user-data \
   .data/e2e/<run>/client-a/vault \
-  --app '/path/to/Blackglass.app' \
+  --app '/path/to/Blackglass Bridge.app' \
   --debug-port 9321 \
   --e2e-tls-metadata .data/e2e/<run>/tls-metadata.json \
   --identity-out .data/e2e/<run>/client-a-launch.json
@@ -185,7 +185,7 @@ bun run client:launch -- \
   .data/e2e/<run>/client-b/user-data/obsidian-1.12.7.asar \
   .data/e2e/<run>/client-b/user-data \
   .data/e2e/<run>/client-b/vault \
-  --app '/path/to/Blackglass.app' \
+  --app '/path/to/Blackglass Bridge.app' \
   --debug-port 9322 \
   --e2e-tls-metadata .data/e2e/<run>/tls-metadata.json \
   --identity-out .data/e2e/<run>/client-b-launch.json
@@ -285,13 +285,15 @@ bun run client:launch -- \
   .data/e2e/<run>/client-b/user-data/obsidian-1.12.7.asar \
   .data/e2e/<run>/client-b/user-data \
   .data/e2e/<run>/client-b/vault \
-  --app '/path/to/Blackglass.app' \
+  --app '/path/to/Blackglass Bridge.app' \
   --debug-port 9323 \
   --e2e-tls-metadata .data/e2e/<run>/tls-metadata.json \
   --identity-out .data/e2e/<run>/client-b-recovery-launch.json
 ```
 
 The recovery launcher blocks in its own terminal. Once its identity exists,
+it is bound to the distinct immutable `client-b-recovery-runtime.json` receipt;
+the first client B identity and receipt remain available for reset evidence.
 start the recovery capture in another terminal, complete the built-in recovery
 UI, and then run the remaining commands:
 

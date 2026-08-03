@@ -22,6 +22,7 @@ import {
   assertPreparedClientAdapterPath,
   type ClientLaunchIdentity,
   resolvePreparedClientLayout,
+  runtimeReceiptPathForClientIdentity,
 } from "./e2e-client";
 import { readVerifiedE2ETls } from "./e2e-tls";
 import {
@@ -46,6 +47,12 @@ import {
 import { readBlackglassReleaseManifest } from "./release-manifest";
 import { isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
+import {
+  BRIDGE_RUNTIME_RECEIPT_SCHEMA_VERSION,
+  type BridgeRuntimeReceipt,
+  verifyPackagedOfficialRuntime,
+} from "./launcher-runtime";
+import { BRIDGE_EXECUTABLE_NAME } from "./launcher-config";
 
 const [asarArgument, profileArgument, vaultArgument, ...flagArguments] = Bun.argv.slice(2);
 if (!asarArgument || !profileArgument || !vaultArgument) usage();
@@ -61,7 +68,7 @@ const flags = parseStrictFlags(flagArguments, {
     "--e2e-tls-metadata",
     "--identity-out",
   ],
-  booleanFlags: ["--replace-adapter", "--prepare-only", "--allow-upstream-wrapper"],
+  booleanFlags: ["--replace-adapter", "--prepare-only"],
 });
 const debugPortValue = flags.values.get("--debug-port");
 const debugReadinessTimeoutValue = flags.values.get("--debug-readiness-timeout-ms");
@@ -92,7 +99,7 @@ const asar = await canonicalExistingPath(asarArgument, "Compatibility ASAR", "fi
 const profile = await canonicalExistingPath(profileArgument, "Client profile", "directory");
 const vault = await canonicalExistingPath(vaultArgument, "Client vault", "directory");
 const appBundle = await canonicalExistingPath(
-  flags.values.get("--app") ?? "/Applications/Blackglass.app",
+  flags.values.get("--app") ?? "/Applications/Blackglass Bridge.app",
   "macOS app bundle",
   "directory",
 );
@@ -118,7 +125,7 @@ assertNonOverlappingPaths([
   },
   {
     label: "Blackglass normal profile",
-    path: resolve(homedir(), "Library/Application Support/Blackglass"),
+    path: resolve(homedir(), "Library/Application Support/Blackglass Profile"),
   },
 ]);
 
@@ -135,36 +142,33 @@ const mainSha256 = sha256(archive.read("main.js"));
 const adapterSha256 = await fileSha256(asar);
 const infoPlist = join(appBundle, "Contents/Info.plist");
 const bundleIdentifier = plistString(infoPlist, "CFBundleIdentifier");
-if (
-  bundleIdentifier !== "com.blackglass.app" &&
-  !flags.booleans.has("--allow-upstream-wrapper")
-) {
-  throw new Error(
-    `Refusing non-Blackglass app ${bundleIdentifier}; pass --allow-upstream-wrapper only for isolated compatibility testing`,
-  );
+if (bundleIdentifier !== "com.blackglass.bridge") {
+  throw new Error(`Refusing non-Blackglass Bridge app ${bundleIdentifier}`);
 }
-if (e2eRequested && bundleIdentifier !== "com.blackglass.app") {
-  throw new Error("Prepared E2E launches require the Blackglass bundle identity");
-}
-const executableName = plistString(infoPlist, "CFBundleExecutable");
+const appArtifact = await inspectMacOSArtifact(appBundle);
+const launchConfig = await verifyPackagedOfficialRuntime(appBundle);
+const runtimeApp = await canonicalExistingPath(launchConfig.officialAppPath, "official Obsidian runtime", "directory");
+const executableName = launchConfig.officialExecutableName;
 const executable = await canonicalExistingPath(
-  join(appBundle, "Contents/MacOS", executableName),
-  "macOS app executable",
+  join(runtimeApp, "Contents/MacOS", executableName),
+  "official Obsidian executable",
   "file",
 );
 const executableSha256 = await fileSha256(executable);
-const appArtifact =
-  bundleIdentifier === "com.blackglass.app"
-    ? await inspectMacOSArtifact(appBundle)
-    : undefined;
-if (appArtifact && appArtifact.embeddedAsarSha256 !== adapterSha256) {
+const launcherExecutable = await canonicalExistingPath(
+  join(appBundle, "Contents/MacOS", BRIDGE_EXECUTABLE_NAME),
+  "Blackglass Bridge launcher executable",
+  "file",
+);
+const launcherExecutableSha256 = await fileSha256(launcherExecutable);
+if (appArtifact.embeddedAsarSha256 !== adapterSha256) {
   throw new Error(
     "Blackglass always loads its embedded renderer; the supplied ASAR must match it",
   );
 }
-assertProfileNotInUse(appBundle, profile);
+assertProfileNotInUse(runtimeApp, profile);
 if (!e2eRequested && !blackglassHomeArgument) {
-  assertNoSharedHomeBlackglassProcess(appBundle);
+  assertNoSharedHomeBlackglassProcess(runtimeApp);
   if (await pathExists(join(homedir(), appArtifact?.cliSocketName ?? ".blackglass-c.sock"))) {
     throw new Error("The login-home Blackglass CLI socket is already owned or stale");
   }
@@ -172,7 +176,7 @@ if (!e2eRequested && !blackglassHomeArgument) {
 
 let launchLeasePath: string | undefined;
 try {
-let targetAsar = join(profile, `obsidian-${packageMetadata.version}.asar`);
+let targetAsar = join(profile, launchConfig.adapterProfileFileName);
 let launchHome = profile;
 if (!e2eRequested && process.env[BLACKGLASS_HOME_ENVIRONMENT] && !blackglassHomeArgument) {
   throw new Error(
@@ -207,6 +211,7 @@ let launchBinding:
       tlsMetadataSha256: string;
       tlsSpkiSha256Base64: string;
       resetLockPath: string;
+      runtimeReceiptPath: string;
     }
   | undefined;
 if (e2eRequested) {
@@ -282,6 +287,11 @@ if (e2eRequested) {
     tlsMetadataSha256: tls.metadataSha256,
     tlsSpkiSha256Base64: tls.metadata.spkiSha256Base64,
     resetLockPath,
+    runtimeReceiptPath: runtimeReceiptPathForClientIdentity(
+      run.root,
+      layout.clientName,
+      identityPath,
+    ),
   };
 } else {
   if (await Bun.file(targetAsar).exists()) {
@@ -321,11 +331,11 @@ const nativeHomePath = process.env.HOME;
 if (!nativeHomePath || !nativeHomePath.startsWith("/")) {
   throw new Error("The native macOS HOME must be an absolute path");
 }
-const launchArguments = [executable, `--user-data-dir=${profile}`];
-if (debugPort) launchArguments.push(`--remote-debugging-port=${debugPort}`);
+const runtimeArguments: string[] = [];
+if (debugPort) runtimeArguments.push(`--remote-debugging-port=${debugPort}`);
 if (launchBinding) {
   const tls = await readVerifiedE2ETls(dirname(dirname(profile)), launchBinding.tlsMetadataPath);
-  launchArguments.push(
+  runtimeArguments.push(
     `--host-resolver-rules=${tls.metadata.chromiumHostResolverRules}`,
     `--ignore-certificate-errors-spki-list=${tls.metadata.spkiSha256Base64}`,
   );
@@ -347,9 +357,9 @@ if (prepareOnly) {
   process.exit(0);
 }
 
-assertProfileNotInUse(appBundle, profile);
+assertProfileNotInUse(runtimeApp, profile);
 if (!launchBinding && !blackglassHomeArgument) {
-  assertNoSharedHomeBlackglassProcess(appBundle);
+  assertNoSharedHomeBlackglassProcess(runtimeApp);
   if (await pathExists(join(homedir(), appArtifact?.cliSocketName ?? ".blackglass-c.sock"))) {
     throw new Error("The login-home Blackglass CLI socket became occupied before launch");
   }
@@ -371,13 +381,21 @@ if (launchBinding) {
   launchHome = runtimeHome.home;
 }
 const startedAt = new Date().toISOString();
+const launchArguments = [
+  launcherExecutable,
+  "--blackglass-profile", profile,
+  "--blackglass-vault", vault,
+  "--blackglass-home", launchHome,
+  ...(launchBinding
+    ? ["--blackglass-runtime-receipt", launchBinding.runtimeReceiptPath]
+    : []),
+  ...runtimeArguments,
+];
 let child: ReturnType<typeof Bun.spawn>;
 try {
   child = Bun.spawn(launchArguments, {
     cwd: vault,
-    env: launchBinding || blackglassHomeArgument
-      ? { ...process.env, [BLACKGLASS_HOME_ENVIRONMENT]: launchHome }
-      : process.env,
+    env: { ...process.env },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -396,10 +414,27 @@ if (launchBinding && debugPort) {
   if (!appArtifact) throw new Error("Prepared E2E app identity is unavailable");
   const publicArtifact = publicMacOSArtifact(appArtifact);
   let debugBinding: Awaited<ReturnType<typeof waitForDebugBinding>> | undefined;
+  let runtimeReceipt: BridgeRuntimeReceipt | undefined;
   try {
+    runtimeReceipt = await waitForRuntimeReceipt(
+      launchBinding.runtimeReceiptPath,
+      child,
+      debugReadinessTimeoutMs,
+    );
+    if (
+      runtimeReceipt.launcherPid !== child.pid ||
+      runtimeReceipt.bundlePath !== appBundle ||
+      runtimeReceipt.officialAppPath !== runtimeApp ||
+      runtimeReceipt.officialAppTreeSha256 !== appArtifact.officialAppTreeSha256 ||
+      runtimeReceipt.adapterSha256 !== adapterSha256 ||
+      runtimeReceipt.profilePath !== profile ||
+      runtimeReceipt.blackglassHomePath !== launchHome
+    ) {
+      throw new Error("Packaged launcher runtime receipt does not match the prepared client");
+    }
     debugBinding = await waitForDebugBinding(
       debugPort,
-      child.pid,
+      runtimeReceipt.officialPid,
       child,
       debugReadinessTimeoutMs,
     );
@@ -417,22 +452,29 @@ if (launchBinding && debugPort) {
     await rethrowAfterFailedLaunch(
       error,
       child,
-      appBundle,
+      runtimeApp,
       profile,
       shortHomeRoot,
       launchHome,
       appArtifact.cliSocketName,
     );
   }
-  if (!debugBinding) throw new Error("Client launch lost its DevTools binding");
+  if (!debugBinding || !runtimeReceipt) throw new Error("Client launch lost its packaged runtime binding");
   try {
     const identity: ClientLaunchIdentity = {
-      schemaVersion: 4,
+      schemaVersion: 5,
       runManifestSha256: launchBinding.runManifestSha256,
       releaseManifestSha256: launchBinding.releaseManifestSha256,
       startedAt,
-      pid: child.pid,
-      launchCommand: processInfo(child.pid).command,
+      pid: runtimeReceipt.officialPid,
+      launchCommand: processInfo(runtimeReceipt.officialPid).command,
+      launcherPid: child.pid,
+      launcherCommand: processInfo(child.pid).command,
+      launcherExecutablePath: launcherExecutable,
+      launcherExecutableSha256,
+      officialChildOfLauncher: true,
+      runtimeReceiptPath: launchBinding.runtimeReceiptPath,
+      runtimeReceiptSha256: await fileSha256(launchBinding.runtimeReceiptPath),
       debugPort,
       debugListenerPid: debugBinding.listenerPid,
       debugListenerCommand: debugBinding.listenerCommand,
@@ -440,6 +482,7 @@ if (launchBinding && debugPort) {
       debugTargetUrl: debugBinding.targetUrl,
       executablePath: executable,
       executableSha256,
+      officialAppPath: runtimeApp,
       appBundlePath: appBundle,
       appArtifactSha256: sha256(Buffer.from(stableJson(publicArtifact))),
       appArtifact: publicArtifact,
@@ -472,7 +515,7 @@ if (launchBinding && debugPort) {
     await rethrowAfterFailedLaunch(
       error,
       child,
-      appBundle,
+      runtimeApp,
       profile,
       shortHomeRoot,
       launchHome,
@@ -484,7 +527,7 @@ if (launchBinding && debugPort) {
 }
 const exitCode = await child.exited;
 if (shortHomeRoot) {
-  if (!await waitForClientProcessesExit(appBundle, profile, 5_000)) {
+  if (!await waitForClientProcessesExit(runtimeApp, profile, 5_000)) {
     throw new Error("Client helpers survived after the launched main process exited");
   }
   await removeShortBlackglassHome(
@@ -493,7 +536,7 @@ if (shortHomeRoot) {
     appArtifact?.cliSocketName ?? ".blackglass-c.sock",
   );
 } else if (blackglassHomeArgument) {
-  if (!await waitForClientProcessesExit(appBundle, profile, 5_000)) {
+  if (!await waitForClientProcessesExit(runtimeApp, profile, 5_000)) {
     throw new Error("Client helpers survived after the launched main process exited");
   }
   if (await pathExists(join(launchHome, appArtifact?.cliSocketName ?? ".blackglass-c.sock"))) {
@@ -503,6 +546,44 @@ if (shortHomeRoot) {
 process.exitCode = exitCode;
 } finally {
   if (launchLeasePath) await releasePreparedClientLease(launchLeasePath);
+}
+
+async function waitForRuntimeReceipt(
+  path: string,
+  launcher: ReturnType<typeof Bun.spawn>,
+  timeoutMs: number,
+): Promise<BridgeRuntimeReceipt> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await pathExists(path)) {
+      const value = JSON.parse(await readFile(path, "utf8")) as Partial<BridgeRuntimeReceipt>;
+      if (
+        value.schemaVersion !== BRIDGE_RUNTIME_RECEIPT_SCHEMA_VERSION ||
+        !Number.isSafeInteger(value.launcherPid) ||
+        !Number.isSafeInteger(value.officialPid) ||
+        value.officialChildOfLauncher !== true ||
+        typeof value.bundlePath !== "string" ||
+        typeof value.officialAppPath !== "string" ||
+        typeof value.officialAppTreeSha256 !== "string" ||
+        typeof value.adapterSha256 !== "string" ||
+        typeof value.profilePath !== "string" ||
+        typeof value.blackglassHomePath !== "string" ||
+        value.explicitUserDataDir !== true ||
+        value.exclusiveOfficialInstance !== true
+      ) {
+        throw new Error("Packaged launcher wrote a malformed runtime receipt");
+      }
+      return value as BridgeRuntimeReceipt;
+    }
+    const exited = await Promise.race([
+      launcher.exited.then((code) => ({ exited: true as const, code })),
+      Bun.sleep(100).then(() => ({ exited: false as const, code: 0 })),
+    ]);
+    if (exited.exited) {
+      throw new Error(`Packaged launcher exited before its runtime receipt (${exited.code})`);
+    }
+  }
+  throw new Error("Timed out waiting for the packaged launcher runtime receipt");
 }
 
 async function fileSha256(path: string): Promise<string> {
@@ -981,8 +1062,8 @@ function plistString(infoPlist: string, key: string): string {
 function usage(): never {
   console.error(
     "Usage: bun run tools/launch-macos.ts <patched.asar> <existing-profile> <existing-vault> " +
-      "[--app <Blackglass.app>] [--replace-adapter] [--prepare-only] " +
-      "[--allow-upstream-wrapper] [--debug-port <port> " +
+      "[--app <Blackglass Bridge.app>] [--replace-adapter] [--prepare-only] " +
+      "[--debug-port <port> " +
       "--debug-readiness-timeout-ms <30000..300000> " +
       "--e2e-tls-metadata <metadata.json> " +
       "--identity-out <identity.json>]",

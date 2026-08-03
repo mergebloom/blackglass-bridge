@@ -34,3 +34,19 @@ After review, run the fast gates, full protocol and packaging gates, and every
 required packaged-client scenario. Only the generated
 [`matrix.json`](matrix.json) may make a support claim. The generated
 [`MATRIX.md`](MATRIX.md) must remain byte-for-byte derived from it.
+
+Copy each completed run report under its self-declared collision-free name:
+
+```sh
+report_name=$(jq -r .validationFileName /path/to/run/qualification.json)
+install -m 0644 /path/to/run/qualification.json "docs/validation/$report_name"
+# Repeat with scenario-report.json from the tenancy, custom, and managed runs.
+```
+
+Promote the combination with `bun run compatibility:add --` followed by the
+validation record and those four named scenario reports in the order shown by
+the command's usage text. Then run `bun run compatibility:check` and
+`bun run tooling:verify-qualified -- <qualification-commit> <record>...`.
+Qualification is one source-bound commit containing only the new validation
+records, their four immutable scenario reports, and both generated matrix
+files; the verifier rejects missing, reused, modified, or unrelated evidence.

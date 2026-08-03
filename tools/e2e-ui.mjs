@@ -75,7 +75,7 @@ for (const candidate of pages) {
     auxiliaryPages.push(candidate);
   }
 }
-if (auxiliaryPages.length > 1) {
+if (action !== "close-auxiliary" && auxiliaryPages.length > 1) {
   throw new Error(
     `Expected at most one Settings renderer for debugging port ${port}; found ${auxiliaryPages.length}`,
   );
@@ -416,6 +416,9 @@ try {
       closed.push({ title: await auxiliary.title(), url: auxiliary.url() });
       await auxiliary.close();
     }
+    if (auxiliaryPages.some((auxiliary) => !auxiliary.isClosed())) {
+      throw new Error("One or more auxiliary Settings renderers remained after cleanup");
+    }
     console.log(JSON.stringify({ closed, count: closed.length }));
   } else if (action === "click-selector") {
     const selector = required(arguments_[0], "selector");
@@ -710,7 +713,7 @@ async function findBoundLaunchIdentity(debugPort) {
     } catch {
       continue;
     }
-    if (raw?.schemaVersion !== 4 || raw?.debugPort !== debugPort || !raw?.pid) continue;
+    if (raw?.schemaVersion !== 5 || raw?.debugPort !== debugPort || !raw?.pid) continue;
     if (!processIsAlive(raw.pid)) continue;
     const binding = await verifyLiveClientLaunchBinding(discoveredPath);
     candidates.push({

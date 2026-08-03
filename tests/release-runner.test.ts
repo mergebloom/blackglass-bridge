@@ -40,6 +40,13 @@ describe("immutable release runner", () => {
     const source = await readFile(resolve(root, "tools/run-release-candidate.ts"), "utf8");
     expect(source).toContain('packageStage("a"');
     expect(source).toContain('packageStage("b"');
+    expect(source).toContain('"blackglass-a.asar"');
+    expect(source).toContain('"blackglass-b.asar"');
+    expect(source).toContain(`name: \`client-\${rendererVersion}-patch-a\``);
+    expect(source).toContain(`name: \`client-\${rendererVersion}-patch-b\``);
+    expect(source).toContain('"standalone-bridge-a"');
+    expect(source).toContain('"standalone-bridge-b"');
+    expect(source).toContain("tools/verify-standalone-reproducibility.ts");
     expect(source).toContain("tools/verify-macos-reproducibility.ts");
     expect(source).toContain("tools/prepare-e2e.ts");
     expect(source).toContain("tools/prepare-e2e-tls.ts");
@@ -48,6 +55,17 @@ describe("immutable release runner", () => {
     expect(source).toContain("runScopedStageKey(");
     expect(source).toContain("entry.key === stageResumeKey(stage)");
     expect(source).toContain('relative(resolve(root, ".data/e2e"), runRoot)');
+  });
+
+  test("runs Bridge stages from a detached exact immutable source", async () => {
+    const source = await readFile(resolve(root, "tools/run-release-candidate.ts"), "utf8");
+    expect(source).toContain('"worktree", "add", "--detach"');
+    expect(source).toContain("assertImmutableClientSource");
+    expect(source).toContain("immutableClientSource: true");
+    expect(source).toContain('"status", "--porcelain=v1", "--untracked-files=all"');
+    expect(source).toContain('"npm", "ci", "--ignore-scripts"');
+    expect(source).toContain("assertImmutableClientDependencies");
+    expect(source).toContain("tools/verify-release-dependencies.ts");
   });
 
   test("treats an old native binary as rebuildable cache state", async () => {
@@ -66,7 +84,7 @@ describe("immutable release runner", () => {
     const wrapper = await readFile(resolve(root, "tools/macos-preflight.ts"), "utf8");
     expect(source).toContain("proc_listallpids");
     expect(source).toContain("proc_pidpath");
-    expect(source).toContain("/Blackglass.app/Contents/MacOS/");
+    expect(source).toContain("/Blackglass Bridge.app/Contents/MacOS/");
     expect(wrapper).toContain('"-lproc"');
   });
 });

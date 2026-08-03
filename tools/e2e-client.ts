@@ -21,12 +21,19 @@ import { stableJson } from "./stable-json";
 import type { PreparedClientName } from "./e2e-run-lock";
 
 export interface ClientLaunchIdentity {
-  schemaVersion: 4;
+  schemaVersion: 5;
   runManifestSha256: string;
   releaseManifestSha256: string;
   startedAt: string;
   pid: number;
   launchCommand: string;
+  launcherPid: number;
+  launcherCommand: string;
+  launcherExecutablePath: string;
+  launcherExecutableSha256: string;
+  officialChildOfLauncher: true;
+  runtimeReceiptPath: string;
+  runtimeReceiptSha256: string;
   debugPort: number;
   debugListenerPid: number;
   debugListenerCommand: string;
@@ -34,6 +41,7 @@ export interface ClientLaunchIdentity {
   debugTargetUrl: string;
   executablePath: string;
   executableSha256: string;
+  officialAppPath: string;
   appBundlePath: string;
   appArtifactSha256: string;
   appArtifact: Omit<MacOSArtifact, "appPath">;
@@ -110,6 +118,20 @@ export function assertPreparedClientAdapterPath(
   return expected;
 }
 
+export function runtimeReceiptPathForClientIdentity(
+  runRoot: string,
+  clientName: PreparedClientName,
+  identityPath: string,
+): string {
+  const name = basename(identityPath);
+  const initial = `${clientName}-launch.json`;
+  const recovery = clientName === "client-b" ? "client-b-recovery-launch.json" : "";
+  if (name !== initial && name !== recovery) {
+    throw new Error(`Unexpected ${clientName} launch identity filename: ${name}`);
+  }
+  return join(runRoot, name.replace(/-launch\.json$/u, "-runtime.json"));
+}
+
 export async function readClientLaunchIdentity(
   path: string,
 ): Promise<ClientLaunchIdentity> {
@@ -121,13 +143,15 @@ export async function readClientLaunchIdentity(
 export function assertClientLaunchIdentity(
   value: unknown,
 ): asserts value is ClientLaunchIdentity {
-  if (!isRecord(value) || value.schemaVersion !== 4) {
+  if (!isRecord(value) || value.schemaVersion !== 5) {
     throw new Error("Unsupported client launch identity schema");
   }
   for (const field of [
     "runManifestSha256",
     "releaseManifestSha256",
     "executableSha256",
+    "launcherExecutableSha256",
+    "runtimeReceiptSha256",
     "appArtifactSha256",
     "adapterSha256",
     "tlsMetadataSha256",
@@ -137,6 +161,9 @@ export function assertClientLaunchIdentity(
   for (const field of [
     "startedAt",
     "executablePath",
+    "officialAppPath",
+    "launcherExecutablePath",
+    "runtimeReceiptPath",
     "appBundlePath",
     "adapterPath",
     "profilePath",
@@ -156,6 +183,9 @@ export function assertClientLaunchIdentity(
     new Date(startedAt).toISOString() !== value.startedAt ||
     !Number.isSafeInteger(value.pid) ||
     (value.pid as number) < 1 ||
+    !Number.isSafeInteger(value.launcherPid) ||
+    (value.launcherPid as number) < 1 ||
+    value.launcherPid === value.pid ||
     !Number.isSafeInteger(value.debugPort) ||
     (value.debugPort as number) < 1024 ||
     (value.debugPort as number) > 65_535 ||
@@ -165,6 +195,9 @@ export function assertClientLaunchIdentity(
     value.debugListenerCommand.length === 0 ||
     typeof value.launchCommand !== "string" ||
     value.launchCommand.length === 0 ||
+    typeof value.launcherCommand !== "string" ||
+    value.launcherCommand.length === 0 ||
+    value.officialChildOfLauncher !== true ||
     typeof value.debugTargetId !== "string" ||
     value.debugTargetId.length === 0 ||
     typeof value.debugTargetUrl !== "string" ||
@@ -206,6 +239,13 @@ export async function verifyLiveClientLaunchBinding(
   const { run } = layout;
   assertPathWithin(identityPath, run.root, "Client launch identity");
   await assertNoSymlinkSegments(run.root, identityPath, "Client launch identity");
+  const runtimeReceiptPath = await canonicalExistingPath(
+    identity.runtimeReceiptPath,
+    "Client runtime receipt",
+    "file",
+  );
+  assertPathWithin(runtimeReceiptPath, run.root, "Client runtime receipt");
+  await assertNoSymlinkSegments(run.root, runtimeReceiptPath, "Client runtime receipt");
   if (
     identity.runManifestSha256 !== run.manifestSha256 ||
     identity.releaseManifestSha256 !== run.manifest.releaseManifestSha256 ||
@@ -213,6 +253,10 @@ export async function verifyLiveClientLaunchBinding(
     identity.blackglassHomeEnvironment !== BLACKGLASS_HOME_ENVIRONMENT ||
     identity.nativeHomeEnvironmentPreserved !== true ||
     identity.tlsMetadataPath !== join(run.root, "tls-metadata.json") ||
+    !pathsEqual(
+      identity.runtimeReceiptPath,
+      runtimeReceiptPathForClientIdentity(run.root, layout.clientName, identityPath),
+    ) ||
     ((await stat(identityPath)).mode & 0o777) !== 0o600
   ) {
     throw new Error("Client launch identity is not bound to its prepared run");
@@ -245,31 +289,69 @@ export async function verifyLiveClientLaunchBinding(
   ) {
     throw new Error("Client launch identity has mismatched TLS metadata");
   }
-  const [adapterSha256, executableSha256, currentArtifact] = await Promise.all([
+  const runtimeReceiptBytes = await readFile(runtimeReceiptPath);
+  const runtimeReceipt = JSON.parse(runtimeReceiptBytes.toString("utf8")) as unknown;
+  if (
+    sha256(runtimeReceiptBytes) !== identity.runtimeReceiptSha256 ||
+    ((await stat(runtimeReceiptPath)).mode & 0o777) !== 0o600 ||
+    !isRecord(runtimeReceipt) ||
+    runtimeReceipt.schemaVersion !== 1 ||
+    runtimeReceipt.launcherPid !== identity.launcherPid ||
+    runtimeReceipt.officialPid !== identity.pid ||
+    runtimeReceipt.officialChildOfLauncher !== true ||
+    runtimeReceipt.bundlePath !== identity.appBundlePath ||
+    runtimeReceipt.officialAppPath !== identity.officialAppPath ||
+    runtimeReceipt.officialAppTreeSha256 !== identity.appArtifact.officialAppTreeSha256 ||
+    runtimeReceipt.adapterSha256 !== identity.adapterSha256 ||
+    runtimeReceipt.profilePath !== identity.profilePath ||
+    runtimeReceipt.blackglassHomePath !== identity.blackglassHomePath ||
+    runtimeReceipt.explicitUserDataDir !== true ||
+    runtimeReceipt.exclusiveOfficialInstance !== true
+  ) {
+    throw new Error("Client runtime receipt is not bound to its launch identity");
+  }
+  const [adapterSha256, executableSha256, launcherExecutableSha256, currentArtifact] = await Promise.all([
     fileSha256(identity.adapterPath),
     fileSha256(identity.executablePath),
+    fileSha256(identity.launcherExecutablePath),
     inspectMacOSArtifact(identity.appBundlePath),
   ]);
   const publicArtifact = publicMacOSArtifact(currentArtifact);
   if (
     adapterSha256 !== identity.adapterSha256 ||
     executableSha256 !== identity.executableSha256 ||
+    launcherExecutableSha256 !== identity.launcherExecutableSha256 ||
     stableJson(publicArtifact) !== stableJson(identity.appArtifact) ||
     sha256(Buffer.from(stableJson(publicArtifact))) !== identity.appArtifactSha256
   ) {
     throw new Error("Live client files changed after launch identity was recorded");
   }
   assertProcessAlive(identity.pid, "launched client");
+  assertProcessAlive(identity.launcherPid, "Blackglass Bridge launcher");
   const listenerPid = listenerOwner(identity.debugPort);
   const launchCommand = processInfo(identity.pid).command;
+  const launcherCommand = processInfo(identity.launcherPid).command;
   const listenerCommand = processInfo(listenerPid).command;
   if (
     listenerPid !== identity.debugListenerPid ||
     !isProcessOrDescendant(listenerPid, identity.pid) ||
+    !isProcessOrDescendant(identity.pid, identity.launcherPid) ||
     launchCommand !== identity.launchCommand ||
+    launcherCommand !== identity.launcherCommand ||
     listenerCommand !== identity.debugListenerCommand
   ) {
     throw new Error("DevTools listener is not owned by the recorded client process");
+  }
+  for (const expectedArgument of [
+    identity.launcherExecutablePath,
+    `--blackglass-profile ${identity.profilePath}`,
+    `--blackglass-vault ${identity.vaultPath}`,
+    `--blackglass-home ${identity.blackglassHomePath}`,
+    `--blackglass-runtime-receipt ${identity.runtimeReceiptPath}`,
+  ]) {
+    if (!launcherCommand.includes(expectedArgument)) {
+      throw new Error(`Live launcher command is missing ${expectedArgument}`);
+    }
   }
   for (const expectedArgument of [
     identity.executablePath,

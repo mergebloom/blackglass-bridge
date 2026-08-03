@@ -120,16 +120,17 @@ export function assertPinnedBunVersion(): void {
 }
 
 export async function inspectMacOSPackagingToolchain(options: {
-  standaloneExecutable?: string;
+  executionMode?: "development" | "standalone";
 } = {}): Promise<MacOSPackagingToolchain> {
   assertPinnedBunVersion();
   if (process.platform !== "darwin" || process.arch !== "arm64") {
     throw new Error("macOS packaging requires Apple Silicon macOS");
   }
+  const executionMode = options.executionMode ?? "development";
   const tools: MacOSPackagingToolchain["tools"] = [
     {
-      name: options.standaloneExecutable ? "blackglass-bridge" : "bun",
-      sha256: await sha256File(options.standaloneExecutable ?? process.execPath),
+      name: executionMode === "standalone" ? "blackglass-bridge" : "bun",
+      sha256: await sha256File(process.execPath),
     },
   ];
   for (const [name, path] of Object.entries(MACOS_PACKAGING_EXECUTABLES) as Array<
@@ -162,7 +163,7 @@ export async function inspectMacOSPackagingToolchain(options: {
     platform: "darwin",
     architecture: "arm64",
     bunVersion: PINNED_BUN_VERSION,
-    executionMode: options.standaloneExecutable ? "standalone" : "development",
+    executionMode,
     operatingSystem: {
       productVersion: runText([
         MACOS_PACKAGING_EXECUTABLES.sw_vers,
@@ -179,12 +180,18 @@ export async function inspectMacOSPackagingToolchain(options: {
       gitVersion: gitMatch[1]!,
     },
     tools,
-    runtimeDependencies: options.standaloneExecutable
+    runtimeDependencies: executionMode === "standalone"
       ? []
       : await inspectReleaseRuntimeDependencies(),
   };
   assertMacOSPackagingToolchain(value);
   return value;
+}
+
+export function packagingExecutionMode(standaloneExecutable: string): "development" | "standalone" {
+  return realpathSync(standaloneExecutable) === realpathSync(process.execPath)
+    ? "standalone"
+    : "development";
 }
 
 export function assertMacOSPackagingToolchain(
@@ -263,7 +270,7 @@ export function assertMacOSPackagingToolchain(
   }
 }
 
-async function inspectReleaseRuntimeDependencies(): Promise<
+export async function inspectReleaseRuntimeDependencies(): Promise<
   MacOSPackagingToolchain["runtimeDependencies"]
 > {
   const repositoryRoot = resolve(import.meta.dir, "..");

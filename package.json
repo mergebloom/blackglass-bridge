@@ -1,6 +1,6 @@
 {
   "name": "blackglass",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "license": "MIT",
   "packageManager": "bun@1.3.8",
@@ -19,6 +19,8 @@
     "analyze:release": "bun run tools/analyze-release.ts",
     "bridge": "bun run tools/bridge-cli.ts",
     "build:standalone": "bash scripts/build-standalone-bridge.sh",
+    "verify:standalone": "bun run tools/verify-standalone-bridge.ts",
+    "verify:standalone:reproducibility": "bun run tools/verify-standalone-reproducibility.ts",
     "compatibility:check": "bun run tools/compatibility-matrix.ts --check",
     "compatibility:write": "bun run tools/compatibility-matrix.ts --write",
     "compatibility:add": "bun run tools/write-compatibility-matrix-entry.ts",

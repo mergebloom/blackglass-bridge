@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { observeScenarioDatabase } from "../tools/e2e-scenario-evidence";
+import {
+  assertFreshScenarioObservedAt,
+  observeScenarioDatabase,
+} from "../tools/e2e-scenario-evidence";
 
 describe("scenario database evidence", () => {
   test("projects only unrevoked sessions without exposing token hashes", async () => {
@@ -52,5 +55,38 @@ describe("scenario database evidence", () => {
     expect(JSON.stringify(projection)).not.toContain("revoked-token-digest");
     expect(JSON.stringify(projection)).not.toContain("expired-token-digest");
     expect(JSON.stringify(projection)).not.toContain("secret-vault-id");
+  });
+});
+
+describe("scenario checkpoint freshness", () => {
+  test("accepts a current canonical capture close to both evidence mtimes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "blackglass-scenario-time-"));
+    const state = join(root, "state.json");
+    const screenshot = join(root, "state.png");
+    await Promise.all([writeFile(state, "{}"), writeFile(screenshot, "png")]);
+    const observedAt = new Date().toISOString();
+    const seconds = Date.parse(observedAt) / 1_000;
+    await Promise.all([utimes(state, seconds, seconds), utimes(screenshot, seconds, seconds)]);
+    await expect(assertFreshScenarioObservedAt(observedAt, [state, screenshot], true))
+      .resolves.toBeUndefined();
+  });
+
+  test("rejects future, stale, noncanonical, and recaptured-file timestamps", async () => {
+    const root = await mkdtemp(join(tmpdir(), "blackglass-scenario-time-"));
+    const evidence = join(root, "state.json");
+    await writeFile(evidence, "{}");
+    const now = Date.now();
+    await expect(assertFreshScenarioObservedAt(
+      new Date(now + 6 * 60_000).toISOString(), [evidence], true,
+    )).rejects.toThrow("outside the allowed capture window");
+    await expect(assertFreshScenarioObservedAt(
+      new Date(now - 11 * 60_000).toISOString(), [evidence], true,
+    )).rejects.toThrow("outside the allowed capture window");
+    await expect(assertFreshScenarioObservedAt(
+      new Date(now).toISOString().replace("Z", "+00:00"), [evidence], true,
+    )).rejects.toThrow("not canonical ISO-8601");
+    const old = new Date(now - 11 * 60_000).toISOString();
+    await expect(assertFreshScenarioObservedAt(old, [evidence], false))
+      .rejects.toThrow("not close to its evidence file metadata");
   });
 });

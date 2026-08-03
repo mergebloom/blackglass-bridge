@@ -42,7 +42,7 @@ export interface E2ENetworkPlan {
 }
 
 export interface PreparedE2ERunManifest {
-  schemaVersion: 4;
+  schemaVersion: 5;
   scenarioId?: E2EScenarioId;
   endpoints: AdapterOptions;
   network: E2ENetworkPlan;
@@ -148,7 +148,7 @@ export async function readPreparedE2ERun(
 export function assertPreparedE2ERunManifest(
   value: unknown,
 ): asserts value is PreparedE2ERunManifest {
-  if (!isRecord(value) || value.schemaVersion !== 4 || !isRecord(value.endpoints)) {
+  if (!isRecord(value) || value.schemaVersion !== 5 || !isRecord(value.endpoints)) {
     throw new Error("Unsupported prepared E2E run manifest schema");
   }
   preparedE2EScenarioId(value.scenarioId);

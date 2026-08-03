@@ -78,7 +78,7 @@ int main(int argc, const char *argv[]) {
 
     // LaunchServices can omit generated copies that were started with an
     // isolated profile. Inspect kernel-reported executable paths as a
-    // fail-closed fallback so any running generated Blackglass.app is found.
+    // fail-closed fallback so any running generated Blackglass Bridge.app is found.
     int processCount = proc_listallpids(NULL, 0);
     if (processCount <= 0) {
       fputs("Unable to enumerate running macOS processes\n", stderr);
@@ -93,7 +93,7 @@ int main(int argc, const char *argv[]) {
       fputs("Unable to read running macOS processes\n", stderr);
       return EX_UNAVAILABLE;
     }
-    NSString *generatedMarker = @"/Blackglass.app/Contents/MacOS/";
+    NSString *generatedMarker = @"/Blackglass Bridge.app/Contents/MacOS/";
     for (int index = 0; index < populatedCount; index++) {
       pid_t pid = processes[index];
       if (pid <= 0 || [applicationPIDs containsObject:@(pid)]) continue;
@@ -104,7 +104,7 @@ int main(int argc, const char *argv[]) {
       if (markerRange.location == NSNotFound) continue;
       NSString *bundlePath = [[executablePath
           substringToIndex:markerRange.location]
-          stringByAppendingString:@"/Blackglass.app"];
+          stringByAppendingString:@"/Blackglass Bridge.app"];
       [applications addObject:@{
         @"pid" : @(pid),
         @"bundleIdentifier" : blackglassBundleIdentifier,

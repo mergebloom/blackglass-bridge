@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import { readClientLaunchIdentity, verifyLiveClientLaunchBinding } from "./e2e-client";
@@ -114,6 +114,11 @@ export async function buildScenarioCheckpointEvidence(options: {
   const stateBytes = await readFile(options.capturePaths?.state ?? paths.state);
   const screenshotBytes = await readFile(options.capturePaths?.screenshot ?? paths.screenshot);
   const state = JSON.parse(stateBytes.toString("utf8")) as Record<string, any>;
+  await assertFreshScenarioObservedAt(
+    state.observedAt,
+    [options.capturePaths?.state ?? paths.state, options.capturePaths?.screenshot ?? paths.screenshot],
+    true,
+  );
   const launch = await verifyLiveClientLaunchBinding(String(state.launchIdentityPath ?? ""));
   const expectedProfile = resolve(options.root, contract.client, "user-data");
   const expectedVault = resolve(options.root, contract.client, "vault");
@@ -208,6 +213,7 @@ export async function assertScenarioCheckpointEvidence(
     readFile(proof.launchIdentityPath),
   ]);
   const state = JSON.parse(stateBytes.toString("utf8")) as Record<string, any>;
+  await assertFreshScenarioObservedAt(proof.observedAt, [paths.state, paths.screenshot], false);
   const identity = await readClientLaunchIdentity(proof.launchIdentityPath);
   const checkpointIndex = scenario.checkpoints.indexOf(options.checkpoint);
   const previousCheckpoint = scenario.checkpoints[checkpointIndex - 1];
@@ -301,6 +307,28 @@ export async function assertScenarioCheckpointEvidence(
     }
   }
   return proof;
+}
+
+export async function assertFreshScenarioObservedAt(
+  value: unknown,
+  evidencePaths: readonly string[],
+  requireRecent: boolean,
+): Promise<void> {
+  if (typeof value !== "string") throw new Error("Scenario checkpoint time is missing");
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString() !== value) {
+    throw new Error("Scenario checkpoint time is not canonical ISO-8601");
+  }
+  const now = Date.now();
+  if (timestamp > now + 5 * 60_000 || (requireRecent && timestamp < now - 10 * 60_000)) {
+    throw new Error("Scenario checkpoint time is outside the allowed capture window");
+  }
+  for (const path of evidencePaths) {
+    const metadata = await stat(path);
+    if (Math.abs(metadata.mtimeMs - timestamp) > 10 * 60_000) {
+      throw new Error("Scenario checkpoint time is not close to its evidence file metadata");
+    }
+  }
 }
 
 async function assertCleanClientLifecycle(

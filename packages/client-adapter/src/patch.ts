@@ -10,8 +10,9 @@ import type { RendererIncision, RendererReplacement } from "./incision";
 export { BLACKGLASS_CLI_SOCKET_NAME } from "../../../tools/cli-binary";
 export const BLACKGLASS_CLI_COMMAND_NAME = "blackglass";
 export const BLACKGLASS_CLI_COMMAND_PATH = "/usr/local/bin/blackglass";
+export const BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT = "BGCLI" as const;
 
-export const RENDERER_PATCH_FORMAT_VERSION = 8;
+export const RENDERER_PATCH_FORMAT_VERSION = 9;
 export const RENDERER_INCISION_COUNT = 6;
 
 export interface AdapterOptions {
@@ -27,6 +28,7 @@ export interface AdapterReport {
   cliSocketName: typeof BLACKGLASS_CLI_SOCKET_NAME;
   cliCommandName: typeof BLACKGLASS_CLI_COMMAND_NAME;
   cliCommandPath: typeof BLACKGLASS_CLI_COMMAND_PATH;
+  cliExecutableEnvironment: typeof BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT;
   runtimeHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
   upstreamSha256: string;
   patchedSha256: string;
@@ -71,6 +73,7 @@ export function inspectPatchedMainProcess(
   cliSocketName: typeof BLACKGLASS_CLI_SOCKET_NAME;
   runtimeHomeEnvironment: typeof BLACKGLASS_HOME_ENVIRONMENT;
   cliCommandName: typeof BLACKGLASS_CLI_COMMAND_NAME;
+  cliExecutableEnvironment: typeof BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT;
   runtimeRootValidated: true;
 } {
   const source = main.toString("utf8");
@@ -82,6 +85,7 @@ export function inspectPatchedMainProcess(
   requireExactlyOnce(source, BLACKGLASS_CLI_SOCKET_NAME, "patched CLI socket name");
   requireExactlyOnce(source, `process.env.${BLACKGLASS_HOME_ENVIRONMENT}`, "patched CLI runtime root");
   requireExactlyOnce(source, BLACKGLASS_CLI_COMMAND_PATH, "patched CLI registration");
+  requireExactlyOnce(source, `process.env.${BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT}`, "patched CLI executable binding");
   if (
     source.includes(UPSTREAM_CLI_SOCKET_NAME) ||
     source.includes("/usr/local/bin/obsidian")
@@ -92,6 +96,7 @@ export function inspectPatchedMainProcess(
     cliSocketName: BLACKGLASS_CLI_SOCKET_NAME,
     runtimeHomeEnvironment: BLACKGLASS_HOME_ENVIRONMENT,
     cliCommandName: BLACKGLASS_CLI_COMMAND_NAME,
+    cliExecutableEnvironment: BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT,
     runtimeRootValidated: true,
   };
 }
@@ -147,6 +152,7 @@ export function patchAsar(
       cliSocketName: BLACKGLASS_CLI_SOCKET_NAME,
       cliCommandName: BLACKGLASS_CLI_COMMAND_NAME,
       cliCommandPath: BLACKGLASS_CLI_COMMAND_PATH,
+      cliExecutableEnvironment: BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT,
       runtimeHomeEnvironment: BLACKGLASS_HOME_ENVIRONMENT,
       upstreamSha256: sha256(upstream),
       patchedSha256: sha256(output),
@@ -216,7 +222,7 @@ function rendererReplacement(
     const source = original.toString("utf8");
     const match = /^let ([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\.join\(([A-Za-z_$][\w$]*),"obsidian-cli"\);if\(([A-Za-z_$][\w$]*)\.existsSync\(\1\)\)\{let ([A-Za-z_$][\w$]*)="\/usr\/local\/bin\/obsidian";$/u.exec(source);
     if (!match) throw new Error("Reviewed CLI registration incision has an unknown shape");
-    replacement = `let ${match[1]}=${match[3]}+"/obsidian-cli";if(${match[4]}.existsSync(${match[1]})){let ${match[5]}="${BLACKGLASS_CLI_COMMAND_PATH}";`;
+    replacement = `let ${match[1]}=process.env.${BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT};if(${match[4]}.existsSync(${match[1]})){let ${match[5]}="${BLACKGLASS_CLI_COMMAND_PATH}";`;
   } else {
     throw new Error(`Unknown renderer incision replacement: ${kind satisfies never}`);
   }

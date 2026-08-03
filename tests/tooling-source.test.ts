@@ -130,6 +130,10 @@ describe("release-critical tooling source identity", () => {
       const files = new Map<string, Uint8Array>([
         [validationRecordPath("0.1.1", "1.12.7"), Buffer.from("first\n")],
         [validationRecordPath("0.1.1", "1.13.4"), Buffer.from("second\n")],
+        [scenarioReportPath("blackglass-release-sync-recovery", "1.12.7"), Buffer.from("release\n")],
+        [scenarioReportPath("phase-3-tenancy", "1.12.7"), Buffer.from("tenancy\n")],
+        [scenarioReportPath("phase-4-custom-e2ee", "1.12.7"), Buffer.from("custom\n")],
+        [scenarioReportPath("phase-4-managed-encryption", "1.12.7"), Buffer.from("managed\n")],
         ["compatibility/matrix.json", Buffer.from('{"qualified":true}\n')],
         ["compatibility/MATRIX.md", Buffer.from("# Qualified\n")],
       ]);
@@ -321,6 +325,10 @@ function validationRecordPath(blackglassVersion: string, rendererVersion = "1.12
     `docs/validation/blackglass-${blackglassVersion}-` +
     `obsidian-${rendererVersion}-qualification.json`
   );
+}
+
+function scenarioReportPath(prefix: string, rendererVersion: string): string {
+  return `docs/validation/${prefix}-obsidian-${rendererVersion}-bridge-0.1.1-${"b".repeat(40)}-server-${"a".repeat(40)}.json`;
 }
 
 function git(root: string, ...arguments_: string[]): string {

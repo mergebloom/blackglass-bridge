@@ -11,7 +11,7 @@ const forbiddenText = [
   /\bgh[oprsu]_[A-Za-z0-9]{30,}\b/u,
   /\bgithub_pat_[A-Za-z0-9_]{30,}\b/u,
 ];
-const forbiddenArtifactPath = /(?:^|\/)\S+\.(?:asar|dmg|pkg)(?:$|\/)|(?:^|\/)\S+\.app(?:$|\/)/iu;
+const forbiddenArtifactPath = /(?:^|\/)[^/]+\.(?:asar|dmg|pkg|zip|tar\.gz)(?:$|\/)|(?:^|\/)[^/]+\.app(?:$|\/)/iu;
 
 const arguments_ = Bun.argv.slice(2);
 const roots = arguments_.length === 0
@@ -31,11 +31,25 @@ async function inspectRepository(root: string): Promise<void> {
     .sort();
   for (const path of files) {
     if (forbiddenArtifactPath.test(path)) failures.push(`${basename(root)}:${path}: proprietary artifact path`);
-    const bytes = await readFile(resolve(root, path));
-    if (bytes.includes(0)) continue;
-    inspectText(`${basename(root)}:${path}`, bytes.toString("utf8"));
+    let bytes: Buffer;
+    try { bytes = await readFile(resolve(root, path)); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT" &&
+          git(root, ["diff", "--name-only", "--diff-filter=D", "--", path]).trim() === path) {
+        continue;
+      }
+      throw error;
+    }
+    inspectText(`${basename(root)}:${path}`, bytes.toString("latin1"));
     if (/^compatibility\/obsidian-[0-9.]+\.json$/u.test(path)) {
       inspectBaseline(`${basename(root)}:${path}`, JSON.parse(bytes.toString("utf8")) as unknown);
+    }
+  }
+  const historicalPaths = git(root, ["log", "--all", "--name-only", "--format=", "-z"])
+    .split("\0").filter(Boolean);
+  for (const path of historicalPaths) {
+    if (forbiddenArtifactPath.test(path)) {
+      failures.push(`${basename(root)}:${path}: proprietary/archive path in reachable Git history`);
     }
   }
   const history = git(root, ["log", "--all", "--format=fuller", "-p", "--text"]);

@@ -49,6 +49,7 @@ interface Stage {
   environment?: Record<string, string>;
   revalidateOnResume?: boolean;
   resumeKey?: string;
+  immutableClientSource?: boolean;
 }
 
 const [candidateArgument, ...flagArguments] = Bun.argv.slice(2);
@@ -136,12 +137,15 @@ if (parsed.booleans.has("--require-stable-signing")) {
   doctorCommand.push("--require-stable-signing");
 }
 await run({ name: "doctor", command: doctorCommand, cwd: clientRoot });
+const clientSourceRoot = await prepareImmutableClientSource(clientRoot, candidate.client.revision);
+await prepareImmutableClientDependencies(clientSourceRoot, candidate.client.revision);
 
 const stages: Stage[] = [
   {
     name: "client-fast-checks",
     command: [Bun.which("bun") ?? "bun", "run", "check:fast"],
-    cwd: clientRoot,
+    cwd: clientSourceRoot,
+    immutableClientSource: true,
   },
   {
     name: "server-fast-checks",
@@ -154,7 +158,8 @@ if (parsed.booleans.has("--full-checks")) {
     {
       name: "client-full-checks",
       command: [Bun.which("bun") ?? "bun", "run", "check:full"],
-      cwd: clientRoot,
+      cwd: clientSourceRoot,
+      immutableClientSource: true,
     },
     {
       name: "server-full-checks",
@@ -214,17 +219,33 @@ if (parsed.booleans.has("--prepare-client")) {
   }
 
   const rendererRoot = join(workRoot, `obsidian-${rendererVersion}`);
+  const standaloneRootA = join(workRoot, "standalone-bridge-a");
+  const standaloneRootB = join(workRoot, "standalone-bridge-b");
+  await Promise.all([
+    mkdir(standaloneRootA, { recursive: true, mode: 0o700 }),
+    mkdir(standaloneRootB, { recursive: true, mode: 0o700 }),
+  ]);
+  const standaloneExecutableA = join(
+    standaloneRootA,
+    `blackglass-bridge-v${candidate.client.version}-macos-arm64`,
+  );
+  const standaloneExecutableB = join(
+    standaloneRootB,
+    `blackglass-bridge-v${candidate.client.version}-macos-arm64`,
+  );
+  const standaloneReproducibility = join(rendererRoot, "standalone-reproducibility.json");
   const firstRoot = join(rendererRoot, "package-a");
   const secondRoot = join(rendererRoot, "package-b");
   await mkdir(firstRoot, { recursive: true, mode: 0o700 });
   await mkdir(secondRoot, { recursive: true, mode: 0o700 });
-  const baseline = join(clientRoot, `compatibility/obsidian-${rendererVersion}.json`);
+  const baseline = join(clientSourceRoot, `compatibility/obsidian-${rendererVersion}.json`);
   const sourceAsar = join(officialApp, "Contents/Resources/obsidian.asar");
-  const patchedAsar = join(rendererRoot, "blackglass.asar");
-  const firstApp = join(firstRoot, "Blackglass.app");
+  const patchedAsarA = join(rendererRoot, "blackglass-a.asar");
+  const patchedAsarB = join(rendererRoot, "blackglass-b.asar");
+  const firstApp = join(firstRoot, "Blackglass Bridge.app");
   const firstManifest = join(firstRoot, "release.json");
   const firstReceipt = join(firstRoot, "package-receipt.json");
-  const secondApp = join(secondRoot, "Blackglass.app");
+  const secondApp = join(secondRoot, "Blackglass Bridge.app");
   const secondManifest = join(secondRoot, "release.json");
   const secondReceipt = join(secondRoot, "package-receipt.json");
   const reproducibility = join(rendererRoot, "reproducibility.json");
@@ -244,19 +265,59 @@ if (parsed.booleans.has("--prepare-client")) {
 
   stages.push(
     {
-      name: `client-${rendererVersion}-patch`,
+      name: "client-standalone-bridge-a",
+      command: [join(clientSourceRoot, "scripts/build-standalone-bridge.sh"), candidate.client.revision, standaloneRootA],
+      cwd: clientSourceRoot,
+      outputs: standaloneOutputs(standaloneRootA),
+      revalidateOnResume: true,
+      immutableClientSource: true,
+    },
+    {
+      name: "client-standalone-bridge-b",
+      command: [join(clientSourceRoot, "scripts/build-standalone-bridge.sh"), candidate.client.revision, standaloneRootB],
+      cwd: clientSourceRoot,
+      outputs: standaloneOutputs(standaloneRootB),
+      revalidateOnResume: true,
+      immutableClientSource: true,
+    },
+    {
+      name: "client-standalone-reproducibility",
       command: [
-        Bun.which("bun") ?? "bun", "run", "tools/patch-client.ts", sourceAsar, patchedAsar,
+        Bun.which("bun") ?? "bun", "run", "tools/verify-standalone-reproducibility.ts",
+        standaloneRootA, standaloneRootB, candidate.client.revision, standaloneReproducibility,
+      ],
+      cwd: clientSourceRoot,
+      outputs: [standaloneReproducibility],
+      immutableClientSource: true,
+    },
+    {
+      name: `client-${rendererVersion}-patch-a`,
+      command: [
+        Bun.which("bun") ?? "bun", "run", "tools/patch-client.ts", sourceAsar, patchedAsarA,
         "--control-origin", candidate.endpoints.controlOrigin,
         "--data-host", candidate.endpoints.dataHost,
         "--resources", join(officialApp, "Contents/Resources"),
         "--baseline", baseline,
       ],
-      cwd: clientRoot,
-      outputs: [patchedAsar],
+      cwd: clientSourceRoot,
+      outputs: [patchedAsarA],
+      immutableClientSource: true,
     },
-    packageStage("a", firstApp, firstManifest, firstReceipt),
-    packageStage("b", secondApp, secondManifest, secondReceipt),
+    {
+      name: `client-${rendererVersion}-patch-b`,
+      command: [
+        Bun.which("bun") ?? "bun", "run", "tools/patch-client.ts", sourceAsar, patchedAsarB,
+        "--control-origin", candidate.endpoints.controlOrigin,
+        "--data-host", candidate.endpoints.dataHost,
+        "--resources", join(officialApp, "Contents/Resources"),
+        "--baseline", baseline,
+      ],
+      cwd: clientSourceRoot,
+      outputs: [patchedAsarB],
+      immutableClientSource: true,
+    },
+    packageStage("a", patchedAsarA, firstApp, firstManifest, firstReceipt, standaloneExecutableA),
+    packageStage("b", patchedAsarB, secondApp, secondManifest, secondReceipt, standaloneExecutableB),
     {
       name: `client-${rendererVersion}-reproducibility`,
       command: [
@@ -265,8 +326,9 @@ if (parsed.booleans.has("--prepare-client")) {
         secondApp, secondManifest, secondReceipt,
         reproducibility,
       ],
-      cwd: clientRoot,
+      cwd: clientSourceRoot,
       outputs: [reproducibility],
+      immutableClientSource: true,
     },
     {
       name: `client-${rendererVersion}-e2e-prepare`,
@@ -276,7 +338,7 @@ if (parsed.booleans.has("--prepare-client")) {
         runRoot,
       ),
       command: [
-        Bun.which("bun") ?? "bun", "run", "tools/prepare-e2e.ts", runRoot, patchedAsar,
+        Bun.which("bun") ?? "bun", "run", "tools/prepare-e2e.ts", runRoot, patchedAsarA,
         "--app", firstApp,
         "--release-manifest", firstManifest,
         "--package-receipt", firstReceipt,
@@ -286,7 +348,7 @@ if (parsed.booleans.has("--prepare-client")) {
         "--reproducibility-evidence", reproducibility,
         "--scenario", scenarioId,
       ],
-      cwd: clientRoot,
+      cwd: clientSourceRoot,
       outputs: [
         join(runRoot, "run-manifest.json"),
         join(runRoot, "blackglass-release-manifest.json"),
@@ -294,6 +356,7 @@ if (parsed.booleans.has("--prepare-client")) {
         join(runRoot, "client-reproducibility.json"),
         join(runRoot, "credentials.json"),
       ],
+      immutableClientSource: true,
     },
     {
       name: `client-${rendererVersion}-e2e-tls`,
@@ -303,20 +366,23 @@ if (parsed.booleans.has("--prepare-client")) {
         runRoot,
       ),
       command: [Bun.which("bun") ?? "bun", "run", "tools/prepare-e2e-tls.ts", runRoot],
-      cwd: clientRoot,
+      cwd: clientSourceRoot,
       outputs: [
         join(runRoot, "tls-certificate.pem"),
         join(runRoot, "tls-private-key.pem"),
         join(runRoot, "tls-metadata.json"),
       ],
+      immutableClientSource: true,
     },
   );
 
   function packageStage(
     suffix: string,
+    patchedAsar: string,
     app: string,
     manifest: string,
     receipt: string,
+    standaloneExecutable: string,
   ): Stage {
     return {
       name: `client-${rendererVersion}-package-${suffix}`,
@@ -329,15 +395,22 @@ if (parsed.booleans.has("--prepare-client")) {
         "--receipt", receipt,
         "--official-dmg", officialDmg,
         "--baseline", baseline,
+        "--standalone-executable", standaloneExecutable,
+        "--blackglass-version", candidate.client.version,
       ],
-      cwd: clientRoot,
+      cwd: clientSourceRoot,
       outputs: [app, manifest, receipt],
+      immutableClientSource: true,
     };
   }
 }
 
 for (const stage of stages) {
   await assertReleaseCandidateMatchesCheckouts({ candidate, clientRoot, serverRoot });
+  if (stage.immutableClientSource) {
+    assertImmutableClientSource(clientSourceRoot, candidate.client.revision);
+    assertImmutableClientDependencies(clientSourceRoot);
+  }
   const decision = releaseStageResumeDecision({
     hasReceipt: isComplete(state, stage),
     revalidateOnResume: stage.revalidateOnResume === true,
@@ -351,6 +424,11 @@ for (const stage of stages) {
   }
   if (decision === "run-new") await assertNoUnboundOutputs(stage);
   await run(stage);
+  await assertReleaseCandidateMatchesCheckouts({ candidate, clientRoot, serverRoot });
+  if (stage.immutableClientSource) {
+    assertImmutableClientSource(clientSourceRoot, candidate.client.revision);
+    assertImmutableClientDependencies(clientSourceRoot);
+  }
   if (!isComplete(state, stage)) {
     state.completed.push({
       stage: stage.name,
@@ -364,6 +442,62 @@ for (const stage of stages) {
     entry.outputs = await outputIdentities(stage);
   }
   await writeState(statePath, state);
+}
+
+function standaloneOutputs(directory: string): string[] {
+  const base = join(directory, `blackglass-bridge-v${candidate.client.version}-macos-arm64`);
+  return [base, `${base}.sha256`, `${base}.zip`, `${base}.zip.sha256`, `${base}.json`];
+}
+
+async function prepareImmutableClientSource(root: string, revision: string): Promise<string> {
+  const sourcesRoot = join(root, ".data/release-sources");
+  await mkdir(sourcesRoot, { recursive: true, mode: 0o700 });
+  const source = join(sourcesRoot, revision);
+  if (!(await pathExists(source))) {
+    const result = Bun.spawnSync(["git", "-C", root, "worktree", "add", "--detach", source, revision], {
+      stdout: "pipe", stderr: "pipe",
+    });
+    if (result.exitCode !== 0) throw new Error(`Unable to create immutable client source: ${result.stderr.toString("utf8").trim()}`);
+  }
+  assertImmutableClientSource(source, revision);
+  return source;
+}
+
+function assertImmutableClientSource(source: string, revision: string): void {
+  const head = gitText(source, ["rev-parse", "HEAD"]);
+  const status = gitText(source, ["status", "--porcelain=v1", "--untracked-files=all"]);
+  if (head !== revision || status !== "") {
+    throw new Error("Immutable Bridge release source changed or is revision-mismatched");
+  }
+}
+
+async function prepareImmutableClientDependencies(source: string, revision: string): Promise<void> {
+  try {
+    assertImmutableClientDependencies(source);
+    return;
+  } catch {
+    const install = Bun.spawnSync(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], {
+      cwd: source, stdout: "inherit", stderr: "inherit",
+    });
+    if (install.exitCode !== 0) throw new Error("Unable to install lock-bound Bridge release dependencies");
+  }
+  assertImmutableClientSource(source, revision);
+  assertImmutableClientDependencies(source);
+}
+
+function assertImmutableClientDependencies(source: string): void {
+  const result = Bun.spawnSync([
+    Bun.which("bun") ?? "bun", "run", "tools/verify-release-dependencies.ts",
+  ], { cwd: source, stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) {
+    throw new Error(`Bridge release dependencies differ from the lockfile: ${result.stderr.toString("utf8").trim()}`);
+  }
+}
+
+function gitText(root: string, arguments_: string[]): string {
+  const result = Bun.spawnSync(["git", "-C", root, ...arguments_], { stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString("utf8").trim());
+  return result.stdout.toString("utf8").trim();
 }
 
 if (parsed.booleans.has("--require-gui")) {

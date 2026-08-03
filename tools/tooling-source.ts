@@ -70,10 +70,32 @@ export async function computeToolingSourceIdentity(
   for (const path of trackedPaths
     .filter(isToolingSourcePath)
     .sort(compareCodeUnitStrings)) {
-    await addToolingFile(root, join(root, path), records);
+    try {
+      await addToolingFile(root, join(root, path), records);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT" || !gitPathIsDeleted(root, path)) {
+        throw error;
+      }
+    }
   }
   const git = gitIdentity(root);
   return buildToolingSourceIdentity(records, git.revision, git.clean);
+}
+
+function gitPathIsDeleted(root: string, path: string): boolean {
+  const result = Bun.spawnSync([
+    resolveReleaseGitExecutable(),
+    "-C",
+    root,
+    "diff",
+    "--name-only",
+    "--diff-filter=D",
+    "-z",
+    "HEAD",
+    "--",
+    path,
+  ]);
+  return result.exitCode === 0 && result.stdout.toString().split("\0").filter(Boolean).includes(path);
 }
 
 export function computeToolingSourceIdentityAtRevision(
@@ -262,6 +284,7 @@ export function assertQualificationBundleDescendant(
     const path = normalizedGitPath(rawPath);
     if (
       !isGeneratedValidationRecordPath(path) &&
+      !isGeneratedScenarioReportPath(path) &&
       path !== "compatibility/matrix.json" &&
       path !== "compatibility/MATRIX.md"
     ) {
@@ -304,8 +327,8 @@ export function assertQualificationBundleDescendant(
   }
   for (const [path, bytes] of normalized) {
     const sourceEntry = gitTreeEntry(root, sourceRevision, path);
-    if (isGeneratedValidationRecordPath(path) && sourceEntry !== null) {
-      throw new Error("Qualified validation record path must not exist at the tooling source revision");
+    if ((isGeneratedValidationRecordPath(path) || isGeneratedScenarioReportPath(path)) && sourceEntry !== null) {
+      throw new Error("Qualified validation evidence path must not exist at the tooling source revision");
     }
     const entry = gitTreeEntry(root, descendantRevision, path);
     if (entry?.mode !== "100644" || entry.type !== "blob") {
@@ -383,6 +406,15 @@ export function isGeneratedValidationRecordPath(path: string): boolean {
       isSupportedSemver(match[1]) &&
       isSupportedStableSemver(match[2]),
   );
+}
+
+export function isGeneratedScenarioReportPath(path: string): boolean {
+  const match =
+    /^docs\/validation\/(blackglass-release-sync-recovery|phase-3-tenancy|phase-4-custom-e2ee|phase-4-managed-encryption)-obsidian-(\d+\.\d+\.\d+)-bridge-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)-([a-f0-9]{40})-server-([a-f0-9]{40})\.json$/u.exec(
+      normalizedGitPath(path),
+    );
+  return Boolean(match?.[1] && match[2] && match[3] && match[4] && match[5] &&
+    isSupportedStableSemver(match[2]) && isSupportedSemver(match[3]));
 }
 
 function buildToolingSourceIdentity(

@@ -121,6 +121,8 @@ export function e2eScenarioDefinition(value: unknown): E2EScenarioDefinition {
 export function scenarioValidationFileName(
   scenarioValue: unknown,
   rendererVersion: string,
+  bridgeVersion: string,
+  bridgeRevision: string,
   serverRevision: string,
 ): string {
   const scenario = e2eScenarioDefinition(scenarioValue);
@@ -130,7 +132,11 @@ export function scenarioValidationFileName(
   if (!/^[a-f0-9]{40}$/u.test(serverRevision)) {
     throw new Error("Scenario validation server revision is malformed");
   }
-  return `${scenario.validationPrefix}-obsidian-${rendererVersion}-${serverRevision}.json`;
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(bridgeVersion) ||
+      !/^[a-f0-9]{40}$/u.test(bridgeRevision)) {
+    throw new Error("Scenario validation Bridge identity is malformed");
+  }
+  return `${scenario.validationPrefix}-obsidian-${rendererVersion}-bridge-${bridgeVersion}-${bridgeRevision}-server-${serverRevision}.json`;
 }
 
 const CHECKPOINTS: Record<string, Omit<E2EScenarioCheckpointDefinition, "path">> = {

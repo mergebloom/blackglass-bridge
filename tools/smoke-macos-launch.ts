@@ -56,6 +56,12 @@ import {
   pathExists,
 } from "./path-safety";
 import { stableJson } from "./stable-json";
+import {
+  BRIDGE_RUNTIME_RECEIPT_SCHEMA_VERSION,
+  type BridgeRuntimeReceipt,
+  readPackagedBridgeConfig,
+} from "./launcher-runtime";
+import { computeTreeIdentity } from "./tree-identity";
 
 const [rootArgument, ...flags] = Bun.argv.slice(2);
 if (!rootArgument || flags.length !== 0) {
@@ -91,6 +97,13 @@ const appPath = await canonicalExistingPath(
   "directory",
 );
 const currentClient = await inspectMacOSArtifact(appPath);
+const launchConfig = await readPackagedBridgeConfig(appPath);
+const officialAppPath = await canonicalExistingPath(
+  launchConfig.officialAppPath,
+  "Prepared official Obsidian runtime",
+  "directory",
+);
+const officialTreeBefore = await computeTreeIdentity(officialAppPath);
 if (
   stableJson(publicMacOSArtifact(currentClient)) !==
     stableJson(publicMacOSArtifact(recordedClient))
@@ -98,13 +111,13 @@ if (
   throw new Error("Prepared Blackglass app changed before its LaunchServices smoke");
 }
 const executablePath = await canonicalExistingPath(
-  join(appPath, "Contents/MacOS/Obsidian"),
-  "Prepared Blackglass executable",
+  join(officialAppPath, "Contents/MacOS/Obsidian"),
+  "Prepared official Obsidian executable",
   "file",
 );
-const cliExecutablePath = await canonicalExistingPath(
-  join(appPath, "Contents/MacOS/obsidian-cli"),
-  "Prepared Blackglass CLI executable",
+const launcherExecutablePath = await canonicalExistingPath(
+  join(appPath, "Contents/MacOS/blackglass-bridge"),
+  "Prepared Blackglass Bridge executable",
   "file",
 );
 const launchPreflight = await inspectMacOSLaunchPreflight();
@@ -148,7 +161,7 @@ if (
 }
 
 const realProfiles = [
-  join(homedir(), "Library/Application Support/Blackglass"),
+  join(homedir(), "Library/Application Support/Blackglass Profile"),
   join(homedir(), "Library/Application Support/obsidian"),
 ];
 const realProfileFingerprintsBefore = await Promise.all(
@@ -156,7 +169,10 @@ const realProfileFingerprintsBefore = await Promise.all(
 );
 const diagnosticBefore = await diagnosticReportSnapshot();
 const baselineProcesses = listProcesses();
-const baselineExactAppProcesses = exactAppProcesses(appPath, baselineProcesses);
+const baselineExactAppProcesses = [
+  ...exactAppProcesses(appPath, baselineProcesses),
+  ...exactAppProcesses(officialAppPath, baselineProcesses),
+];
 if (baselineExactAppProcesses.length !== 0) {
   throw new Error(
     "Refusing LaunchServices smoke while the exact generated app is already running: " +
@@ -168,6 +184,7 @@ const baselineAppPids = new Set(
 );
 
 let mainPid: number | undefined;
+let launcherPid: number | undefined;
 let rendererPid: number | undefined;
 let debugListenerPid: number | undefined;
 let debugListenerEndpoints: string[] | undefined;
@@ -180,6 +197,9 @@ let launchHomeRoot: string | undefined;
 let launchHomePath: string | undefined;
 let launchProfilePath: string | undefined;
 let launchCommand: string[] | undefined;
+let launcherCommand: string | undefined;
+let officialCommand: string | undefined;
+let runtimeReceiptSha256: string | undefined;
 let launchAttempted = false;
 let cliSocketAddress: string | undefined;
 let cliSocketRemoved = false;
@@ -232,7 +252,7 @@ try {
   launchHomeSameDeviceAsArchive = true;
   launchProfilePath = join(
     launchHomePath,
-    "Library/Application Support/Blackglass",
+    "Library/Application Support/Blackglass Profile",
   );
   cliSocketAddress = join(launchHomePath, currentClient.cliSocketName);
   if (Buffer.byteLength(cliSocketAddress, "utf8") > 103) {
@@ -243,6 +263,8 @@ try {
     blackglassHomePath: launchHomePath,
     stdoutPath: layout.stdoutPath,
     stderrPath: layout.stderrPath,
+    profilePath: launchProfilePath,
+    runtimeReceiptPath: join(layout.smokeRoot, "runtime-receipt.json"),
     debugPort: FINDER_LAUNCH_DEBUG_PORT,
     chromiumHostResolverRules: tls.metadata.chromiumHostResolverRules,
     tlsSpkiSha256Base64: tls.metadata.spkiSha256Base64,
@@ -254,16 +276,35 @@ try {
       `LaunchServices refused the exact packaged app: ${opened.stderr.toString().trim()}`,
     );
   }
+  launcherPid = await waitForMainProcess(
+    launcherExecutablePath,
+    baselineAppPids,
+    FINDER_LAUNCH_DEBUG_PORT,
+    15_000,
+  );
   mainPid = await waitForMainProcess(
     executablePath,
     baselineAppPids,
     FINDER_LAUNCH_DEBUG_PORT,
     15_000,
   );
+  const runtimeReceiptPath = join(layout.smokeRoot, "runtime-receipt.json");
+  const runtimeReceipt = await waitForBridgeRuntimeReceipt(runtimeReceiptPath, launcherPid, mainPid);
+  if (
+    runtimeReceipt.bundlePath !== appPath ||
+    runtimeReceipt.officialAppPath !== officialAppPath ||
+    runtimeReceipt.officialAppTreeSha256 !== currentClient.officialAppTreeSha256 ||
+    runtimeReceipt.adapterSha256 !== currentClient.embeddedAsarSha256 ||
+    runtimeReceipt.profilePath !== launchProfilePath ||
+    runtimeReceipt.blackglassHomePath !== launchHomePath
+  ) {
+    throw new Error("LaunchServices runtime receipt does not bind the prepared launcher");
+  }
+  runtimeReceiptSha256 = createHash("sha256").update(await readFile(runtimeReceiptPath)).digest("hex");
   const debugListener = await waitForDebugListener(
     FINDER_LAUNCH_DEBUG_PORT,
     mainPid,
-    appPath,
+    officialAppPath,
     FINDER_LAUNCH_LISTENER_TIMEOUT_MS,
   );
   debugListenerPid = debugListener.pid;
@@ -271,7 +312,7 @@ try {
   const target = await waitForStarterTarget(
     FINDER_LAUNCH_DEBUG_PORT,
     mainPid,
-    appPath,
+    officialAppPath,
     FINDER_LAUNCH_STARTER_TIMEOUT_MS,
   );
   debugTargetId = target.id;
@@ -287,7 +328,16 @@ try {
   starterControlOrigin = starterProof.controlOrigin;
   starterControlRequests = starterProof.requests;
   runtimeHomeObserved = starterProof.runtimeHomeObserved;
-  const healthRenderer = rendererDescendant(mainPid, appPath);
+  if (!isDescendant(mainPid, launcherPid, listProcesses())) {
+    throw new Error("Official Obsidian process is not supervised by Blackglass Bridge");
+  }
+  const liveProcesses = listProcesses();
+  launcherCommand = liveProcesses.find((entry) => entry.pid === launcherPid)?.command;
+  officialCommand = liveProcesses.find((entry) => entry.pid === mainPid)?.command;
+  if (!launcherCommand || !officialCommand) {
+    throw new Error("LaunchServices smoke lost its launcher or official command identity");
+  }
+  const healthRenderer = rendererDescendant(mainPid, officialAppPath);
   if (!healthRenderer) {
     throw new Error("Starter readiness did not leave a renderer process to observe");
   }
@@ -297,7 +347,7 @@ try {
   const healthDeadline = healthStartedAtMs + FINDER_LAUNCH_MINIMUM_HEALTH_MS;
   while (Date.now() < healthDeadline) {
     assertProcessAlive(mainPid, "LaunchServices main process");
-    const renderer = rendererDescendant(mainPid, appPath);
+    const renderer = rendererDescendant(mainPid, officialAppPath);
     if (!renderer || renderer.pid !== rendererPid) {
       throw new Error(
         "LaunchServices starter renderer did not remain stable throughout the health interval",
@@ -306,7 +356,7 @@ try {
     await Bun.sleep(200);
   }
   assertProcessAlive(mainPid, "LaunchServices main process");
-  const finalRenderer = rendererDescendant(mainPid, appPath);
+  const finalRenderer = rendererDescendant(mainPid, officialAppPath);
   if (!finalRenderer || finalRenderer.pid !== rendererPid) {
     throw new Error(
       "LaunchServices starter renderer did not survive the complete health interval",
@@ -339,6 +389,11 @@ try {
   if ((await readdir(layout.vaultPath)).length !== 0) {
     throw new Error("No-vault starter smoke unexpectedly wrote to its disposable vault");
   }
+  const cliExecutablePath = await canonicalExistingPath(
+    join(launchProfilePath, "blackglass-cli"),
+    "Locally adapted Blackglass CLI",
+    "file",
+  );
   const cliProof = await exercisePackagedCli({
     cliExecutablePath,
     homePath: launchHomePath,
@@ -354,7 +409,7 @@ try {
   try {
     const crashReports = await newDiagnosticReports(
       diagnosticBefore,
-      appPath,
+      officialAppPath,
       launchHomePath,
     );
     primarySmokeError = crashReports.length > 0
@@ -373,7 +428,7 @@ try {
   try {
     if (launchAttempted) {
       terminationEvidence = await terminateNewAppProcessTree(
-        appPath,
+        officialAppPath,
         baselineAppPids,
         mainPid,
         terminationHelperPath,
@@ -420,7 +475,10 @@ try {
   }
   try {
     if (launchHomeRoot) {
-      const survivingProcesses = exactNewAppProcesses(appPath, baselineAppPids);
+      const survivingProcesses = [
+        ...exactNewAppProcesses(appPath, baselineAppPids),
+        ...exactNewAppProcesses(officialAppPath, baselineAppPids),
+      ];
       if (survivingProcesses.length > 0) {
         throw new Error(
           `Refusing to archive ${launchHomeRoot} while packaged app processes remain: ` +
@@ -466,6 +524,7 @@ try {
 
 if (
   mainPid === undefined ||
+  launcherPid === undefined ||
   rendererPid === undefined ||
   debugListenerPid === undefined ||
   debugListenerEndpoints === undefined ||
@@ -477,6 +536,9 @@ if (
   launchHomePath === undefined ||
   launchProfilePath === undefined ||
   launchCommand === undefined ||
+  launcherCommand === undefined ||
+  officialCommand === undefined ||
+  runtimeReceiptSha256 === undefined ||
   cliSocketAddress === undefined ||
   cliSocketRemoved !== true ||
   profileSingletonArtifactsRemoved !== true ||
@@ -493,15 +555,16 @@ if (
   throw new Error("Finder launch smoke did not collect complete no-vault evidence");
 }
 await Bun.sleep(1_500);
-const crashReports = await newDiagnosticReports(diagnosticBefore, appPath);
+const crashReports = await newDiagnosticReports(diagnosticBefore, officialAppPath);
 if (crashReports.length > 0) {
   throw new Error(
     `LaunchServices startup created macOS crash reports: ${crashReports.map((path) => basename(path)).join(", ")}`,
   );
 }
-const [realProfileFingerprintsAfter, finalClient] = await Promise.all([
+const [realProfileFingerprintsAfter, finalClient, officialTreeAfter] = await Promise.all([
   Promise.all(realProfiles.map(metadataTreeFingerprint)),
   inspectMacOSArtifact(appPath),
+  computeTreeIdentity(officialAppPath),
 ]);
 if (stableJson(realProfileFingerprintsAfter) !== stableJson(realProfileFingerprintsBefore)) {
   throw new Error("LaunchServices smoke changed a real Obsidian or Blackglass profile");
@@ -511,6 +574,9 @@ if (
     stableJson(publicMacOSArtifact(recordedClient))
 ) {
   throw new Error("Packaged app changed during its LaunchServices smoke");
+}
+if (stableJson(officialTreeAfter) !== stableJson(officialTreeBefore)) {
+  throw new Error("Official Obsidian runtime changed during its LaunchServices smoke");
 }
 
 const artifact = publicMacOSArtifact(recordedClient);
@@ -523,19 +589,22 @@ const evidence: FinderLaunchSmokeEvidence = {
   releaseManifestSha256: run.manifest.releaseManifestSha256,
   appArtifactSha256: macOSArtifactBindingSha256(artifact),
   applicationTreeSha256: artifact.applicationTreeSha256,
-  executableSha256: artifact.executableSha256,
+  executableSha256: artifact.officialExecutableSha256,
+  launcherExecutableSha256: artifact.executableSha256,
   embeddedAsarSha256: artifact.embeddedAsarSha256,
   tlsMetadataSha256: tls.metadataSha256,
   tlsSpkiSha256Base64: tls.metadata.spkiSha256Base64,
   chromiumHostResolverRules: tls.metadata.chromiumHostResolverRules,
   appPath,
+  officialAppPath,
+  launcherExecutablePath,
   executablePath,
   launchHomePath,
   launchHomeRootMode: 0o700,
   launchHomeSameDeviceAsArchive: true,
   launchHomeRelocatedToRun: true,
   launchHomeRootRemoved: true,
-  cliExecutablePath,
+  cliExecutablePath: join(layout.profilePath, "blackglass-cli"),
   cliExecutableSha256: artifact.cliExecutableSha256,
   cliSocketAddress,
   cliSocketName: artifact.cliSocketName,
@@ -543,6 +612,11 @@ const evidence: FinderLaunchSmokeEvidence = {
   profilePath: layout.profilePath,
   vaultPath: layout.vaultPath,
   launchCommand,
+  launcherCommand,
+  officialCommand,
+  officialChildOfLauncher: true,
+  runtimeReceiptPath: join(layout.smokeRoot, "runtime-receipt.json"),
+  runtimeReceiptSha256,
   debugPort: FINDER_LAUNCH_DEBUG_PORT,
   debugAddress: FINDER_LAUNCH_DEBUG_ADDRESS,
   debugListenerPid,
@@ -554,6 +628,7 @@ const evidence: FinderLaunchSmokeEvidence = {
   healthyAt,
   completedAt: new Date().toISOString(),
   mainPid,
+  launcherPid,
   rendererPid,
   rendererStableDuringHealth: true,
   healthyForMs,
@@ -572,7 +647,7 @@ const evidence: FinderLaunchSmokeEvidence = {
   cliForwardedCommandSucceeded: true,
   cliForwardedResponse,
   cliMainProcessReceiptObserved: true,
-  explicitUserDataDirUsed: false,
+  explicitUserDataDirUsed: true,
   noLocalVaultAtLaunch: true,
   starterPageObserved: true,
   starterNativeUiExercised: true,
@@ -599,6 +674,8 @@ assertFinderLaunchSmokeEvidence(evidence, {
   runManifestSha256: run.manifestSha256,
   releaseManifestSha256: run.manifest.releaseManifestSha256,
   appPath,
+  officialAppPath,
+  launcherExecutablePath,
   artifact,
   controlOrigin: run.manifest.endpoints.controlOrigin,
   tlsMetadataSha256: tls.metadataSha256,
@@ -1233,6 +1310,39 @@ async function waitForMainProcess(
   throw new Error("LaunchServices did not create the packaged-app main process");
 }
 
+async function waitForBridgeRuntimeReceipt(
+  path: string,
+  launcherPid: number,
+  officialPid: number,
+): Promise<BridgeRuntimeReceipt> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if (await pathExists(path)) {
+      const value = JSON.parse(await readFile(path, "utf8")) as Partial<BridgeRuntimeReceipt>;
+      if (
+        value.schemaVersion !== BRIDGE_RUNTIME_RECEIPT_SCHEMA_VERSION ||
+        value.launcherPid !== launcherPid ||
+        value.officialPid !== officialPid ||
+        value.officialChildOfLauncher !== true ||
+        typeof value.bundlePath !== "string" ||
+        typeof value.officialAppPath !== "string" ||
+        typeof value.officialAppTreeSha256 !== "string" ||
+        typeof value.adapterSha256 !== "string" ||
+        typeof value.profilePath !== "string" ||
+        typeof value.blackglassHomePath !== "string" ||
+        value.explicitUserDataDir !== true ||
+        value.exclusiveOfficialInstance !== true
+      ) {
+        throw new Error("LaunchServices runtime receipt is malformed");
+      }
+      return value as BridgeRuntimeReceipt;
+    }
+    assertProcessAlive(launcherPid, "Blackglass Bridge launcher");
+    await Bun.sleep(100);
+  }
+  throw new Error("Timed out waiting for LaunchServices runtime receipt");
+}
+
 function rendererDescendant(mainPid: number, appPath: string): ProcessRow | undefined {
   const processes = listProcesses();
   return processes.find(
@@ -1488,7 +1598,7 @@ async function newDiagnosticReports(
     }
     if (
       body.includes(appPath) ||
-      body.includes("com.blackglass.app") ||
+      body.includes("com.blackglass.bridge") ||
       name.includes("blackglass blackglass") ||
       name.includes("blackglass_blackglass")
     ) {
