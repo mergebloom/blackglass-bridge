@@ -8,3 +8,14 @@ test("multi-window cleanup remains reachable and verifies every Settings window 
   expect(source).toContain("auxiliaryPages.some((auxiliary) => !auxiliary.isClosed())");
   expect(source).toContain("One or more auxiliary Settings renderers remained after cleanup");
 });
+
+test("live E2E controls target the bound window and native checkbox input", async () => {
+  const source = await readFile(
+    resolve(import.meta.dir, "../tools/e2e-ui.mjs"),
+    "utf8",
+  );
+  expect(source).toContain('action === "bring-to-front"');
+  expect(source).toContain("await boundPage.bringToFront()");
+  expect(source).toContain("await checkbox.evaluate((element) => element.click())");
+  expect(source).not.toContain("await container.click({ force: true })");
+});

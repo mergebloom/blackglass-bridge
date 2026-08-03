@@ -264,6 +264,10 @@ try {
       };
     });
     console.log(JSON.stringify({ diagnostic, url: page.url() }, null, 2));
+  } else if (action === "bring-to-front") {
+    if (arguments_.length !== 0) throw new Error("bring-to-front takes no arguments");
+    await boundPage.bringToFront();
+    console.log(JSON.stringify({ broughtToFront: true, url: boundPage.url() }));
   } else if (action === "snapshot") {
     const screenshotPath = arguments_[0] ? resolve(arguments_[0]) : null;
     const statePath = arguments_[1] ? resolve(arguments_[1]) : null;
@@ -689,10 +693,10 @@ async function setObsidianCheckbox(checkbox, checked) {
     ? await container.evaluate((element) => element.classList.contains("is-enabled"))
     : await checkbox.isChecked();
   if (current !== checked) {
-    // Obsidian owns toggle state and click handling on the styled container.
-    if (hasContainer) await container.click({ force: true });
-    else if (checked) await checkbox.check();
-    else await checkbox.uncheck();
+    // Invoke the native input's click activation behavior. Obsidian listens on
+    // the input but represents its state on the styled ancestor, whose empty
+    // area is not itself a reliable click target in every supported renderer.
+    await checkbox.evaluate((element) => element.click());
   }
   const observed = hasContainer
     ? await container.evaluate((element) => element.classList.contains("is-enabled"))
@@ -766,5 +770,6 @@ function usesForegroundPage(requestedAction) {
     "sync-connect-diagnostic",
     "trace-reconnect",
     "trace-all-targets",
+    "bring-to-front",
   ].includes(requestedAction);
 }
