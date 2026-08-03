@@ -4,6 +4,7 @@ import { basename, join, resolve } from "node:path";
 import { isSupportedSemver } from "./semver";
 import { stableJson } from "./stable-json";
 import { assertStandaloneBridgeBuildInfo } from "./standalone-bridge";
+import { assertPublicReleaseAsset } from "./release-asset-privacy";
 import { assertToolingSourceIdentity } from "./tooling-source";
 
 const [directoryArgument, revisionArgument, ...extra] = Bun.argv.slice(2);
@@ -38,6 +39,7 @@ for (const path of [executable, `${executable}.sha256`, archive, `${archive}.sha
 }
 const executableSha256 = await sha256File(executable);
 if (executableSha256 !== manifest.executableSha256) throw new Error("Standalone executable hash differs from its manifest");
+assertPublicReleaseAsset(await readFile(executable), [resolve(import.meta.dir, "..")]);
 await verifyChecksum(`${executable}.sha256`, base, executableSha256);
 await verifyChecksum(`${archive}.sha256`, `${base}.zip`, await sha256File(archive));
 const architectures = runText(["/usr/bin/lipo", "-archs", executable]).split(/\s+/u).filter(Boolean);

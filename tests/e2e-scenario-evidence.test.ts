@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, utimes, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import {
   assertFreshScenarioObservedAt,
+  assertCleanClientLifecycle,
   observeScenarioDatabase,
 } from "../tools/e2e-scenario-evidence";
 
@@ -89,4 +91,34 @@ describe("scenario checkpoint freshness", () => {
     await expect(assertFreshScenarioObservedAt(old, [evidence], false))
       .rejects.toThrow("not close to its evidence file metadata");
   });
+});
+
+test("clean-client lifecycle binds the exact retired launch identity", async () => {
+  const root = await mkdtemp(join(tmpdir(), "blackglass-clean-client-evidence-"));
+  const prior = Buffer.from("exact initial launch identity\n");
+  await writeFile(join(root, "client-b-launch.json"), prior);
+  const resetAt = new Date(Date.now() - 2_000).toISOString();
+  const record = {
+    schemaVersion: 1,
+    client: "client-b",
+    runManifestSha256: "a".repeat(64),
+    freshProfilePath: join(root, "client-b/user-data"),
+    freshVaultPath: join(root, "client-b/vault"),
+    initialVaultFiles: 0,
+    initialVaultBytes: 0,
+    resetAt,
+    priorLaunchIdentitySha256: "b".repeat(64),
+  };
+  await writeFile(join(root, "client-b-clean-reset.json"), `${JSON.stringify(record)}\n`);
+  const launch = {
+    startedAt: new Date().toISOString(),
+    profilePath: record.freshProfilePath,
+    vaultPath: record.freshVaultPath,
+  };
+  await expect(assertCleanClientLifecycle(root, record.runManifestSha256, launch))
+    .rejects.toThrow("lacks a bound clean-client lifecycle transition");
+  record.priorLaunchIdentitySha256 = createHash("sha256").update(prior).digest("hex");
+  await writeFile(join(root, "client-b-clean-reset.json"), `${JSON.stringify(record)}\n`);
+  await expect(assertCleanClientLifecycle(root, record.runManifestSha256, launch))
+    .resolves.toMatch(/^[a-f0-9]{64}$/u);
 });

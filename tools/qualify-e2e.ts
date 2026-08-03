@@ -11,6 +11,7 @@ import {
   e2eNetworkEvidencePath,
   e2eNetworkFinalizePath,
   type E2EClientRole,
+  type E2EReleaseClientRole,
   type E2ENetworkCaptureFinalize,
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
@@ -234,12 +235,12 @@ if (
   throw new Error("E2E reports are inconsistent with the exact prepared artifacts");
 }
 
-const rawNetworkEvidence: Record<E2EClientRole, string> = {
+const rawNetworkEvidence: Record<E2EReleaseClientRole, string> = {
   "client-a": "",
   "client-b": "",
   "client-b-recovery": "",
 };
-const rawNetworkFinalizers: Record<E2EClientRole, string> = {
+const rawNetworkFinalizers: Record<E2EReleaseClientRole, string> = {
   "client-a": "",
   "client-b": "",
   "client-b-recovery": "",

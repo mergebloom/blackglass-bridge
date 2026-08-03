@@ -126,7 +126,8 @@ export function runtimeReceiptPathForClientIdentity(
   const name = basename(identityPath);
   const initial = `${clientName}-launch.json`;
   const recovery = clientName === "client-b" ? "client-b-recovery-launch.json" : "";
-  if (name !== initial && name !== recovery) {
+  const cold = clientName === "client-b" ? "client-b-cold-launch.json" : "";
+  if (name !== initial && name !== recovery && name !== cold) {
     throw new Error(`Unexpected ${clientName} launch identity filename: ${name}`);
   }
   return join(runRoot, name.replace(/-launch\.json$/u, "-runtime.json"));

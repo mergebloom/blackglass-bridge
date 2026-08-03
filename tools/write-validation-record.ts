@@ -104,7 +104,7 @@ for (const [field, file] of Object.entries(evidenceFiles) as Array<
     throw new Error(`Qualification evidence changed after generation: ${file}`);
   }
 }
-for (const role of ["client-a", "client-b", "client-b-recovery"] as E2EClientRole[]) {
+for (const role of ["client-a", "client-b", "client-b-recovery"] as const) {
   const evidencePath = e2eNetworkEvidencePath(run.root, role);
   const finalizePath = e2eNetworkFinalizePath(run.root, role);
   if (

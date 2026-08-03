@@ -88,6 +88,9 @@ test("uses distinct immutable receipts for initial and clean-recovery launches",
   expect(runtimeReceiptPathForClientIdentity(
     "/runs/one", "client-b", "/runs/one/client-b-recovery-launch.json",
   )).toBe("/runs/one/client-b-recovery-runtime.json");
+  expect(runtimeReceiptPathForClientIdentity(
+    "/runs/one", "client-b", "/runs/one/client-b-cold-launch.json",
+  )).toBe("/runs/one/client-b-cold-runtime.json");
   expect(() => runtimeReceiptPathForClientIdentity(
     "/runs/one", "client-a", "/runs/one/client-a-recovery-launch.json",
   )).toThrow("Unexpected client-a launch identity filename");

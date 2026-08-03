@@ -5,8 +5,15 @@ import { stableJson } from "./stable-json";
 
 export const E2E_NETWORK_EVIDENCE_SCHEMA_VERSION = 2;
 
-export type E2EClientRole = "client-a" | "client-b" | "client-b-recovery";
-export type E2ENetworkLifecyclePhase = "post-restart" | "cold-recovery";
+export type E2EClientRole =
+  | "client-a"
+  | "client-b"
+  | "client-c"
+  | "client-b-initial"
+  | "client-b-cold"
+  | "client-b-recovery";
+export type E2EReleaseClientRole = "client-a" | "client-b" | "client-b-recovery";
+export type E2ENetworkLifecyclePhase = "post-restart" | "cold-recovery" | "scenario-complete";
 
 export interface E2ENetworkCaptureFinalize {
   schemaVersion: 1;
@@ -26,6 +33,11 @@ export interface E2ENetworkCaptureFinalize {
         recoveryReportSha256: string;
         recoveryUiStateSha256: string;
         recoveryScreenshotSha256: string;
+      }
+    | {
+        scenarioId: string;
+        finalCheckpoint: string;
+        finalCheckpointProofSha256: string;
       };
 }
 
@@ -118,10 +130,87 @@ const CONTROL_ROUTES: Record<E2EClientRole, readonly string[]> = {
   "client-a": ["/user/signin", "/vault/create", "/vault/access"],
   "client-b": ["/user/signin", "/vault/list", "/vault/access"],
   "client-b-recovery": ["/user/signin", "/vault/list", "/vault/access"],
+  "client-b-initial": ["/user/signin", "/vault/list", "/vault/access", "/vault/share/remove"],
+  "client-b-cold": ["/user/signin", "/vault/list", "/vault/access"],
+  "client-c": ["/user/signin", "/vault/list"],
 };
 
-export function requiredControlRoutes(role: E2EClientRole): string[] {
+export function requiredControlRoutes(
+  role: E2EClientRole,
+  run?: PreparedE2ERunManifest,
+): string[] {
+  if (run?.scenarioId === "E2E-P3-TENANCY") {
+    if (role === "client-a" || role === "client-b") {
+      return ["/user/signin", "/vault/create", "/vault/access"];
+    }
+    return ["/user/signin", "/vault/list"];
+  }
+  if (
+    run?.scenarioId === "E2E-P4-CUSTOM-E2EE" ||
+    run?.scenarioId === "E2E-P4-MANAGED-ENCRYPTION"
+  ) {
+    if (role === "client-a") {
+      return [
+        "/user/signin", "/vault/create", "/vault/access", "/vault/share/list",
+        "/vault/share/invite", "/vault/share/remove",
+      ];
+    }
+    if (role === "client-b" || role === "client-b-initial") {
+      return ["/user/signin", "/vault/list", "/vault/access", "/vault/share/remove"];
+    }
+    if (role === "client-b-cold") return ["/user/signin", "/vault/list", "/vault/access"];
+    return ["/user/signin", "/vault/list"];
+  }
   return [...CONTROL_ROUTES[role]];
+}
+
+export function scenarioNetworkRoles(
+  run: Pick<PreparedE2ERunManifest, "scenarioId">,
+): E2EClientRole[] {
+  if (run.scenarioId === "E2E-P3-TENANCY") {
+    return ["client-a", "client-b", "client-c"];
+  }
+  if (
+    run.scenarioId === "E2E-P4-CUSTOM-E2EE" ||
+    run.scenarioId === "E2E-P4-MANAGED-ENCRYPTION"
+  ) {
+    return ["client-a", "client-b-initial", "client-b-cold", "client-c"];
+  }
+  throw new Error("Release Sync/recovery uses its dedicated network role set");
+}
+
+export function e2eNetworkLaunchIdentityFile(role: E2EClientRole): string {
+  if (role === "client-b-initial") return "client-b-launch.json";
+  if (role === "client-b-cold") return "client-b-cold-launch.json";
+  return `${role}-launch.json`;
+}
+
+export function assertScenarioNetworkLaunchBinding(
+  role: E2EClientRole,
+  identitySha256: string,
+  checkpoints: ReadonlyArray<{ client: string; launchIdentitySha256: string }>,
+  boundIndex: number,
+): void {
+  const logicalClient = role === "client-b-initial" || role === "client-b-cold"
+    ? "client-b"
+    : role;
+  const checkpoint = [...checkpoints]
+    .slice(0, boundIndex + 1)
+    .reverse()
+    .find((item) => item.client === logicalClient);
+  if (!checkpoint) {
+    throw new Error(`Scenario network role has no same-client checkpoint: ${role}`);
+  }
+  if (!isSha256(identitySha256) || identitySha256 !== checkpoint.launchIdentitySha256) {
+    throw new Error(`Scenario network launch differs from checkpoint evidence: ${role}`);
+  }
+}
+
+export function expectsSuccessfulDataHandshake(
+  role: E2EClientRole,
+  run: PreparedE2ERunManifest,
+): boolean {
+  return !(run.scenarioId !== "E2E-RELEASE-SYNC-RECOVERY" && role === "client-c");
 }
 
 export function e2eNetworkEvidencePath(root: string, role: E2EClientRole): string {
@@ -160,7 +249,7 @@ export function buildNetworkRequirements(
   events: E2ENetworkEvent[],
   handshakeNotBefore: string,
 ): E2ENetworkEvidence["requirements"] {
-  const required = requiredControlRoutes(role);
+  const required = requiredControlRoutes(role, run);
   const control = new URL(run.endpoints.controlOrigin);
   const successfulControlRoutes = required.filter((pathname) =>
     events.some(
@@ -236,7 +325,7 @@ export function assertNetworkCaptureFinalize(
     value.schemaVersion !== 1 ||
     value.role !== options.role ||
     value.runManifestSha256 !== options.runManifestSha256 ||
-    !["post-restart", "cold-recovery"].includes(String(value.phase)) ||
+    !["post-restart", "cold-recovery", "scenario-complete"].includes(String(value.phase)) ||
     typeof value.requestedAt !== "string" ||
     typeof value.handshakeNotBefore !== "string" ||
     !Number.isFinite(Date.parse(value.requestedAt)) ||
@@ -256,14 +345,20 @@ export function assertNetworkCaptureFinalize(
     ) {
       throw new Error("Network finalizer lacks post-restart evidence bindings");
     }
-  } else if (
+  } else if (value.phase === "cold-recovery" && (
     !isSha256(value.context.sourceLossResetSha256) ||
     !isSha256(value.context.recoveryLaunchSha256) ||
     !isSha256(value.context.recoveryReportSha256) ||
     !isSha256(value.context.recoveryUiStateSha256) ||
     !isSha256(value.context.recoveryScreenshotSha256)
-  ) {
+  )) {
     throw new Error("Network finalizer lacks cold-recovery evidence bindings");
+  } else if (value.phase === "scenario-complete" && (
+    typeof value.context.scenarioId !== "string" ||
+    typeof value.context.finalCheckpoint !== "string" ||
+    !isSha256(value.context.finalCheckpointProofSha256)
+  )) {
+    throw new Error("Network finalizer lacks scenario evidence bindings");
   }
 }
 
@@ -351,11 +446,11 @@ export function assertNetworkEvidence(
   }
   if (
     reproduced.controlOrigin !== options.run.endpoints.controlOrigin ||
-    stableJson(reproduced.controlRoutes) !== stableJson(requiredControlRoutes(options.role)) ||
+    stableJson(reproduced.controlRoutes) !== stableJson(requiredControlRoutes(options.role, options.run)) ||
     stableJson(reproduced.successfulControlRoutes) !== stableJson(reproduced.controlRoutes) ||
     reproduced.dataAuthority !== options.run.endpoints.dataHost ||
-    reproduced.successfulDataHandshake !== true ||
-    reproduced.successfulLifecycleDataHandshake !== true
+    reproduced.successfulDataHandshake !== expectsSuccessfulDataHandshake(options.role, options.run) ||
+    reproduced.successfulLifecycleDataHandshake !== expectsSuccessfulDataHandshake(options.role, options.run)
   ) {
     throw new Error("E2E network evidence did not exercise every required endpoint");
   }

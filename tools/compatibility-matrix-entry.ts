@@ -3,6 +3,7 @@ import {
   parseE2EScenarioId,
   scenarioValidationFileName,
 } from "./e2e-scenario";
+import { scenarioNetworkRoles } from "./e2e-network-evidence";
 import type {
   ReleaseQualification,
   ReleaseValidationRecord,
@@ -56,6 +57,14 @@ export function validateMatrixScenarioReport(
       record.toolingSource.gitRevision!,
       record.artifacts.server.sourceRevision,
     ) ||
+    !isRecord(value.networkEvidence) ||
+    JSON.stringify(Object.keys(value.networkEvidence).sort()) !==
+      JSON.stringify(scenarioNetworkRoles({ scenarioId: value.scenarioId }).sort()) ||
+    Object.values(value.networkEvidence).some((item: unknown) =>
+      !isRecord(item) || !isIsoDate(item.startedAt) || !isIsoDate(item.completedAt) ||
+      Date.parse(item.completedAt) < Date.parse(item.startedAt) ||
+      !isSha256(item.evidenceSha256) || !isSha256(item.finalizeSha256)
+    ) ||
     !Array.isArray(value.checkpoints)) {
     throw new Error(`Scenario report is incomplete for ${expectedScenario}`);
   }
@@ -67,7 +76,8 @@ export function validateMatrixScenarioReport(
   }
   const observedAt = value.checkpoints.map((checkpoint: unknown) => {
     if (!isRecord(checkpoint) || !isIsoDate(checkpoint.observedAt) ||
-      !isSha256(checkpoint.proofSha256) || !isSha256(checkpoint.uiStateSha256) ||
+      !isSha256(checkpoint.proofSha256) || !isSha256(checkpoint.launchIdentitySha256) ||
+      !isSha256(checkpoint.uiStateSha256) ||
       !isSha256(checkpoint.screenshotSha256) || !isSha256(checkpoint.databaseSha256)) {
       throw new Error(`Scenario report has malformed checkpoint time for ${expectedScenario}`);
     }

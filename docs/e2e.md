@@ -318,6 +318,25 @@ declared by `tools/e2e-scenario.ts`. Capture each checkpoint through the bound
 client debugging port; the command writes the screenshot, sanitized UI state,
 safe database projection, file assertions, and an immutable proof record:
 
+Start one network capture for each of clients A, initial B, and C immediately
+after launch and before the first scenario action. The capture records only sanitized
+methods, endpoint paths, statuses, and WebSocket handshakes; it never records
+request bodies, tokens, account addresses, or URL query strings.
+
+For Phase 3, capture `client-a`, `client-b`, and `client-c`. For either Phase 4
+scenario, capture `client-a`, `client-b-initial`, and `client-c`; the initial-B
+role reads `client-b-launch.json` but writes distinct network evidence.
+
+```sh
+bun run e2e:network:capture -- .data/e2e/<phase-3-run> client-a
+bun run e2e:network:capture -- .data/e2e/<phase-3-run> client-b
+bun run e2e:network:capture -- .data/e2e/<phase-3-run> client-c
+
+bun run e2e:network:capture -- .data/e2e/<phase-4-run> client-a
+bun run e2e:network:capture -- .data/e2e/<phase-4-run> client-b-initial
+bun run e2e:network:capture -- .data/e2e/<phase-4-run> client-c
+```
+
 ```sh
 bun run e2e:scenario:capture -- .data/e2e/<run> \
   phase-4-custom/wrong-password 9322
@@ -337,7 +356,8 @@ Use these exact proof filenames when creating scenario content:
 - `Blackglass E2E Former Member Proof.md`, created on B only after revocation;
 - `Blackglass E2E Cold Bootstrap Proof.md`, created on A before B's clean bootstrap.
 
-Before the Phase 4 cold-bootstrap checkpoint, stop client B and replace its
+Before the Phase 4 cold-bootstrap checkpoint, finalize B's initial capture at
+`self-left`, stop client B, and replace its
 entire disposable client lifecycle—not merely its vault directory:
 
 ```sh
@@ -347,7 +367,16 @@ bun run e2e:reset-client -- .data/e2e/<run> client-b
 The command records the removed tree, preserves only the exact prepared
 adapter, creates a genuinely empty vault and fresh profile, and refuses active
 launch leases. The cold-bootstrap proof binds this reset record and the later
-fresh launch.
+fresh launch. Write that identity as `client-b-cold-launch.json`, start the
+`client-b-cold` network capture before signing in, and finalize it after the
+cold-bootstrap checkpoint.
+
+```sh
+bun run e2e:network:finalize -- .data/e2e/<run> client-b-initial
+bun run e2e:reset-client -- .data/e2e/<run> client-b
+# Launch fresh B with --identity-out .../client-b-cold-launch.json, then:
+bun run e2e:network:capture -- .data/e2e/<run> client-b-cold
+```
 
 The verifier refuses missing, reordered, overwritten, cross-run, cross-client,
 or semantically inconsistent checkpoints. It verifies encryption-mode storage,
@@ -356,6 +385,9 @@ file absence, bidirectional byte equality, former-member local retention, and
 cold-bootstrap convergence before emitting `scenario-report.json`:
 
 ```sh
+bun run e2e:network:finalize -- .data/e2e/<run> client-a
+bun run e2e:network:finalize -- .data/e2e/<run> client-b-cold
+bun run e2e:network:finalize -- .data/e2e/<run> client-c
 bun run e2e:scenario:verify -- .data/e2e/<run>
 ```
 

@@ -331,13 +331,16 @@ export async function assertFreshScenarioObservedAt(
   }
 }
 
-async function assertCleanClientLifecycle(
+export async function assertCleanClientLifecycle(
   root: string,
   runManifestSha256: string,
   launch: { startedAt: string; profilePath: string; vaultPath: string },
 ): Promise<string> {
   const path = resolve(root, "client-b-clean-reset.json");
   const bytes = await readFile(path);
+  const priorLaunchIdentitySha256 = sha256(
+    await readFile(resolve(root, "client-b-launch.json")),
+  );
   const record = JSON.parse(bytes.toString("utf8")) as Record<string, unknown>;
   if (
     record.schemaVersion !== 1 || record.client !== "client-b" ||
@@ -348,8 +351,7 @@ async function assertCleanClientLifecycle(
     typeof record.resetAt !== "string" || !Number.isFinite(Date.parse(record.resetAt)) ||
     Date.parse(launch.startedAt) <= Date.parse(record.resetAt) ||
     launch.profilePath !== record.freshProfilePath || launch.vaultPath !== record.freshVaultPath ||
-    typeof record.priorLaunchIdentitySha256 !== "string" ||
-    !isSha256(record.priorLaunchIdentitySha256)
+    record.priorLaunchIdentitySha256 !== priorLaunchIdentitySha256
   ) {
     throw new Error("Cold-bootstrap checkpoint lacks a bound clean-client lifecycle transition");
   }

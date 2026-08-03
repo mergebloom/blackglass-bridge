@@ -41,7 +41,31 @@ if [[ $existing -gt 0 ]]; then
   exit 0
 fi
 
-cd -- "$root"
+build_root="/private/tmp/blackglass-bridge-standalone-${revision}"
+build_lock="${build_root}.lock"
+if ! mkdir "$build_lock"; then
+  echo "standalone build path is already locked: $build_lock" >&2
+  exit 1
+fi
+staging=
+cleanup() {
+  rm -rf -- "$build_root"
+  rmdir -- "$build_lock" 2>/dev/null || true
+  if [[ -n "$staging" ]]; then rm -rf -- "$staging"; fi
+}
+trap cleanup EXIT HUP INT TERM
+rm -rf -- "$build_root"
+mkdir -p "$build_root"
+git -C "$root" archive --format=tar "$revision" | tar -xf - -C "$build_root"
+[[ -d "$root/node_modules" && ! -L "$root/node_modules" ]] || {
+  echo "verified development dependencies are required to build the standalone Bridge" >&2
+  exit 1
+}
+(cd -- "$root" && bun run tools/verify-release-dependencies.ts >/dev/null)
+cp -R -- "$root/node_modules" "$build_root/node_modules"
+(cd -- "$build_root" && bun run tools/verify-release-dependencies.ts >/dev/null)
+
+cd -- "$build_root"
 bun build --compile --target=bun-darwin-arm64 tools/bridge-cli.ts \
   --outfile "$binary" \
   --define "__BLACKGLASS_BRIDGE_VERSION__=$version_define" \
@@ -50,8 +74,8 @@ bun build --compile --target=bun-darwin-arm64 tools/bridge-cli.ts \
 chmod 0755 "$binary"
 
 binary_sha=$(shasum -a 256 "$binary" | awk '{print $1}')
-baseline_1127=$(shasum -a 256 compatibility/obsidian-1.12.7.json | awk '{print $1}')
-baseline_1134=$(shasum -a 256 compatibility/obsidian-1.13.4.json | awk '{print $1}')
+baseline_1127=$(shasum -a 256 "$root/compatibility/obsidian-1.12.7.json" | awk '{print $1}')
+baseline_1134=$(shasum -a 256 "$root/compatibility/obsidian-1.13.4.json" | awk '{print $1}')
 bun -e '
   const [path, version, revision, binary, binarySha, first, second, toolingSource] = Bun.argv.slice(1);
   await Bun.write(path, JSON.stringify({
@@ -71,8 +95,7 @@ bun -e '
 ' "$manifest" "$version" "$revision" "$base" "$binary_sha" "$baseline_1127" "$baseline_1134" "$tooling_source"
 
 staging=$(mktemp -d "${TMPDIR:-/tmp}/blackglass-bridge-release.XXXXXX")
-trap 'rm -rf "$staging"' EXIT
-cp -- "$binary" "$manifest" LICENSE docs/bridge-cli.md "$staging/"
+cp -- "$binary" "$manifest" "$root/LICENSE" "$root/docs/bridge-cli.md" "$staging/"
 mv -- "$staging/bridge-cli.md" "$staging/INSTALL.md"
 find "$staging" -exec touch -t 198001010000 {} +
 (cd -- "$staging" && COPYFILE_DISABLE=1 zip -X -9 -q "$archive" ./*)

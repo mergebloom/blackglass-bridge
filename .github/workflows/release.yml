@@ -64,17 +64,35 @@ jobs:
           }
       - run: npm ci
       - name: Verify release eligibility and qualified tooling source
-        run: bun run release:verify-eligibility -- "$GITHUB_SHA"
+        id: eligibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          eligibility=$(bun run release:verify-eligibility -- "$GITHUB_SHA")
+          printf '%s\n' "$eligibility"
+          source_revision=$(node -e \
+            'const value=JSON.parse(process.argv[1]); process.stdout.write(value.sourceRevision)' \
+            "$eligibility")
+          test "$source_revision" != "$GITHUB_SHA" || {
+            echo "Qualified release must include a separate evidence-only commit" >&2
+            exit 1
+          }
+          printf 'source_revision=%s\n' "$source_revision" >> "$GITHUB_OUTPUT"
+      - name: Check out the exact qualified tooling source
+        run: git checkout --detach "${{ steps.eligibility.outputs.source_revision }}"
       - run: bun run check
       - name: Build deterministic tooling release assets
         shell: bash
         run: |
           set -euo pipefail
-          bash scripts/build-release-artifacts.sh "$GITHUB_SHA" dist/release
-          bash scripts/build-standalone-bridge.sh "$GITHUB_SHA" dist/release
+          source_revision="${{ steps.eligibility.outputs.source_revision }}"
+          test "$(git rev-parse HEAD)" = "$source_revision"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          bash scripts/build-release-artifacts.sh "$source_revision" dist/release
+          bash scripts/build-standalone-bridge.sh "$source_revision" dist/release
           mkdir -p dist/reproducibility-check
-          bash scripts/build-release-artifacts.sh "$GITHUB_SHA" dist/reproducibility-check
-          bash scripts/build-standalone-bridge.sh "$GITHUB_SHA" dist/reproducibility-check
+          bash scripts/build-release-artifacts.sh "$source_revision" dist/reproducibility-check
+          bash scripts/build-standalone-bridge.sh "$source_revision" dist/reproducibility-check
           cmp \
             "dist/release/blackglass-${GITHUB_REF_NAME}-tooling.zip" \
             "dist/reproducibility-check/blackglass-${GITHUB_REF_NAME}-tooling.zip"

@@ -5,9 +5,11 @@ import { parseStrictFlags } from "./cli-flags";
 import { verifyLiveClientLaunchBinding } from "./e2e-client";
 import {
   buildNetworkRequirements,
+  expectsSuccessfulDataHandshake,
   assertNetworkCaptureFinalize,
   e2eNetworkEvidencePath,
   e2eNetworkFinalizePath,
+  e2eNetworkLaunchIdentityFile,
   type E2EClientRole,
   type E2ENetworkCaptureFinalize,
   type E2ENetworkEvent,
@@ -20,11 +22,14 @@ import { readPreparedE2ERun } from "./e2e-network";
 const [rootArgument, roleArgument, ...flagArguments] = Bun.argv.slice(2);
 if (
   !rootArgument ||
-  !["client-a", "client-b", "client-b-recovery"].includes(roleArgument ?? "")
+  ![
+    "client-a", "client-b", "client-c", "client-b-initial", "client-b-cold",
+    "client-b-recovery",
+  ].includes(roleArgument ?? "")
 ) {
   throw new Error(
     "Usage: bun run tools/capture-e2e-network.ts <run-directory> " +
-      "<client-a|client-b|client-b-recovery> " +
+      "<client-a|client-b|client-c|client-b-initial|client-b-cold|client-b-recovery> " +
       "[--timeout-ms <ms>] [--drain-ms <ms>]",
   );
 }
@@ -36,7 +41,7 @@ const flags = parseStrictFlags(flagArguments, {
 const timeoutMs = parseTimeout(flags.values.get("--timeout-ms") ?? "3600000");
 const drainMs = parseDrain(flags.values.get("--drain-ms") ?? "5000");
 const run = await readPreparedE2ERun(rootArgument);
-const identityPath = resolve(run.root, `${role}-launch.json`);
+const identityPath = resolve(run.root, e2eNetworkLaunchIdentityFile(role));
 const launch = await verifyLiveClientLaunchBinding(identityPath);
 if (launch.run.manifestSha256 !== run.manifestSha256) {
   throw new Error("Live client launch belongs to a different E2E run");
@@ -234,10 +239,11 @@ function criteriaPassed(): boolean {
     events,
     finalizeBinding.record.handshakeNotBefore,
   );
+  const expectedHandshake = expectsSuccessfulDataHandshake(role, run.manifest);
   return (
     requirements.successfulControlRoutes.length === requirements.controlRoutes.length &&
-    requirements.successfulDataHandshake &&
-    requirements.successfulLifecycleDataHandshake
+    requirements.successfulDataHandshake === expectedHandshake &&
+    requirements.successfulLifecycleDataHandshake === expectedHandshake
   );
 }
 
@@ -275,6 +281,7 @@ async function finish(passed: boolean): Promise<void> {
     events,
     finalizeBinding.record.handshakeNotBefore,
   );
+  const expectedHandshake = expectsSuccessfulDataHandshake(role, run.manifest);
   const evidence: E2ENetworkEvidence = {
     schemaVersion: 2,
     role,
@@ -282,8 +289,8 @@ async function finish(passed: boolean): Promise<void> {
     completedAt: new Date().toISOString(),
     passed: passed &&
       requirements.successfulControlRoutes.length === requirements.controlRoutes.length &&
-      requirements.successfulDataHandshake &&
-      requirements.successfulLifecycleDataHandshake,
+      requirements.successfulDataHandshake === expectedHandshake &&
+      requirements.successfulLifecycleDataHandshake === expectedHandshake,
     finalize: {
       path: finalizePath,
       sha256: finalizeBinding.sha256,

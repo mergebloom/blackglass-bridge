@@ -43,6 +43,13 @@ describe("compatibility matrix report binding", () => {
     expect(() => validateMatrixScenarioReport(report, "E2E-P3-TENANCY", record))
       .toThrow("Scenario report is incomplete");
   });
+
+  test("requires exact role-bound network evidence for named scenarios", () => {
+    const report = phaseReport();
+    delete (report as any).networkEvidence["client-c"];
+    expect(() => validateMatrixScenarioReport(report, "E2E-P3-TENANCY", record))
+      .toThrow("Scenario report is incomplete");
+  });
 });
 
 function releaseReport() {
@@ -75,10 +82,19 @@ function phaseReport() {
     runManifestSha256: "a".repeat(64),
     releaseManifestSha256: record.artifacts.releaseManifestSha256,
     validationFileName: `phase-3-tenancy-obsidian-1.13.4-bridge-${record.blackglassVersion}-${record.toolingSource.gitRevision}-server-${revision}.json`,
+    networkEvidence: Object.fromEntries(
+      ["client-a", "client-b", "client-c"].map((role) => [role, {
+        startedAt: "2026-08-03T12:00:00.000Z",
+        completedAt: "2026-08-03T12:02:00.000Z",
+        evidenceSha256: "a".repeat(64),
+        finalizeSha256: "b".repeat(64),
+      }]),
+    ),
     checkpoints: e2eScenarioDefinition("E2E-P3-TENANCY").checkpoints.map((checkpoint, index) => ({
       checkpoint,
       observedAt: new Date(Date.parse("2026-08-03T12:01:00.000Z") + index * 1_000).toISOString(),
       proofSha256: "6".repeat(64),
+      launchIdentitySha256: "5".repeat(64),
       uiStateSha256: "7".repeat(64),
       screenshotSha256: "8".repeat(64),
       databaseSha256: "9".repeat(64),

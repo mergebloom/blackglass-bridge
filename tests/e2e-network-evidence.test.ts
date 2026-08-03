@@ -3,9 +3,12 @@ import type { ClientLaunchIdentity } from "../tools/e2e-client";
 import {
   assertNetworkCaptureFinalize,
   assertNetworkEvidence,
+  assertScenarioNetworkLaunchBinding,
   buildNetworkRequirements,
+  expectsSuccessfulDataHandshake,
   requiredControlRoutes,
   sanitizeNetworkUrl,
+  scenarioNetworkRoles,
   type E2ENetworkEvent,
   type E2ENetworkEvidence,
   type E2ENetworkCaptureFinalize,
@@ -291,6 +294,60 @@ describe("E2E network evidence", () => {
         },
       ),
     ).toThrow();
+  });
+
+  test("separates the Phase 4 pre-reset and clean-client capture lifecycles", () => {
+    const scenarioRun = {
+      ...run,
+      scenarioId: "E2E-P4-CUSTOM-E2EE" as const,
+    };
+    expect(scenarioNetworkRoles(scenarioRun)).toEqual([
+      "client-a", "client-b-initial", "client-b-cold", "client-c",
+    ]);
+    expect(requiredControlRoutes("client-b-initial", scenarioRun)).toContain(
+      "/vault/share/remove",
+    );
+    expect(requiredControlRoutes("client-b-cold", scenarioRun)).toEqual([
+      "/user/signin", "/vault/list", "/vault/access",
+    ]);
+    expect(expectsSuccessfulDataHandshake("client-c", scenarioRun)).toBe(false);
+    expect(expectsSuccessfulDataHandshake("client-b-cold", scenarioRun)).toBe(true);
+    const launchSha = "7".repeat(64);
+    const checkpointLaunches = [
+      { client: "client-a", launchIdentitySha256: "8".repeat(64) },
+      { client: "client-b", launchIdentitySha256: launchSha },
+    ];
+    expect(() => assertScenarioNetworkLaunchBinding(
+      "client-b-initial", launchSha, checkpointLaunches, 1,
+    )).not.toThrow();
+    expect(() => assertScenarioNetworkLaunchBinding(
+      "client-b-initial", "9".repeat(64), checkpointLaunches, 1,
+    )).toThrow("differs from checkpoint evidence");
+
+    const scenarioFinalize: E2ENetworkCaptureFinalize = {
+      schemaVersion: 1,
+      role: "client-b-initial",
+      phase: "scenario-complete",
+      requestedAt: "2026-07-28T10:01:00.000Z",
+      handshakeNotBefore: "2026-07-28T10:00:00.000Z",
+      runManifestSha256: identity.runManifestSha256,
+      context: {
+        scenarioId: scenarioRun.scenarioId,
+        finalCheckpoint: "phase-4-custom/self-left",
+        finalCheckpointProofSha256: "6".repeat(64),
+      },
+    };
+    expect(() => assertNetworkCaptureFinalize(scenarioFinalize, {
+      role: "client-b-initial",
+      runManifestSha256: identity.runManifestSha256,
+    })).not.toThrow();
+    expect(() => assertNetworkCaptureFinalize({
+      ...scenarioFinalize,
+      context: { ...scenarioFinalize.context, finalCheckpointProofSha256: "bad" },
+    }, {
+      role: "client-b-initial",
+      runManifestSha256: identity.runManifestSha256,
+    })).toThrow("lacks scenario evidence bindings");
   });
 });
 

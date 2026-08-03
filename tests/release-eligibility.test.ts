@@ -76,7 +76,16 @@ describe("current release qualification selection", () => {
       "bun run tools/verify-release-eligibility.ts",
     );
     expect(workflow).toContain(
-      'run: bun run release:verify-eligibility -- "$GITHUB_SHA"',
+      'eligibility=$(bun run release:verify-eligibility -- "$GITHUB_SHA")',
+    );
+    expect(workflow).toContain(
+      'run: git checkout --detach "${{ steps.eligibility.outputs.source_revision }}"',
+    );
+    expect(workflow).toContain(
+      'bash scripts/build-standalone-bridge.sh "$source_revision" dist/release',
+    );
+    expect(workflow).not.toContain(
+      'bash scripts/build-standalone-bridge.sh "$GITHUB_SHA"',
     );
   });
 

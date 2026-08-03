@@ -6,10 +6,17 @@ import {
   assertNetworkCaptureFinalize,
   e2eNetworkEvidencePath,
   e2eNetworkFinalizePath,
+  e2eNetworkLaunchIdentityFile,
+  scenarioNetworkRoles,
   type E2EClientRole,
   type E2ENetworkCaptureFinalize,
 } from "./e2e-network-evidence";
 import { readPreparedE2ERun } from "./e2e-network";
+import { e2eScenarioDefinition } from "./e2e-scenario";
+import {
+  assertScenarioCheckpointEvidence,
+  scenarioCheckpointPaths,
+} from "./e2e-scenario-evidence";
 import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
 import { canonicalOutputPath } from "./path-safety";
 import {
@@ -24,7 +31,10 @@ import {
 const [rootArgument, roleArgument, ...extraArguments] = Bun.argv.slice(2);
 if (
   !rootArgument ||
-  !["client-a", "client-b", "client-b-recovery"].includes(roleArgument ?? "") ||
+  ![
+    "client-a", "client-b", "client-c", "client-b-initial", "client-b-cold",
+    "client-b-recovery",
+  ].includes(roleArgument ?? "") ||
   extraArguments.length !== 0
 ) {
   usage();
@@ -32,7 +42,7 @@ if (
 const role = roleArgument as E2EClientRole;
 const run = await readPreparedE2ERun(rootArgument);
 const launch = await verifyLiveClientLaunchBinding(
-  resolve(run.root, `${role}-launch.json`),
+  resolve(run.root, e2eNetworkLaunchIdentityFile(role)),
 );
 if (launch.identity.runManifestSha256 !== run.manifestSha256) {
   throw new Error("Network finalizer client belongs to a different E2E run");
@@ -48,7 +58,40 @@ const outputPath = await canonicalOutputPath(
 );
 
 let record: E2ENetworkCaptureFinalize;
-if (role === "client-b-recovery") {
+if (run.manifest.scenarioId !== "E2E-RELEASE-SYNC-RECOVERY") {
+  const scenario = e2eScenarioDefinition(run.manifest.scenarioId);
+  if (!scenarioNetworkRoles(run.manifest).includes(role)) {
+    throw new Error("Network finalizer role is not part of this scenario");
+  }
+  const finalCheckpoint = role === "client-b-initial"
+    ? scenario.checkpoints.at(-2)
+    : scenario.checkpoints.at(-1);
+  if (!finalCheckpoint) throw new Error("Scenario has no final checkpoint");
+  const proofPath = scenarioCheckpointPaths(run.root, finalCheckpoint).proof;
+  const proofBytes = await readFile(proofPath);
+  await assertScenarioCheckpointEvidence(
+    JSON.parse(proofBytes.toString("utf8")) as unknown,
+    {
+      root: run.root,
+      run: run.manifest,
+      runManifestSha256: run.manifestSha256,
+      checkpoint: finalCheckpoint,
+    },
+  );
+  record = {
+    schemaVersion: 1,
+    role,
+    phase: "scenario-complete",
+    requestedAt: new Date().toISOString(),
+    handshakeNotBefore: launch.identity.startedAt,
+    runManifestSha256: run.manifestSha256,
+    context: {
+      scenarioId: scenario.id,
+      finalCheckpoint,
+      finalCheckpointProofSha256: sha256(proofBytes),
+    },
+  };
+} else if (role === "client-b-recovery") {
   const resetPath = resolve(run.root, "source-loss-reset.json");
   const recoveryManifestPath = resolve(run.root, "recovery-manifest.json");
   const syncReportPath = resolve(run.root, "report.json");
@@ -208,7 +251,7 @@ function sha256(bytes: Uint8Array): string {
 function usage(): never {
   console.error(
     "Usage: bun run tools/finalize-e2e-network.ts <run-directory> " +
-      "<client-a|client-b|client-b-recovery>",
+      "<client-a|client-b|client-c|client-b-initial|client-b-cold|client-b-recovery>",
   );
   process.exit(2);
 }
