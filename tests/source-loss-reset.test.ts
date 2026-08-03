@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   SOURCE_LOSS_RESET_SCHEMA_VERSION,
   assertRecoveryReportResetBinding,
@@ -59,6 +61,19 @@ function record(): any {
 }
 
 describe("source-loss reset evidence contract", () => {
+  test("re-attests the packaged adapter named by the launch contract", async () => {
+    const source = await readFile(
+      resolve(import.meta.dir, "../tools/reset-e2e-for-recovery.ts"),
+      "utf8",
+    );
+    expect(source).toContain("assertBridgeLaunchConfig(launchConfig)");
+    expect(source).toContain("launchConfig.adapterFileName");
+    expect(source).toContain(
+      "launchConfig.adapterSha256 !== clientArtifact.embeddedAsarSha256",
+    );
+    expect(source).not.toContain('Contents/Resources/obsidian.asar');
+  });
+
   test("accepts a current reset bound to the exact recovery capture", () => {
     expect(() => assertSourceLossResetRecord(record(), expected)).not.toThrow();
   });

@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/p
 import { join, resolve } from "node:path";
 import { readClientLaunchIdentity } from "./e2e-client";
 import { readPreparedE2ERun } from "./e2e-network";
+import { assertBridgeLaunchConfig } from "./launcher-config";
 import {
   acquireSourceLossResetLock,
   assertNoPreparedClientLeases,
@@ -103,13 +104,19 @@ const appPath = await canonicalExistingPath(
 if (!pathsEqual(appPath, clientArtifact.appPath)) {
   throw new Error("Client artifact app path is not canonical");
 }
+const launchConfig = JSON.parse(await readFile(
+  join(appPath, "Contents/Resources/bridge-launch.json"),
+  "utf8",
+)) as unknown;
+assertBridgeLaunchConfig(launchConfig);
 const embeddedAsar = await canonicalExistingPath(
-  join(appPath, "Contents/Resources/obsidian.asar"),
+  join(appPath, "Contents/Resources", launchConfig.adapterFileName),
   "Packaged embedded renderer",
   "file",
 );
 const adapterBytes = await readFile(embeddedAsar);
 if (
+  launchConfig.adapterSha256 !== clientArtifact.embeddedAsarSha256 ||
   sha256(adapterBytes) !== clientArtifact.embeddedAsarSha256 ||
   sha256(adapterBytes) !== run.manifest.compatibilityAsarSha256
 ) {
