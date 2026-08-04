@@ -23,6 +23,18 @@ const serverContract = () => ({
   ],
 });
 
+const patchServerContract = () => ({
+  ...serverContract(),
+  schemaVersion: 3,
+  serverVersion: "0.5.1",
+  rollback: {
+    previousPublishedTag: "v0.5.0",
+    previousPublishedSchema: 6,
+    directRollbackTag: "v0.5.0",
+    directRollbackSupported: true,
+  },
+});
+
 const candidate = (): ReleaseCandidate => ({
   schemaVersion: 1,
   createdAt: "2026-08-02T12:00:00.000Z",
@@ -57,6 +69,21 @@ const candidate = (): ReleaseCandidate => ({
 describe("immutable release candidates", () => {
   test("accepts the exact server migration and rollback contract", () => {
     expect(() => assertServerReleaseContract(serverContract())).not.toThrow();
+    expect(() => assertServerReleaseContract(patchServerContract())).not.toThrow();
+  });
+
+  test("accepts same-schema patch rollback only to the exact predecessor", () => {
+    for (const mutate of [
+      (value: any) => { value.schemaVersion = 2; },
+      (value: any) => { value.rollback.directRollbackSupported = false; },
+      (value: any) => { value.rollback.directRollbackTag = null; },
+      (value: any) => { value.rollback.directRollbackTag = "v0.4.9"; },
+      (value: any) => { value.rollback.previousPublishedSchema = 7; },
+    ]) {
+      const value = patchServerContract();
+      mutate(value);
+      expect(() => assertServerReleaseContract(value)).toThrow();
+    }
   });
 
   test("rejects unsafe or ambiguous server migration and rollback contracts", () => {

@@ -31,7 +31,7 @@ export interface ReleaseCandidate {
 }
 
 interface ServerReleaseContract {
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
   serverVersion: string;
   database: {
     supportedSourceSchemas: number[];
@@ -229,7 +229,7 @@ function packageVersion(value: unknown, label: string): string {
 export function assertServerReleaseContract(value: unknown): asserts value is ServerReleaseContract {
   if (
     !isRecord(value) ||
-    value.schemaVersion !== 2 ||
+    (value.schemaVersion !== 2 && value.schemaVersion !== 3) ||
     !isSupportedSemver(value.serverVersion) ||
     !isRecord(value.database) ||
     !Array.isArray(value.database.supportedSourceSchemas) ||
@@ -260,10 +260,21 @@ export function assertServerReleaseContract(value: unknown): asserts value is Se
     }
     schemas.add(schema);
   }
+  const sameSchemaPredecessor =
+    value.rollback.previousPublishedSchema === value.database.destinationSchema;
   if (
-    !schemas.has(value.rollback.previousPublishedSchema) ||
-    value.rollback.directRollbackSupported !==
-      (value.rollback.directRollbackTag !== null)
+    value.rollback.previousPublishedSchema > value.database.destinationSchema ||
+    (!sameSchemaPredecessor && !schemas.has(value.rollback.previousPublishedSchema)) ||
+    value.rollback.directRollbackSupported !== (value.rollback.directRollbackTag !== null) ||
+    (sameSchemaPredecessor && (
+      value.schemaVersion !== 3 ||
+      !value.rollback.directRollbackSupported ||
+      value.rollback.directRollbackTag !== value.rollback.previousPublishedTag
+    )) ||
+    (!sameSchemaPredecessor && (
+      value.rollback.directRollbackSupported ||
+      value.rollback.directRollbackTag !== null
+    ))
   ) {
     throw new Error("Server release contract rollback policy is malformed");
   }
