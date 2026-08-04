@@ -1,0 +1,4 @@
+interface:
+  display_name: "Qualify Obsidian Release"
+  short_description: "Qualify an exact Obsidian release for Blackglass"
+  default_prompt: "Use $qualify-obsidian-release to analyze and qualify my supplied Obsidian release end to end."

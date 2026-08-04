@@ -107,6 +107,7 @@ output—control support claims.
 | [Compatibility matrix](compatibility/MATRIX.md) | Exact supported combinations |
 | [E2E](docs/e2e.md) | Conformance operation and evidence |
 | [Deployment](docs/deployment.md) | Endpoint topology and Bridge rollout |
+| [`$qualify-obsidian-release`](.agents/skills/qualify-obsidian-release/SKILL.md) | Repository-local agent workflow for a new release |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and the
 [MIT License](LICENSE). The license does not cover Obsidian or generated apps.
