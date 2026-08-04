@@ -22,7 +22,7 @@ import {
 import {
   releaseValidationRecordFileName,
 } from "../tools/release-validation";
-import { readCurrentReleaseValidationRecord } from "../tools/current-release-record";
+import { readCurrentReleaseValidationRecords } from "../tools/current-release-record";
 import {
   OBSIDIAN_SYNC_PIECE_BYTES,
   RECOVERY_MULTIPART_IMAGE_PATH,
@@ -40,10 +40,6 @@ describe("committed release records", () => {
     const baselinePath = resolve(root, "compatibility/obsidian-1.12.7.json");
     const loaded = await loadCompatibilityBaseline(baselinePath);
     const packageMetadata = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
-    const expectedName = releaseValidationRecordFileName(
-      packageMetadata.version,
-      loaded.baseline.rendererVersion,
-    );
     expect(loaded.baseline.schemaVersion).toBe(COMPATIBILITY_BASELINE_SCHEMA_VERSION);
     expect(Object.keys(loaded.baseline.javaScriptFiles)).toContain("app.js");
     expect(loaded.baseline.syncInboundOperations).toEqual({
@@ -84,85 +80,93 @@ describe("committed release records", () => {
         "app.asar.unpacked/node_modules/get-fonts/index.js",
       ],
     });
-    const current = await readCurrentReleaseValidationRecord(root, "optional");
-    if (!current) {
-      expect(current).toBeNull();
-      return;
+    const currentRecords = await readCurrentReleaseValidationRecords(root, "optional");
+    for (const current of currentRecords) {
+      const validation = current.record;
+      const currentBaseline = await loadCompatibilityBaseline(
+        resolve(root, `compatibility/obsidian-${validation.rendererVersion}.json`),
+      );
+      expect(current.name).toBe(
+        releaseValidationRecordFileName(
+          packageMetadata.version,
+          currentBaseline.baseline.rendererVersion,
+        ),
+      );
+      const recordBytes = current.bytes;
+      expect(recordBytes.at(-1)).toBe(10);
+      expect(recordBytes.toString("utf8")).toBe(stableJsonFile(validation));
+      expect(
+        toolingSourceTreeEqual(
+          validation.toolingSource,
+          computeToolingSourceIdentityAtRevision(root, gitRevision()),
+        ),
+      ).toBe(true);
+      expect(validation.blackglassVersion).toBe(packageMetadata.version);
+      expect(validation.rendererVersion).toBe(currentBaseline.baseline.rendererVersion);
+      expect(currentBaseline.baseline.officialDmgSha256).toBe(
+        validation.source.officialDmgSha256,
+      );
+      expect(currentBaseline.baseline.sourceAppTree).toEqual(validation.source.appTree);
+      expect(currentBaseline.baseline.sourceAsarSha256).toBe(validation.source.rendererAsarSha256);
+      expect(currentBaseline.baseline.sourceWrapperAsarSha256).toBe(
+        validation.source.wrapperAsarSha256,
+      );
+      expect(validation.source.macOSCodeInventory).toEqual(
+        currentBaseline.baseline.sourceMacOSCodeInventory,
+      );
+      expect(validation.compatibilityBaseline).toEqual({
+        id: currentBaseline.baseline.id,
+        schemaVersion: currentBaseline.baseline.schemaVersion,
+        sha256: currentBaseline.sha256,
+      });
+      expect(validation.patcher).toEqual({
+        renderer: {
+          formatVersion: RENDERER_PATCH_FORMAT_VERSION,
+          incisions: RENDERER_INCISION_COUNT,
+        },
+      });
+      expect(canonicalAdapterOptions(validation.endpoints)).toEqual(validation.endpoints);
+      for (const hash of [
+        validation.artifacts.compatibilityAsarSha256,
+        validation.artifacts.releaseManifestSha256,
+        validation.artifacts.server.sha256,
+        validation.packagedClientE2E.qualificationSha256,
+      ]) {
+        expect(hash).toMatch(/^[a-f0-9]{64}$/u);
+      }
+      expect(validation.artifacts.server).toMatchObject({
+        schemaVersion: 2,
+        name: "blackglass-server",
+        version: expect.stringMatching(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u),
+        sourceRevision: expect.stringMatching(/^[a-f0-9]{40}$/u),
+        binaryName: "blackglass-server",
+        architecture: "arm64",
+      });
+      expect(validation.packagedClientE2E).toMatchObject({
+        passed: true,
+        workflow: {
+          generatedBackgroundTransfers: 3,
+          bidirectionalSync: true,
+          propagatedDeletion: true,
+          gracefulServerRestart: true,
+          postRestartSync: true,
+          sourceClientRemoved: true,
+          coldRecovery: true,
+          finderLaunchServicesSmoke: true,
+          defaultProfileIsolation: true,
+          starterNoVaultFlow: true,
+          starterControlRouting: true,
+          noLaunchCrashOrEarlyExit: true,
+        },
+      });
+      expect(validation.packagedClientE2E.recovery.corpus.multipart).toEqual({
+        path: RECOVERY_MULTIPART_IMAGE_PATH,
+        bytes: 2_163_625,
+        sha256: "a5ceeffa7a9395783ee7e5b04f5155b5fcce2c4d90707b70a479b7ff51a2da84",
+        pieceBytes: OBSIDIAN_SYNC_PIECE_BYTES,
+        minimumPieces: 2,
+      });
     }
-    expect(current.name).toBe(expectedName);
-    const recordBytes = current.bytes;
-    expect(recordBytes.at(-1)).toBe(10);
-    const validation = current.record;
-    expect(recordBytes.toString("utf8")).toBe(stableJsonFile(validation));
-    expect(
-      toolingSourceTreeEqual(
-        validation.toolingSource,
-        computeToolingSourceIdentityAtRevision(root, gitRevision()),
-      ),
-    ).toBe(true);
-    expect(validation.blackglassVersion).toBe(packageMetadata.version);
-    expect(validation.rendererVersion).toBe(loaded.baseline.rendererVersion);
-    expect(loaded.baseline.officialDmgSha256).toBe(validation.source.officialDmgSha256);
-    expect(loaded.baseline.sourceAppTree).toEqual(validation.source.appTree);
-    expect(loaded.baseline.sourceAsarSha256).toBe(validation.source.rendererAsarSha256);
-    expect(loaded.baseline.sourceWrapperAsarSha256).toBe(
-      validation.source.wrapperAsarSha256,
-    );
-    expect(validation.source.macOSCodeInventory).toEqual(
-      loaded.baseline.sourceMacOSCodeInventory,
-    );
-    expect(validation.compatibilityBaseline).toEqual({
-      id: loaded.baseline.id,
-      schemaVersion: loaded.baseline.schemaVersion,
-      sha256: loaded.sha256,
-    });
-    expect(validation.patcher).toEqual({
-      renderer: {
-        formatVersion: RENDERER_PATCH_FORMAT_VERSION,
-        incisions: RENDERER_INCISION_COUNT,
-      },
-    });
-    expect(canonicalAdapterOptions(validation.endpoints)).toEqual(validation.endpoints);
-    for (const hash of [
-      validation.artifacts.compatibilityAsarSha256,
-      validation.artifacts.releaseManifestSha256,
-      validation.artifacts.server.sha256,
-      validation.packagedClientE2E.qualificationSha256,
-    ]) {
-      expect(hash).toMatch(/^[a-f0-9]{64}$/u);
-    }
-    expect(validation.artifacts.server).toMatchObject({
-      schemaVersion: 2,
-      name: "blackglass-server",
-      version: expect.stringMatching(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u),
-      sourceRevision: expect.stringMatching(/^[a-f0-9]{40}$/u),
-      binaryName: "blackglass-server",
-      architecture: "arm64",
-    });
-    expect(validation.packagedClientE2E).toMatchObject({
-      passed: true,
-      workflow: {
-        generatedBackgroundTransfers: 3,
-        bidirectionalSync: true,
-        propagatedDeletion: true,
-        gracefulServerRestart: true,
-        postRestartSync: true,
-        sourceClientRemoved: true,
-        coldRecovery: true,
-        finderLaunchServicesSmoke: true,
-        defaultProfileIsolation: true,
-        starterNoVaultFlow: true,
-        starterControlRouting: true,
-        noLaunchCrashOrEarlyExit: true,
-      },
-    });
-    expect(validation.packagedClientE2E.recovery.corpus.multipart).toEqual({
-      path: RECOVERY_MULTIPART_IMAGE_PATH,
-      bytes: 2_163_625,
-      sha256: "a5ceeffa7a9395783ee7e5b04f5155b5fcce2c4d90707b70a479b7ff51a2da84",
-      pieceBytes: OBSIDIAN_SYNC_PIECE_BYTES,
-      minimumPieces: 2,
-    });
   });
 
   test("stores the baseline as exact canonical JSON bytes", async () => {
