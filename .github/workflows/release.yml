@@ -18,21 +18,19 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - run: shellcheck scripts/*.sh
       - name: Lint GitHub Actions workflows
-        run: >-
-          docker run --rm
-          -v "$PWD:/repo:ro"
-          -w /repo
-          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-          .github/workflows/ci.yml
-          .github/workflows/release.yml
+        run: scripts/lint-actions.sh
 
   macos-gate:
     runs-on: macos-14
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.8
