@@ -98,7 +98,10 @@ describe("committed release records", () => {
       expect(
         toolingSourceTreeEqual(
           validation.toolingSource,
-          computeToolingSourceIdentityAtRevision(root, gitRevision()),
+          computeToolingSourceIdentityAtRevision(
+            root,
+            validation.toolingSource.gitRevision!,
+          ),
         ),
       ).toBe(true);
       expect(validation.blackglassVersion).toBe(packageMetadata.version);
@@ -178,11 +181,3 @@ describe("committed release records", () => {
     );
   });
 });
-
-function gitRevision(): string {
-  const result = Bun.spawnSync(["git", "-C", root, "rev-parse", "--verify", "HEAD"]);
-  if (result.exitCode !== 0) throw new Error("Unable to resolve repository HEAD");
-  const revision = result.stdout.toString().trim();
-  if (!/^[a-f0-9]{40}$/u.test(revision)) throw new Error("Repository HEAD is malformed");
-  return revision;
-}

@@ -3,6 +3,7 @@ node_modules/
 artifacts/
 fixtures/private/
 coverage/
+dist/
 *.log
 .DS_Store
 apps/server-rust/target/

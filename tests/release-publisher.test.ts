@@ -31,6 +31,9 @@ describe("tooling release publisher", () => {
     expect(publisher).toContain("release_prerelease=true");
     expect(publisher).toContain(".name == $title");
     expect(publisher).toContain(".prerelease == $prerelease");
+    expect(publisher).toContain("releases?per_page=100");
+    expect(publisher).toContain("--paginate");
+    expect(publisher).not.toContain("releases/tags/${tag}");
     expect(publisher.match(/--latest=false/gu)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(publisher).toContain("wait_for_release_state");
     expect(publisher).toContain("wait_for_asset");
