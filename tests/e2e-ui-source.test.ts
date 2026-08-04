@@ -33,6 +33,7 @@ test("release UI checkpoints validate before immutable proof publication", async
   expect(contract).toContain("Release UI checkpoint is missing required text");
   expect(source).toContain("previousCheckpointProofSha256");
   expect(source).toContain("preserveFailedCheckpointCapture");
+  expect(source).toContain("isBoundE2EUiSnapshotPage(state, binding.identity.debugTargetUrl)");
 });
 
 test("clean recovery uses the transactional terminal release checkpoint", async () => {

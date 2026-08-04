@@ -17,7 +17,10 @@ import {
 import { readPreparedE2ERun } from "./e2e-network";
 import { assertNoCheckpointPublicationLeases } from "./e2e-run-lock";
 import { assertNoObservationPublicationResidue } from "./observation-publication";
-import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
+import {
+  E2E_UI_EVIDENCE_SCHEMA_VERSION,
+  isBoundE2EUiSnapshotPage,
+} from "./e2e-ui-evidence";
 import { preparedE2EScenarioId } from "./e2e-scenario";
 import {
   inspectServerArtifact,
@@ -581,7 +584,6 @@ for (const checkpoint of uiCheckpoints) {
     state.rendererPageCount !== 1 ||
     state.visibleRendererPageCount !== 1 ||
     typeof state.url !== "string" ||
-    !state.url.includes("index.html") ||
     typeof state.title !== "string" ||
     state.title.length === 0 ||
     typeof state.bodyText !== "string" ||
@@ -600,7 +602,7 @@ for (const checkpoint of uiCheckpoints) {
     state.debugTargetId !== identity.debugTargetId ||
     state.profilePath !== identity.profilePath ||
     state.vaultPath !== identity.vaultPath ||
-    state.url !== identity.debugTargetUrl
+    !isBoundE2EUiSnapshotPage(state, identity.debugTargetUrl)
   ) {
     throw new Error(`Malformed or mismatched UI checkpoint: ${statePath}`);
   }

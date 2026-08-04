@@ -10,7 +10,10 @@ import {
   type E2EClientName,
   type E2EScenarioId,
 } from "./e2e-scenario";
-import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
+import {
+  E2E_UI_EVIDENCE_SCHEMA_VERSION,
+  isBoundE2EUiSnapshotPage,
+} from "./e2e-ui-evidence";
 import { parseBlackglassReleaseManifest } from "./release-manifest";
 import {
   computeToolingSourceIdentity,
@@ -133,6 +136,7 @@ export async function buildScenarioCheckpointEvidence(options: {
     launch.identity.vaultPath !== expectedVault ||
     launch.identity.runManifestSha256 !== options.runManifestSha256 ||
     launch.identity.releaseManifestSha256 !== options.run.releaseManifestSha256 ||
+    !isBoundE2EUiSnapshotPage(state, launch.identity.debugTargetUrl) ||
     !Number.isFinite(Date.parse(String(state.observedAt)))
   ) {
     throw new Error(`Checkpoint UI evidence is not bound to ${contract.client}: ${options.checkpoint}`);

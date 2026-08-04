@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { readClientLaunchIdentity } from "./e2e-client";
-import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
+import {
+  E2E_UI_EVIDENCE_SCHEMA_VERSION,
+  isBoundE2EUiSnapshotPage,
+} from "./e2e-ui-evidence";
 
 export const RELEASE_UI_CHECKPOINT_PROOF_SCHEMA_VERSION = 1;
 
@@ -228,7 +231,8 @@ export async function validateReleaseUiCheckpointChain(options: {
       state.debugTargetId !== identity.debugTargetId ||
       state.profilePath !== identity.profilePath || state.vaultPath !== identity.vaultPath ||
       state.rendererPageCount !== 1 || state.visibleRendererPageCount !== 1 ||
-      state.url !== identity.debugTargetUrl || !Number.isFinite(observedAt) ||
+      !isBoundE2EUiSnapshotPage(state, identity.debugTargetUrl) ||
+      !Number.isFinite(observedAt) ||
       Math.abs(screenshotStat.mtimeMs - observedAt) > 30_000
     ) {
       throw new Error(`Malformed or unchained release UI checkpoint: ${checkpoint.path}`);

@@ -12,7 +12,10 @@ import {
   acquireCheckpointPublicationLease,
   releaseCheckpointPublicationLease,
 } from "./e2e-run-lock";
-import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
+import {
+  E2E_UI_EVIDENCE_SCHEMA_VERSION,
+  isBoundE2EUiSnapshotPage,
+} from "./e2e-ui-evidence";
 import { assertScenarioToolingSourceBound } from "./e2e-scenario-evidence";
 import {
   RELEASE_UI_CHECKPOINT_PROOF_SCHEMA_VERSION,
@@ -102,7 +105,7 @@ try {
     state.vaultPath !== binding.identity.vaultPath ||
     state.rendererPageCount !== 1 ||
     state.visibleRendererPageCount !== 1 ||
-    state.url !== binding.identity.debugTargetUrl ||
+    !isBoundE2EUiSnapshotPage(state, binding.identity.debugTargetUrl) ||
     state.screenshotPath !== staged.screenshot ||
     state.screenshotSha256 !== sha256(screenshotBytes) ||
     binding.identity.profilePath !== resolve(run.root, checkpoint.client, "user-data") ||

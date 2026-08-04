@@ -371,6 +371,8 @@ try {
       vaultPath: launch.identity.vaultPath,
       rendererPageCount: rendererPages.length,
       visibleRendererPageCount: visibleRendererPages.length,
+      boundRendererUrl: boundPage.url(),
+      foregroundPageKind: page === boundPage ? "bound-renderer" : "settings-auxiliary",
       targets: targets.map((target) => ({
         id: target.id,
         type: target.type,

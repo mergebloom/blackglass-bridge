@@ -8,7 +8,10 @@ import {
 } from "./e2e-client";
 import { readPreparedE2ERun } from "./e2e-network";
 import { assertNoCheckpointPublicationLeases } from "./e2e-run-lock";
-import { E2E_UI_EVIDENCE_SCHEMA_VERSION } from "./e2e-ui-evidence";
+import {
+  E2E_UI_EVIDENCE_SCHEMA_VERSION,
+  isBoundE2EUiSnapshotPage,
+} from "./e2e-ui-evidence";
 import { pathExists } from "./path-safety";
 import {
   assertCanonicalRecoveryCorpusIdentity,
@@ -389,7 +392,7 @@ async function verifyRecoveryUi(
     state.debugPort !== identity.debugPort ||
     state.rendererPageCount !== 1 ||
     state.visibleRendererPageCount !== 1 ||
-    state.url !== identity.debugTargetUrl ||
+    !isBoundE2EUiSnapshotPage(state, identity.debugTargetUrl) ||
     typeof state.observedAt !== "string" ||
     !Number.isFinite(Date.parse(state.observedAt)) ||
     Math.abs(screenshotStat.mtimeMs - Date.parse(state.observedAt)) > 30_000 ||
