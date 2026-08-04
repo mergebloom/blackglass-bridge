@@ -157,12 +157,41 @@ refresh_assets() {
     --slurp | jq 'add' > "$assets_json"
 }
 
+sha256_file() {
+  local path=$1
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$path" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$path" | awk '{print $1}'
+  else
+    echo "error: no SHA-256 utility is available" >&2
+    return 1
+  fi
+}
+
+file_size_bytes() {
+  local path=$1 size
+  if size=$(stat --format='%s' "$path" 2>/dev/null); then
+    :
+  elif size=$(stat -f '%z' "$path" 2>/dev/null); then
+    :
+  else
+    echo "error: unable to determine release asset size: $path" >&2
+    return 1
+  fi
+  if [[ ! "$size" =~ ^[0-9]+$ ]]; then
+    echo "error: release asset size is malformed: $path" >&2
+    return 1
+  fi
+  printf '%s\n' "$size"
+}
+
 verify_asset() {
   local asset=$1
   local name digest size count
   name=$(basename "$asset")
-  digest="sha256:$(sha256sum "$asset" | awk '{print $1}')"
-  size=$(stat --format='%s' "$asset")
+  digest="sha256:$(sha256_file "$asset")"
+  size=$(file_size_bytes "$asset")
   count=$(jq --arg name "$name" '[.[] | select(.name == $name)] | length' "$assets_json")
   [[ "$count" -le 1 ]] || {
     echo "error: duplicate release assets named ${name}" >&2

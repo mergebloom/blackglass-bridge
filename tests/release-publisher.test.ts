@@ -24,6 +24,8 @@ describe("tooling release publisher", () => {
     expect(publisher).toContain("published release has a missing or mismatched asset");
     expect(publisher).not.toContain("--clobber");
     expect(publisher).toContain("published release contains unexpected or missing assets");
+    expect(publisher).toContain("shasum -a 256");
+    expect(publisher).toContain("stat -f '%z'");
   });
 
   test("binds semantic version state and verifies eventual consistency", () => {
