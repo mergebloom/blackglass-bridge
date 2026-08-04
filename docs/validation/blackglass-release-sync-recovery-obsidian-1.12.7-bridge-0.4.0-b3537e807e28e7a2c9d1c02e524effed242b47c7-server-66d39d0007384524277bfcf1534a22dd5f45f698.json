@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 11,
+  "scenarioId": "E2E-RELEASE-SYNC-RECOVERY",
+  "qualifiedAt": "2026-08-04T00:16:09.392Z",
+  "passed": true,
+  "platform": "macOS Apple Silicon",
+  "blackglassVersion": "0.4.0",
+  "rendererVersion": "1.12.7",
+  "validationFileName": "blackglass-release-sync-recovery-obsidian-1.12.7-bridge-0.4.0-b3537e807e28e7a2c9d1c02e524effed242b47c7-server-66d39d0007384524277bfcf1534a22dd5f45f698.json",
+  "endpoints": {
+    "controlOrigin": "https://sync-control.example.com",
+    "dataHost": "sync-data.example.com"
+  },
+  "toolingSource": {
+    "formatVersion": 2,
+    "scope": "release-critical-v1",
+    "gitRevision": "b3537e807e28e7a2c9d1c02e524effed242b47c7",
+    "worktreeClean": true,
+    "treeSha256": "3e276327ce57685f6bd023ebe641a80f8f39fe62d92ce36f6b48a97889e9e371",
+    "files": 165,
+    "fileBytes": 1307292
+  },
+  "artifacts": {
+    "client": {
+      "schemaVersion": 9,
+      "appBundleName": "Blackglass Bridge.app",
+      "bundleIdentifier": "com.blackglass.bridge",
+      "bundleName": "Blackglass Bridge",
+      "displayName": "Blackglass Bridge",
+      "blackglassVersion": "0.4.0",
+      "rendererVersion": "1.12.7",
+      "version": "1.12.7",
+      "executableName": "blackglass-bridge",
+      "infoPlistSha256": "d7f56102cf2503919ef888b56248759310bbfc62e9582d49cb33527176913714",
+      "executableSha256": "2887b2fcb7bcbab7ce3facd5c83a31efe060aedc8abe209d1907ce74081105c4",
+      "cliExecutableName": "blackglass-cli",
+      "cliExecutableSha256": "93a74770491d107c80e49c3151ad57fa3e8ef13153102709743418b9adfc51af",
+      "cliSocketName": ".blackglass-c.sock",
+      "embeddedAsarSha256": "c80ad081b27b0bbe4cbbb88f66874abff876c94e0e57f93f17e72fc74bb0c552",
+      "launchConfigSha256": "98615afcc621abffb7d40beb651a483817bbea8eba637ed8483ed05ae699177b",
+      "officialAppTreeSha256": "1f45c46181c42bd130b6d0b159f02cb7ff502abe8f6f94123246bb9f55b1dfcd",
+      "officialCodeInventorySha256": "ef5c4c29b810f08d7b7afbb8b1f38d00bd61fbc064ca0b83b4c8b1366f04a244",
+      "officialExecutableName": "Obsidian",
+      "officialExecutableSha256": "2ad76c30031bc9a54dc6580525135049d4f4a841429b13ecaabc2fb7d0e6203e",
+      "codeDirectoryHash": "15f8887fac9c965d9479a3c8ba638d37fe105c04",
+      "applicationTreeSha256": "09dcca05474ba2b3b03b6c2cf5e159ba28c80492983c2da86cea08ad51a87fcc",
+      "applicationTreeIdentity": {
+        "formatVersion": 1,
+        "sha256": "09dcca05474ba2b3b03b6c2cf5e159ba28c80492983c2da86cea08ad51a87fcc",
+        "entries": 9,
+        "files": 5,
+        "directories": 4,
+        "symlinks": 0,
+        "fileBytes": 92643610
+      },
+      "codeSigning": {
+        "signature": "ad-hoc",
+        "strictVerification": true,
+        "allArchitecturesVerified": true,
+        "bundleIdentifier": "com.blackglass.bridge",
+        "executableIdentifier": "com.blackglass.bridge",
+        "executableArchitectures": [
+          "arm64"
+        ]
+      },
+      "codeInventory": {
+        "formatVersion": 1,
+        "sha256": "d562760c3c0439b4e0abfcf5c95459b94acc4f03a9f8ef7c16631d3aa7bd9818",
+        "entries": [
+          {
+            "path": ".",
+            "kind": "bundle",
+            "architectures": []
+          },
+          {
+            "path": "Contents/MacOS/blackglass-bridge",
+            "kind": "mach-o",
+            "architectures": [
+              "arm64"
+            ]
+          }
+        ]
+      },
+      "rootMetadata": {
+        "formatVersion": 2,
+        "mode": 493,
+        "bsdFlags": 0,
+        "ownerUidMatchesProcess": true,
+        "quarantineAbsent": true,
+        "entriesChecked": 10,
+        "entriesSha256": "e12039bedea37cf7f0d482a18c4c8e3d29f43e1ef5a1b674132509602400d50e",
+        "allEntriesOwnedByProcess": true,
+        "allEntriesBsdFlagsZero": true,
+        "allEntriesAclFree": true,
+        "unsupportedXattrsAbsent": true,
+        "xattrs": [
+          {
+            "name": "com.apple.provenance",
+            "bytes": 11,
+            "sha256": "004a6fe602e830db902884dadc3683465dbd77d2ee678deb19a0804d953ffea1"
+          }
+        ],
+        "descendantXattrs": {
+          "allowedNames": [
+            "com.apple.provenance"
+          ],
+          "entries": 9,
+          "sha256": "f1ba9b064907b00af20a3a9af2f8a8e71c1ed92e84e9c94cf3029bfe7fc96751"
+        },
+        "sha256": "dfceb4003a4749794afe629db0e7eaac199abb7031ce0fbce02b5f5ce48226a9"
+      },
+      "profileDirectory": "Blackglass Profile",
+      "profileMode": 448,
+      "canonicalProfileRequired": true,
+      "explicitUserDataDir": true,
+      "explicitUserDataDirRequired": true,
+      "nativeHomePreserved": true,
+      "nativeHomeFallbackPreserved": true,
+      "blackglassHomeEnvironment": "BLACKGLASS_HOME",
+      "profileHomeEnvironment": "BLACKGLASS_HOME",
+      "dedicatedRuntimeHomeRequired": true,
+      "updateDisableSettingRequired": true,
+      "exactOfficialAppVerifiedAtEveryLaunch": true,
+      "officialAppUnmodified": true,
+      "officialChildSupervisionRequired": true,
+      "registeredUrlSchemes": [],
+      "upstreamICloudContainerRegistered": false
+    },
+    "compatibilityAsarSha256": "c80ad081b27b0bbe4cbbb88f66874abff876c94e0e57f93f17e72fc74bb0c552",
+    "releaseManifestSha256": "2f30f2d64bd6e8282cc0fc7165dfa0dac135a3fb061ae4f87af467c02d17cebc",
+    "server": {
+      "schemaVersion": 2,
+      "name": "blackglass-server",
+      "version": "0.5.0",
+      "sourceRevision": "66d39d0007384524277bfcf1534a22dd5f45f698",
+      "binaryName": "blackglass-server",
+      "sha256": "06e4cefe588c14bf3f924df521ae7756dc5933d79b27720d36d583096a788669",
+      "bytes": 4579680,
+      "architecture": "arm64"
+    }
+  },
+  "workflow": {
+    "generatedBackgroundTransfers": 3,
+    "bidirectionalSync": true,
+    "propagatedDeletion": true,
+    "gracefulServerRestart": true,
+    "postRestartSync": true,
+    "sourceClientRemoved": true,
+    "coldRecovery": true,
+    "finderLaunchServicesSmoke": true,
+    "defaultProfileIsolation": true,
+    "starterNoVaultFlow": true,
+    "starterControlRouting": true,
+    "noLaunchCrashOrEarlyExit": true
+  },
+  "recovery": {
+    "expectedFiles": 16,
+    "restoredFiles": 16,
+    "corpus": {
+      "schemaVersion": 2,
+      "id": "blackglass-mixed-vault-v2",
+      "files": 14,
+      "bytes": 2169728,
+      "manifestSha256": "b9e9a7e59c99d6bd165cc989619c64e03cee336c866b4733183da2ad3f96afcf",
+      "types": {
+        ".canvas": 1,
+        ".csv": 1,
+        ".js": 1,
+        ".json": 1,
+        ".md": 6,
+        ".pdf": 1,
+        ".png": 2,
+        ".svg": 1
+      },
+      "multipart": {
+        "path": "Assets/multipart-proof.png",
+        "bytes": 2163625,
+        "sha256": "a5ceeffa7a9395783ee7e5b04f5155b5fcce2c4d90707b70a479b7ff51a2da84",
+        "pieceBytes": 2097152,
+        "minimumPieces": 2
+      }
+    },
+    "missing": 0,
+    "unexpected": 0,
+    "changed": 0
+  },
+  "evidence": {
+    "runManifestSha256": "54b0c90168fc539e8fe46daedf8664c163a69fe6c175e8adb6965c07ec81e149",
+    "syncReportSha256": "e88c52ffc2f5138a1ddb4e2cf8c2a569e0f4bf6eab47be76e560686d32cbb005",
+    "recoveryManifestSha256": "625f05542559ce968c59c6bc800606b04d0d037ae5d238fd5edc9107b26ac124",
+    "recoveryReportSha256": "e482e6643e56c46a0106480824b2f77fd981488030ad05986141bedc1f5f5f7a",
+    "sourceLossResetSha256": "79157f68a0ae7cd524ebe4a61fa0ca13721b03dbcd0406f8113428065b33769f",
+    "recoveryLaunchSha256": "1923483c45ae5cf064703741b1e849a00b58de02e5c000372b43a3645dd79bb8",
+    "recoveryUiStateSha256": "bc700e0b9b2a934b507c03e70c36941d082a0ccdea64fc65418dd4226aef7f39",
+    "recoveryScreenshotSha256": "0a3fd4ad6b1b4c5207b483344e3698a6fe62f0d584b1690802b1ebe33efde9a8",
+    "recoveryUiProofSha256": "a8e1d8b1e01a86c939fff1c79cb8d04c839f456f7b012a0f44d4abd004801539",
+    "finderLaunchSmokeSha256": "d39534b97709156b804fd557859122c5ad0ba89c414b0a83336e6eae49a9bab6",
+    "clientReproducibilitySha256": "99dd4086251c9a90925bf78199e02d2ab9621f0c3e55922296f0f2f925e9528e",
+    "clientReproducibility": {
+      "schemaVersion": 4,
+      "generatedBy": "tools/verify-macos-reproducibility.ts",
+      "passed": true,
+      "separateOutputs": true,
+      "independentPackageInvocations": true,
+      "blackglassVersion": "0.4.0",
+      "rendererVersion": "1.12.7",
+      "releaseManifestSha256": "2f30f2d64bd6e8282cc0fc7165dfa0dac135a3fb061ae4f87af467c02d17cebc",
+      "macOSArtifactSha256": "6f184126b074c1ea206626074dcac3fb8b9267acc4774ba4427bf8f6b7354a3f",
+      "applicationTreeSha256": "09dcca05474ba2b3b03b6c2cf5e159ba28c80492983c2da86cea08ad51a87fcc",
+      "codeInventorySha256": "d562760c3c0439b4e0abfcf5c95459b94acc4f03a9f8ef7c16631d3aa7bd9818",
+      "rootMetadataSha256": "dfceb4003a4749794afe629db0e7eaac199abb7031ce0fbce02b5f5ce48226a9",
+      "packagingToolchainSha256": "cbc54ac756cdb1e266406055bade922d589d41f10e057ea0e99030b91254a04d",
+      "toolingSourceSha256": "d92f57d1a774e0c28ae68919de470ef846812ae032474f3a88e2d4760a7b8808",
+      "packageReceipts": [
+        {
+          "sha256": "de958cf66b17c972e63839b9a6530ce87de85d97f98f9220e9a3cbb93e02716f",
+          "receipt": {
+            "applicationTreeSha256": "09dcca05474ba2b3b03b6c2cf5e159ba28c80492983c2da86cea08ad51a87fcc",
+            "blackglassVersion": "0.4.0",
+            "codeInventorySha256": "d562760c3c0439b4e0abfcf5c95459b94acc4f03a9f8ef7c16631d3aa7bd9818",
+            "completedAt": "2026-08-03T23:56:17.077Z",
+            "generatedBy": "tools/package-macos.ts",
+            "invocationId": "966cb7dc-607b-47e1-9124-36660a5e2b83",
+            "macOSArtifactSha256": "6f184126b074c1ea206626074dcac3fb8b9267acc4774ba4427bf8f6b7354a3f",
+            "packagingToolchainSha256": "cbc54ac756cdb1e266406055bade922d589d41f10e057ea0e99030b91254a04d",
+            "releaseManifestSha256": "2f30f2d64bd6e8282cc0fc7165dfa0dac135a3fb061ae4f87af467c02d17cebc",
+            "rendererVersion": "1.12.7",
+            "rootMetadataSha256": "dfceb4003a4749794afe629db0e7eaac199abb7031ce0fbce02b5f5ce48226a9",
+            "schemaVersion": 2,
+            "startedAt": "2026-08-03T23:56:15.863Z",
+            "toolingSourceSha256": "d92f57d1a774e0c28ae68919de470ef846812ae032474f3a88e2d4760a7b8808"
+          }
+        },
+        {
+          "sha256": "bb662d311c5c588454d77f8d3c32008cf117085161eca430a49c6a5e99228f7a",
+          "receipt": {
+            "applicationTreeSha256": "09dcca05474ba2b3b03b6c2cf5e159ba28c80492983c2da86cea08ad51a87fcc",
+            "blackglassVersion": "0.4.0",
+            "codeInventorySha256": "d562760c3c0439b4e0abfcf5c95459b94acc4f03a9f8ef7c16631d3aa7bd9818",
+            "completedAt": "2026-08-03T23:56:27.590Z",
+            "generatedBy": "tools/package-macos.ts",
+            "invocationId": "6c97f53b-dd4f-4d7c-96fb-93cde60d4b6d",
+            "macOSArtifactSha256": "6f184126b074c1ea206626074dcac3fb8b9267acc4774ba4427bf8f6b7354a3f",
+            "packagingToolchainSha256": "cbc54ac756cdb1e266406055bade922d589d41f10e057ea0e99030b91254a04d",
+            "releaseManifestSha256": "2f30f2d64bd6e8282cc0fc7165dfa0dac135a3fb061ae4f87af467c02d17cebc",
+            "rendererVersion": "1.12.7",
+            "rootMetadataSha256": "dfceb4003a4749794afe629db0e7eaac199abb7031ce0fbce02b5f5ce48226a9",
+            "schemaVersion": 2,
+            "startedAt": "2026-08-03T23:56:26.454Z",
+            "toolingSourceSha256": "d92f57d1a774e0c28ae68919de470ef846812ae032474f3a88e2d4760a7b8808"
+          }
+        }
+      ]
+    },
+    "networkEvidenceSha256": {
+      "client-a": "709ca51068dfb3afec071c7f937342d6edd2da48c72febf4fc66489da8d64dd0",
+      "client-b": "606a23a55687c90e4362557fcb04ca87102e7045f70ffa65b7e4da47cd24c1c2",
+      "client-b-recovery": "f5d81458d0671b26d5cf8ac3864bb163a6226171835ba45364bbd340d9c77b0a"
+    },
+    "networkFinalizeSha256": {
+      "client-a": "55165a7ca49e4e922c86abb6d34058c86850967384437e4e68890553d69b8f52",
+      "client-b": "63a2af910a6eaf0a7389a9bff7f65405d165dd66e67c959774307f816f22ed48",
+      "client-b-recovery": "f07c0e94b7c759ef250766332811881a04fed713075f69d2be1e4c3c0d34f697"
+    }
+  }
+}
