@@ -38,6 +38,11 @@ describe("tooling release publisher", () => {
     expect(publisher).toContain("wait_for_release_state");
     expect(publisher).toContain("wait_for_asset");
     expect(publisher).toContain("verify_not_latest");
+    expect(publisher).toContain("promote_latest");
+    expect(publisher).toContain('gh release edit "$tag" --latest');
+    expect(publisher.lastIndexOf('verify_asset "$asset"')).toBeLessThan(
+      publisher.lastIndexOf("promote_latest"),
+    );
     expect(publisher).toContain("1 2 3 4 5 6 7 8 9 10");
     expect(releaseWorkflow).toContain("group: release-${{ github.repository }}");
     expect(releaseWorkflow).toContain("needs: [release-static-gate, macos-gate]");

@@ -210,6 +210,22 @@ verify_not_latest() {
   return 1
 }
 
+promote_latest() {
+  local latest_id
+  gh release edit "$tag" --latest
+  for _attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if gh api "repos/${GITHUB_REPOSITORY}/releases/latest" > "$latest_json"; then
+      latest_id=$(jq -er '.id' "$latest_json")
+      if [[ "$latest_id" == "$release_id" ]]; then
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+  echo "error: stable release ${tag} did not become GitHub Latest" >&2
+  return 1
+}
+
 refresh_assets
 actual_existing=$(jq -r '.[].name' "$assets_json" | LC_ALL=C sort)
 unexpected_existing=$(comm -23 <(printf '%s\n' "$actual_existing") "$expected_names")
@@ -274,7 +290,6 @@ if [[ "$published" != "true" ]]; then
   echo "error: release ${tag} did not become published" >&2
   exit 1
 fi
-verify_not_latest
 refresh_assets
 jq -r '.[].name' "$assets_json" | LC_ALL=C sort > "$actual_names"
 if ! cmp -s "$expected_names" "$actual_names"; then
@@ -285,3 +300,8 @@ fi
 for asset in "${assets[@]}"; do
   verify_asset "$asset"
 done
+if [[ "$release_prerelease" == "true" ]]; then
+  verify_not_latest
+else
+  promote_latest
+fi
