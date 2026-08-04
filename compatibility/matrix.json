@@ -63,6 +63,70 @@
         "path": "docs/validation/blackglass-0.4.0-obsidian-1.12.7-qualification.json",
         "sha256": "9b90c7781f854c7b56bfcb7fcc20b53fff061574276484bec643920bedb0bbf4"
       }
+    },
+    {
+      "bridge": {
+        "revision": "40969d0fb6404bc91e08f47d884b099ee58d0b5a",
+        "version": "0.4.1"
+      },
+      "knownLimitations": [
+        "Desktop Sync only",
+        "Apple Silicon macOS only",
+        "Locally generated app is ad-hoc signed and not notarized"
+      ],
+      "platform": {
+        "architecture": "arm64",
+        "operatingSystem": "macOS"
+      },
+      "qualificationResult": "supported",
+      "qualifiedAt": "2026-08-04T16:44:53.448Z",
+      "rendererVersion": "1.13.4",
+      "scenarios": [
+        {
+          "id": "E2E-RELEASE-SYNC-RECOVERY",
+          "report": {
+            "path": "docs/validation/blackglass-release-sync-recovery-obsidian-1.13.4-bridge-0.4.1-40969d0fb6404bc91e08f47d884b099ee58d0b5a-server-ba7ffa01d158c14cf8b78f9640cc2845c72bd94c.json",
+            "sha256": "3ed0df59a8f3c267435a2fcade8096a8877bb1817cf8190e83b39fca7ed9689f"
+          },
+          "result": "passed"
+        },
+        {
+          "id": "E2E-P3-TENANCY",
+          "report": {
+            "path": "docs/validation/phase-3-tenancy-obsidian-1.13.4-bridge-0.4.1-40969d0fb6404bc91e08f47d884b099ee58d0b5a-server-ba7ffa01d158c14cf8b78f9640cc2845c72bd94c.json",
+            "sha256": "04d80b5c9191144ce417f5c6c1541e9fa34d671abe985fef9f4f1febce8e49a3"
+          },
+          "result": "passed"
+        },
+        {
+          "id": "E2E-P4-CUSTOM-E2EE",
+          "report": {
+            "path": "docs/validation/phase-4-custom-e2ee-obsidian-1.13.4-bridge-0.4.1-40969d0fb6404bc91e08f47d884b099ee58d0b5a-server-ba7ffa01d158c14cf8b78f9640cc2845c72bd94c.json",
+            "sha256": "d9b8d16f4fc7e7d6a0d87b912e03a5ac498f0fd8f5fa8475d891316981442419"
+          },
+          "result": "passed"
+        },
+        {
+          "id": "E2E-P4-MANAGED-ENCRYPTION",
+          "report": {
+            "path": "docs/validation/phase-4-managed-encryption-obsidian-1.13.4-bridge-0.4.1-40969d0fb6404bc91e08f47d884b099ee58d0b5a-server-ba7ffa01d158c14cf8b78f9640cc2845c72bd94c.json",
+            "sha256": "45e363911a440a82f71283fc9f967e7715379d4136f8387af9ae763dc07a4586"
+          },
+          "result": "passed"
+        }
+      ],
+      "server": {
+        "revision": "ba7ffa01d158c14cf8b78f9640cc2845c72bd94c",
+        "version": "0.5.1"
+      },
+      "upstreamArtifact": {
+        "kind": "official-dmg",
+        "sha256": "e84b9595aba5e50221c97e43d3e3f437416edfbf4c4a84c379461e70f854d78f"
+      },
+      "validationReport": {
+        "path": "docs/validation/blackglass-0.4.1-obsidian-1.13.4-qualification.json",
+        "sha256": "b2bd71b0c63e13ce1448fb2c7315878494e5132104d60b60e6b7d4e56ae944a1"
+      }
     }
   ],
   "requiredScenarios": [
