@@ -12,6 +12,7 @@ import {
 } from "./e2e-scenario";
 import {
   E2E_UI_EVIDENCE_SCHEMA_VERSION,
+  e2eUiSnapshotText,
   isBoundE2EUiSnapshotPage,
 } from "./e2e-ui-evidence";
 import { parseBlackglassReleaseManifest } from "./release-manifest";
@@ -125,13 +126,15 @@ export async function buildScenarioCheckpointEvidence(options: {
   const launch = await verifyLiveClientLaunchBinding(String(state.launchIdentityPath ?? ""));
   const expectedProfile = resolve(options.root, contract.client, "user-data");
   const expectedVault = resolve(options.root, contract.client, "vault");
-  const bodyText = String(state.bodyText ?? "");
+  const snapshotText = e2eUiSnapshotText(state);
+  const bodyText = snapshotText?.combined ?? "";
   if (
     state.schemaVersion !== E2E_UI_EVIDENCE_SCHEMA_VERSION ||
     state.runManifestSha256 !== options.runManifestSha256 ||
     state.releaseManifestSha256 !== options.run.releaseManifestSha256 ||
     state.screenshotPath !== paths.screenshot ||
     state.screenshotSha256 !== sha256(screenshotBytes) ||
+    !snapshotText ||
     launch.identity.profilePath !== expectedProfile ||
     launch.identity.vaultPath !== expectedVault ||
     launch.identity.runManifestSha256 !== options.runManifestSha256 ||

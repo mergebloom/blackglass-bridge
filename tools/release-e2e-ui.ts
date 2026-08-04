@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { readClientLaunchIdentity } from "./e2e-client";
 import {
   E2E_UI_EVIDENCE_SCHEMA_VERSION,
+  e2eUiSnapshotText,
   isBoundE2EUiSnapshotPage,
 } from "./e2e-ui-evidence";
 
@@ -108,12 +109,8 @@ export function assertReleaseUiCheckpointContent(
   launchStartedAt: string,
   now = Date.now(),
 ): void {
-  if (
-    typeof state.bodyText !== "string" ||
-    !Array.isArray(state.accessibleText) ||
-    state.accessibleText.some((value) => typeof value !== "string") ||
-    typeof state.observedAt !== "string"
-  ) {
+  const text = e2eUiSnapshotText(state);
+  if (!text || typeof state.observedAt !== "string") {
     throw new Error(`Release UI checkpoint has malformed content: ${checkpoint.path}`);
   }
   const observedAt = Date.parse(state.observedAt);
@@ -124,25 +121,23 @@ export function assertReleaseUiCheckpointContent(
   ) {
     throw new Error(`Release UI checkpoint has an invalid observation time: ${checkpoint.path}`);
   }
-  const accessibleText = state.accessibleText as string[];
-  const uiText = [state.bodyText, ...accessibleText].join("\n");
   for (const required of checkpoint.requiredText) {
-    if (!uiText.includes(required)) {
+    if (!text.combined.includes(required)) {
       throw new Error(`Release UI checkpoint is missing required text: ${required}`);
     }
   }
   for (const required of checkpoint.requiredBodyText ?? []) {
-    if (!state.bodyText.includes(required)) {
+    if (!text.bodyText.includes(required)) {
       throw new Error(`Release UI checkpoint body is missing required text: ${required}`);
     }
   }
   for (const required of checkpoint.requiredAccessibleText ?? []) {
-    if (!accessibleText.includes(required)) {
+    if (!text.accessibleText.includes(required)) {
       throw new Error(`Release UI checkpoint accessibility tree is missing exact text: ${required}`);
     }
   }
   for (const forbidden of checkpoint.forbiddenText) {
-    if (uiText.toLowerCase().includes(forbidden.toLowerCase())) {
+    if (text.combined.toLowerCase().includes(forbidden.toLowerCase())) {
       throw new Error(`Release UI checkpoint contains failure text: ${forbidden}`);
     }
   }

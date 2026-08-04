@@ -86,6 +86,8 @@ describe("transactional checkpoint publication", () => {
       observedAt: "2026-08-03T12:00:01.000Z",
       bodyText: "# Recovery Drill Home",
       accessibleText: ["Fully synced"],
+      boundRendererBodyText: "# Recovery Drill Home",
+      boundRendererAccessibleText: ["Fully synced"],
     };
     expect(() => assertReleaseUiCheckpointContent(
       checkpoint,
@@ -97,6 +99,8 @@ describe("transactional checkpoint publication", () => {
       ...accepted,
       bodyText: "Fully synced",
       accessibleText: ["Recovery Drill Home"],
+      boundRendererBodyText: "Fully synced",
+      boundRendererAccessibleText: ["Recovery Drill Home"],
     }, launchStartedAt, Date.parse(accepted.observedAt))).toThrow(
       "body is missing required text",
     );

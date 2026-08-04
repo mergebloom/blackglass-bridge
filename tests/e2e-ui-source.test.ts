@@ -16,6 +16,8 @@ test("live E2E controls target the bound window and native checkbox input", asyn
   );
   expect(source).toContain('action === "bring-to-front"');
   expect(source).toContain("await boundPage.bringToFront()");
+  expect(source).toContain("newCDPSession(boundPage)");
+  expect(source).toContain('foregroundPageKind: page === boundPage ? "bound-renderer" : "settings-auxiliary"');
   expect(source).toContain("await checkbox.evaluate((element) => element.click())");
   expect(source).not.toContain("await container.click({ force: true })");
 });

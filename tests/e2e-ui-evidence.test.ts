@@ -1,12 +1,28 @@
 import { describe, expect, test } from "bun:test";
 import {
   E2E_UI_EVIDENCE_SCHEMA_VERSION,
+  e2eUiSnapshotText,
   isBoundE2EUiSnapshotPage,
 } from "../tools/e2e-ui-evidence";
 
 describe("E2E UI evidence contract", () => {
   test("uses the current bound snapshot schema", () => {
-    expect(E2E_UI_EVIDENCE_SCHEMA_VERSION).toBe(3);
+    expect(E2E_UI_EVIDENCE_SCHEMA_VERSION).toBe(4);
+  });
+
+  test("combines a Settings renderer with its bound vault renderer", () => {
+    expect(e2eUiSnapshotText({
+      bodyText: "E2E Vault",
+      accessibleText: [],
+      boundRendererBodyText: "E2E Sync Proof",
+      boundRendererAccessibleText: ["Fully synced"],
+    })?.combined).toContain("E2E Vault\nE2E Sync Proof\nFully synced");
+    expect(e2eUiSnapshotText({
+      bodyText: "E2E Vault",
+      accessibleText: [],
+      boundRendererBodyText: "E2E Sync Proof",
+      boundRendererAccessibleText: [3],
+    })).toBeUndefined();
   });
 
   test("binds the main renderer while allowing the 1.13 Settings window", () => {

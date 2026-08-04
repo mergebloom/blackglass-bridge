@@ -10,6 +10,7 @@ import { readPreparedE2ERun } from "./e2e-network";
 import { assertNoCheckpointPublicationLeases } from "./e2e-run-lock";
 import {
   E2E_UI_EVIDENCE_SCHEMA_VERSION,
+  e2eUiSnapshotText,
   isBoundE2EUiSnapshotPage,
 } from "./e2e-ui-evidence";
 import { pathExists } from "./path-safety";
@@ -362,6 +363,8 @@ async function verifyRecoveryUi(
     url?: unknown;
     bodyText?: unknown;
     accessibleText?: unknown;
+    boundRendererBodyText?: unknown;
+    boundRendererAccessibleText?: unknown;
     screenshotPath?: unknown;
     screenshotSha256?: unknown;
     launchIdentityPath?: unknown;
@@ -375,6 +378,7 @@ async function verifyRecoveryUi(
     vaultPath?: unknown;
   };
   const identity = launch.identity;
+  const recoveryText = e2eUiSnapshotText(state);
   assertReleaseUiCheckpointContent(checkpoint, state, identity.startedAt);
   const width = screenshot.length >= 24 ? screenshot.readUInt32BE(16) : 0;
   const height = screenshot.length >= 24 ? screenshot.readUInt32BE(20) : 0;
@@ -389,6 +393,7 @@ async function verifyRecoveryUi(
     width > 16_384 ||
     height > 16_384 ||
     state.schemaVersion !== E2E_UI_EVIDENCE_SCHEMA_VERSION ||
+    !recoveryText ||
     state.debugPort !== identity.debugPort ||
     state.rendererPageCount !== 1 ||
     state.visibleRendererPageCount !== 1 ||

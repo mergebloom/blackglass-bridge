@@ -325,6 +325,7 @@ try {
       return response.json();
     });
     const screenshotBytes = screenshotPath ? await readFile(screenshotPath) : null;
+    const bodyText = (await page.locator("body").innerText()).slice(0, 30_000);
     const accessibleText = await page.locator("[aria-label], [title]").evaluateAll((elements) =>
       [...new Set(elements.flatMap((element) => {
         if (element.getClientRects().length === 0) return [];
@@ -333,6 +334,19 @@ try {
           .map((value) => value.trim().slice(0, 1000));
       }))].slice(0, 1000),
     );
+    const boundRendererBodyText = page === boundPage
+      ? bodyText
+      : (await boundPage.locator("body").innerText()).slice(0, 30_000);
+    const boundRendererAccessibleText = page === boundPage
+      ? accessibleText
+      : await boundPage.locator("[aria-label], [title]").evaluateAll((elements) =>
+        [...new Set(elements.flatMap((element) => {
+          if (element.getClientRects().length === 0) return [];
+          return [element.getAttribute("aria-label"), element.getAttribute("title")]
+            .filter((value) => typeof value === "string" && value.trim().length > 0)
+            .map((value) => value.trim().slice(0, 1000));
+        }))].slice(0, 1000),
+      );
     const syncState = await boundPage.evaluate(() => {
       const plugin = globalThis.app?.internalPlugins?.getPluginById?.("sync");
       const instance = plugin?.instance;
@@ -381,8 +395,10 @@ try {
       })),
       url: page.url(),
       title: await page.title(),
-      bodyText: (await page.locator("body").innerText()).slice(0, 30_000),
+      bodyText,
       accessibleText,
+      boundRendererBodyText,
+      boundRendererAccessibleText,
       interactive,
       syncState,
       screenshotPath,
@@ -508,7 +524,7 @@ try {
     }
     console.log(JSON.stringify({ checkboxes: indexes, checked, url: page.url() }));
   } else if (action === "trace-reconnect") {
-    const cdp = await page.context().newCDPSession(page);
+    const cdp = await boundPage.context().newCDPSession(boundPage);
     const events = [];
     const record = (kind, value) => events.push({ kind, ...value });
     cdp.on("Network.webSocketCreated", (event) =>
@@ -770,8 +786,6 @@ function usesForegroundPage(requestedAction) {
     "sync-status",
     "sync-method",
     "sync-connect-diagnostic",
-    "trace-reconnect",
-    "trace-all-targets",
     "bring-to-front",
   ].includes(requestedAction);
 }

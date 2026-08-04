@@ -19,6 +19,7 @@ import { assertNoCheckpointPublicationLeases } from "./e2e-run-lock";
 import { assertNoObservationPublicationResidue } from "./observation-publication";
 import {
   E2E_UI_EVIDENCE_SCHEMA_VERSION,
+  e2eUiSnapshotText,
   isBoundE2EUiSnapshotPage,
 } from "./e2e-ui-evidence";
 import { preparedE2EScenarioId } from "./e2e-scenario";
@@ -522,6 +523,8 @@ const uxEvidence: Array<{
   observedAt: string;
   bodyTextSha256: string;
   accessibleTextSha256: string;
+  boundRendererBodyTextSha256: string;
+  boundRendererAccessibleTextSha256: string;
   proofSha256: string;
 }> = [];
 for (const checkpoint of uiCheckpoints) {
@@ -562,6 +565,8 @@ for (const checkpoint of uiCheckpoints) {
     title?: unknown;
     bodyText?: unknown;
     accessibleText?: unknown;
+    boundRendererBodyText?: unknown;
+    boundRendererAccessibleText?: unknown;
     screenshotPath?: unknown;
     screenshotSha256?: unknown;
     launchIdentityPath?: unknown;
@@ -576,6 +581,7 @@ for (const checkpoint of uiCheckpoints) {
   };
   const binding = liveClientBindings.get(checkpoint.client)!;
   const identity = binding.identity;
+  const checkpointText = e2eUiSnapshotText(state);
   if (
     state.schemaVersion !== E2E_UI_EVIDENCE_SCHEMA_VERSION ||
     typeof state.observedAt !== "string" ||
@@ -586,9 +592,7 @@ for (const checkpoint of uiCheckpoints) {
     typeof state.url !== "string" ||
     typeof state.title !== "string" ||
     state.title.length === 0 ||
-    typeof state.bodyText !== "string" ||
-    !Array.isArray(state.accessibleText) ||
-    state.accessibleText.some((value) => typeof value !== "string") ||
+    !checkpointText ||
     typeof state.screenshotPath !== "string" ||
     resolve(state.screenshotPath) !== screenshot ||
     state.screenshotSha256 !== sha256(bytes) ||
@@ -606,7 +610,11 @@ for (const checkpoint of uiCheckpoints) {
   ) {
     throw new Error(`Malformed or mismatched UI checkpoint: ${statePath}`);
   }
-  const uiText = [state.bodyText, ...state.accessibleText].join("\n");
+  const foregroundBodyText = state.bodyText as string;
+  const foregroundAccessibleText = state.accessibleText as string[];
+  const boundRendererBodyText = state.boundRendererBodyText as string;
+  const boundRendererAccessibleText = state.boundRendererAccessibleText as string[];
+  const uiText = checkpointText.combined;
   const observedAt = Date.parse(state.observedAt);
   if (
     !Number.isFinite(observedAt) ||
@@ -636,8 +644,12 @@ for (const checkpoint of uiCheckpoints) {
     height,
     debugPort: state.debugPort,
     observedAt: state.observedAt,
-    bodyTextSha256: sha256(Buffer.from(state.bodyText)),
-    accessibleTextSha256: sha256(Buffer.from(state.accessibleText.join("\n"))),
+    bodyTextSha256: sha256(Buffer.from(foregroundBodyText)),
+    accessibleTextSha256: sha256(Buffer.from(foregroundAccessibleText.join("\n"))),
+    boundRendererBodyTextSha256: sha256(Buffer.from(boundRendererBodyText)),
+    boundRendererAccessibleTextSha256: sha256(
+      Buffer.from(boundRendererAccessibleText.join("\n")),
+    ),
     proofSha256,
   });
 }
