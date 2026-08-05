@@ -32,6 +32,30 @@ test("scans NUL-containing tracked files for private identifiers", async () => {
   expect(result.stderr.toString()).toContain("matched forbidden private identifier");
 });
 
+test("rejects branding plans containing extracted source", async () => {
+  const root = await repository();
+  await mkdir(join(root, "branding"));
+  await writeFile(join(root, "branding/obsidian-1.2.3.json"), JSON.stringify({
+    schemaVersion: 1,
+    id: "blackglass-branding-1.2.3",
+    rendererVersion: "1.2.3",
+    rendererAsarSha256: "a".repeat(64),
+    sourceFiles: Object.fromEntries(["main.js", "app.js", "starter.js", "icon.png"].map((file) => [file, "b".repeat(64)])),
+    incisions: Array.from({ length: 13 }, (_, index) => ({
+      id: `caption-${index}`,
+      file: "main.js",
+      offset: index,
+      length: 1,
+      sha256: "c".repeat(64),
+      replacement: "caption",
+      literal: "private upstream text",
+    })),
+  }));
+  const result = run(root);
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr.toString()).toContain("proprietary source field");
+});
+
 async function repository(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "blackglass-distribution-boundary-"));
   git(root, "init", "--quiet");

@@ -186,20 +186,30 @@ export function replacePackedAsarEntry(
 ): Buffer {
   const archive = AsarArchive.fromBuffer(upstream);
   const current = archive.read(path);
-  if (replacement.length !== current.length) {
-    throw new Error(
-      `Replacement for ${path} changed byte length: ${current.length} -> ${replacement.length}`,
-    );
-  }
   const node = archive.get(path);
   if (!node?.integrity) {
     throw new Error(`${path} has no ASAR integrity metadata`);
   }
 
   updateIntegrity(node.integrity, replacement);
-  const data = Buffer.from(upstream.subarray(archive.dataOffset));
   const range = archive.contentRange(path);
-  replacement.copy(data, range.start - archive.dataOffset);
+  const relativeStart = range.start - archive.dataOffset;
+  const relativeEnd = range.end - archive.dataOffset;
+  const delta = replacement.length - current.length;
+  node.size = replacement.length;
+  if (delta !== 0) {
+    for (const entry of archive.entries()) {
+      if (entry.node.files || entry.node.unpacked || entry.node.link || entry.node.offset === undefined) continue;
+      const offset = Number(entry.node.offset);
+      if (offset > relativeStart) entry.node.offset = String(offset + delta);
+    }
+  }
+  const upstreamData = upstream.subarray(archive.dataOffset);
+  const data = Buffer.concat([
+    upstreamData.subarray(0, relativeStart),
+    replacement,
+    upstreamData.subarray(relativeEnd),
+  ]);
   const output = Buffer.concat([buildHeader(archive.header), data]);
 
   const generated = AsarArchive.fromBuffer(output);

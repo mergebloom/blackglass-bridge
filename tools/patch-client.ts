@@ -1,6 +1,10 @@
-import { writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { patchAsar } from "../packages/client-adapter/src/patch";
+import { brandingPlanForSource } from "../packages/client-adapter/src/branding";
+import { AsarArchive } from "./asar";
+import bridgeRendererIconPath from "../assets/blackglass-prism.png" with { type: "file" };
 import { parseStrictFlags } from "./cli-flags";
 import {
   assertNonOverlappingPaths,
@@ -41,6 +45,10 @@ assertNonOverlappingPaths([
 ]);
 
 const upstream = Buffer.from(await Bun.file(input).arrayBuffer());
+const rendererMetadata = JSON.parse(AsarArchive.fromBuffer(upstream).read("package.json").toString("utf8")) as { version?: unknown };
+const brandingPlan = typeof rendererMetadata.version === "string"
+  ? brandingPlanForSource(rendererMetadata.version, createHash("sha256").update(upstream).digest("hex"))
+  : undefined;
 const resourcesPath = resourcesArgument
   ? await canonicalExistingPath(resourcesArgument, "Application Resources", "directory")
   : dirname(input);
@@ -54,6 +62,8 @@ const generated = patchAsar(
   upstream,
   { controlOrigin, dataHost },
   qualification.loadedBaseline.baseline.patchIncisions,
+  brandingPlan,
+  brandingPlan ? await readFile(bridgeRendererIconPath) : undefined,
 );
 await writeFile(output, generated.buffer, { flag: "wx", mode: 0o600 });
 console.log(

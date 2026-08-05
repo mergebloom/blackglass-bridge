@@ -32,6 +32,9 @@ jobs:
           test -s site/styles.css
           test -s site/app.js
           test -s site/assets/blackglass-prism.png
+          test -s site/assets/admin-dashboard.png
+          test -s site/assets/admin-login.png
+          test -s site/assets/account-registration.png
           test -f site/.nojekyll
           grep -Fq 'Blackglass.app' site/index.html
           grep -Fq 'compatibility/MATRIX.md' site/index.html

@@ -17,6 +17,7 @@ describe("documentation site", () => {
     expect(html).toContain("Blackglass Bridge");
     expect(html).toContain("Blackglass.app");
     expect(html).toContain("compatibility/MATRIX.md");
+    expect(html).toContain("See what you operate");
   });
 
   test("provides copy-ready prompts for setup and maintenance", () => {
@@ -60,7 +61,7 @@ describe("documentation site", () => {
   });
 
   test("ships every static entrypoint", () => {
-    for (const path of ["index.html", "styles.css", "app.js", ".nojekyll", "robots.txt", "assets/blackglass-prism.png"]) {
+    for (const path of ["index.html", "styles.css", "app.js", ".nojekyll", "robots.txt", "assets/blackglass-prism.png", "assets/admin-dashboard.png", "assets/admin-login.png", "assets/account-registration.png"]) {
       expect(existsSync(resolve(siteRoot, path))).toBeTrue();
     }
   });

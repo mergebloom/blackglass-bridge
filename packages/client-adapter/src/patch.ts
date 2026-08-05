@@ -6,6 +6,7 @@ import {
 } from "../../../tools/cli-binary";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "./runtime-home";
 import type { RendererIncision, RendererReplacement } from "./incision";
+import { applyReviewedBranding, type BrandingPlan, type BrandingReport } from "./branding";
 
 export { BLACKGLASS_CLI_SOCKET_NAME } from "../../../tools/cli-binary";
 export const BLACKGLASS_CLI_COMMAND_NAME = "blackglass";
@@ -38,6 +39,7 @@ export interface AdapterReport {
   starterAfterSha256: string;
   mainBeforeSha256: string;
   mainAfterSha256: string;
+  branding?: BrandingReport;
 }
 
 export function patchRenderer(
@@ -105,6 +107,8 @@ export function patchAsar(
   upstream: Buffer,
   options: AdapterOptions,
   incisions: readonly RendererIncision[],
+  brandingPlan?: BrandingPlan,
+  brandingIcon?: Buffer,
 ): { buffer: Buffer; report: AdapterReport } {
   const canonical = canonicalAdapterOptions(options);
   const archive = AsarArchive.fromBuffer(upstream);
@@ -127,18 +131,17 @@ export function patchAsar(
   );
   const rendererOutput = replacePackedAsarEntry(upstream, "app.js", rendererAfter);
   const starterOutput = replacePackedAsarEntry(rendererOutput, "starter.js", starterAfter);
-  const output = replacePackedAsarEntry(starterOutput, "main.js", mainAfter);
+  const coreOutput = replacePackedAsarEntry(starterOutput, "main.js", mainAfter);
+  if (brandingPlan && !brandingIcon) throw new Error("Reviewed branding requires the Blackglass icon");
+  const branding = brandingPlan ? applyReviewedBranding(upstream, coreOutput, brandingPlan, brandingIcon!) : undefined;
+  const output = branding?.buffer ?? coreOutput;
 
   // Re-open and verify the generated artifact before returning it.
   const generated = AsarArchive.fromBuffer(output);
   const verifiedRenderer = generated.read("app.js");
   const verifiedStarter = generated.read("starter.js");
   const verifiedMain = generated.read("main.js");
-  if (
-    !verifiedRenderer.equals(rendererAfter) ||
-    !verifiedStarter.equals(starterAfter) ||
-    !verifiedMain.equals(mainAfter)
-  ) {
+  if (!brandingPlan && (!verifiedRenderer.equals(rendererAfter) || !verifiedStarter.equals(starterAfter) || !verifiedMain.equals(mainAfter))) {
     throw new Error("Generated ASAR did not preserve all patched entries");
   }
 
@@ -157,11 +160,12 @@ export function patchAsar(
       upstreamSha256: sha256(upstream),
       patchedSha256: sha256(output),
       rendererBeforeSha256: sha256(rendererBefore),
-      rendererAfterSha256: sha256(rendererAfter),
+      rendererAfterSha256: sha256(verifiedRenderer),
       starterBeforeSha256: sha256(starterBefore),
-      starterAfterSha256: sha256(starterAfter),
+      starterAfterSha256: sha256(verifiedStarter),
       mainBeforeSha256: sha256(mainBefore),
-      mainAfterSha256: sha256(mainAfter),
+      mainAfterSha256: sha256(verifiedMain),
+      ...(branding ? { branding: branding.report } : {}),
     },
   };
 }

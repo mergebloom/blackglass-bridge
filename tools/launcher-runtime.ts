@@ -4,11 +4,13 @@ import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, re
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
+import { BLACKGLASS_ICON_ENVIRONMENT } from "../packages/client-adapter/src/branding";
 import { AsarArchive } from "./asar";
 import {
   assertBridgeLaunchConfig,
   type BridgeLaunchConfig,
   BRIDGE_BUNDLE_NAME,
+  BRIDGE_ICON_FILE,
   LEGACY_BRIDGE_BUNDLE_NAME,
   BRIDGE_PROFILE_DIRECTORY,
 } from "./launcher-config";
@@ -89,6 +91,11 @@ export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promi
     await clearStaleRendererLeases(blackglassHome);
 
     const executable = join(config.officialAppPath, "Contents/MacOS", config.officialExecutableName);
+    const blackglassIcon = await canonicalExistingPath(
+      join(bundlePath, "Contents/Resources", BRIDGE_ICON_FILE),
+      "Blackglass application icon",
+      "file",
+    );
     const launchArguments = [
       executable,
       `--user-data-dir=${profile}`,
@@ -101,6 +108,7 @@ export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promi
         ...process.env,
         [BLACKGLASS_HOME_ENVIRONMENT]: blackglassHome,
         [BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT]: localCli,
+        [BLACKGLASS_ICON_ENVIRONMENT]: blackglassIcon,
       },
       stdin: "inherit",
       stdout: "inherit",

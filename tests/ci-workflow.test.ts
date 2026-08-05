@@ -32,5 +32,8 @@ describe("GitHub workflow validation", () => {
     expect(pages).toContain("pages: write");
     expect(pages).toContain("id-token: write");
     expect(pages).toContain("path: site");
+    expect(pages).toContain("site/assets/admin-dashboard.png");
+    expect(pages).toContain("site/assets/admin-login.png");
+    expect(pages).toContain("site/assets/account-registration.png");
   });
 });

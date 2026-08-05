@@ -2,7 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { chmod, copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { patchAsar, RENDERER_INCISION_COUNT, RENDERER_PATCH_FORMAT_VERSION } from "../packages/client-adapter/src/patch";
+import { brandingPlanForSource } from "../packages/client-adapter/src/branding";
 import bridgeIconPath from "../assets/blackglass-prism.icns" with { type: "file" };
+import bridgeRendererIconPath from "../assets/blackglass-prism.png" with { type: "file" };
 import { AsarArchive } from "./asar";
 import { parseStrictFlags } from "./cli-flags";
 import { inspectMacOSCodeInventory, macOSCodeInventoriesEqual } from "./macos-code-inventory";
@@ -117,6 +119,8 @@ const reproduced = patchAsar(
   sourceAsarBytes,
   { controlOrigin, dataHost },
   qualification.loadedBaseline.baseline.patchIncisions,
+  brandingPlanForSource(rendererVersion, sha256(sourceAsarBytes)),
+  await readFile(bridgeRendererIconPath),
 );
 if (!reproduced.buffer.equals(patchedAsarBytes)) {
   throw new Error("Patched renderer is not the deterministic reviewed adaptation");

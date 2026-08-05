@@ -44,6 +44,9 @@ async function inspectRepository(root: string): Promise<void> {
     if (/^compatibility\/obsidian-[0-9.]+\.json$/u.test(path)) {
       inspectBaseline(`${basename(root)}:${path}`, JSON.parse(bytes.toString("utf8")) as unknown);
     }
+    if (/^branding\/obsidian-[0-9.]+\.json$/u.test(path)) {
+      inspectBrandingPlan(`${basename(root)}:${path}`, path, JSON.parse(bytes.toString("utf8")) as unknown);
+    }
   }
   const historicalPaths = git(root, ["log", "--all", "--name-only", "--format=", "-z"])
     .split("\0").filter(Boolean);
@@ -84,12 +87,53 @@ function inspectBaseline(label: string, value: unknown): void {
   }
 }
 
+function inspectBrandingPlan(label: string, path: string, value: unknown): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    failures.push(`${label}: branding plan is not an object`);
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  const version = /^branding\/obsidian-([0-9.]+)\.json$/u.exec(path)?.[1];
+  if (
+    record.schemaVersion !== 1 || record.rendererVersion !== version ||
+    record.id !== `blackglass-branding-${version}` || !isSha256(record.rendererAsarSha256) ||
+    containsKey(record, "literal") || containsKey(record, "source")
+  ) failures.push(`${label}: malformed branding identity or proprietary source field`);
+  const sourceFiles = record.sourceFiles;
+  if (!sourceFiles || typeof sourceFiles !== "object" || Array.isArray(sourceFiles) ||
+      ["main.js", "app.js", "starter.js", "icon.png"].some((file) => !isSha256((sourceFiles as Record<string, unknown>)[file]))) {
+    failures.push(`${label}: malformed branding source hashes`);
+  }
+  if (!Array.isArray(record.incisions) || record.incisions.length !== 13) {
+    failures.push(`${label}: expected exactly 13 reviewed branding incisions`);
+    return;
+  }
+  const ids = new Set<string>();
+  for (const raw of record.incisions) {
+    const range = raw as Record<string, unknown>;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
+        typeof range.id !== "string" || ids.has(range.id) ||
+        !["main.js", "app.js", "starter.js"].includes(String(range.file)) ||
+        !Number.isSafeInteger(range.offset) || Number(range.offset) < 0 ||
+        !Number.isSafeInteger(range.length) || Number(range.length) < 1 ||
+        !isSha256(range.sha256) ||
+        !["caption", "application-name-bootstrap", "dock-icon"].includes(String(range.replacement))) {
+      failures.push(`${label}: malformed hash-and-offset branding incision`);
+    }
+    if (typeof range.id === "string") ids.add(range.id);
+  }
+}
+
 function containsKey(value: unknown, key: string): boolean {
   if (!value || typeof value !== "object") return false;
   if (Array.isArray(value)) return value.some((entry) => containsKey(entry, key));
   const record = value as Record<string, unknown>;
   return Object.prototype.hasOwnProperty.call(record, key) ||
     Object.values(record).some((entry) => containsKey(entry, key));
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 }
 
 function git(root: string, args: string[]): string {

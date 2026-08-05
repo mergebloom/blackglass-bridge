@@ -41,6 +41,27 @@ function makeArchive(
   return output;
 }
 
+function makeMultiArchive(files: Record<string, Buffer>): Buffer {
+  let offset = 0;
+  const nodes: Record<string, unknown> = {};
+  for (const [name, content] of Object.entries(files)) {
+    nodes[name] = { size: content.length, offset: String(offset), integrity: { algorithm: "SHA256", hash: createHash("sha256").update(content).digest("hex") } };
+    offset += content.length;
+  }
+  const headerBytes = Buffer.from(JSON.stringify({ files: nodes }), "utf8");
+  const payloadSize = align4(4 + headerBytes.length);
+  const headerPickleSize = 4 + payloadSize;
+  const output = Buffer.alloc(8 + headerPickleSize + offset);
+  output.writeUInt32LE(4, 0);
+  output.writeUInt32LE(headerPickleSize, 4);
+  output.writeUInt32LE(payloadSize, 8);
+  output.writeUInt32LE(headerBytes.length, 12);
+  headerBytes.copy(output, 16);
+  let dataOffset = 8 + headerPickleSize;
+  for (const content of Object.values(files)) { content.copy(output, dataOffset); dataOffset += content.length; }
+  return output;
+}
+
 describe("AsarArchive", () => {
   test("lists and reads a verified entry", () => {
     const archive = AsarArchive.fromBuffer(
@@ -65,6 +86,14 @@ describe("AsarArchive", () => {
     const output = replacePackedAsarEntry(upstream, "hello.txt", replacement);
 
     expect(AsarArchive.fromBuffer(output).read("hello.txt")).toEqual(replacement);
+  });
+
+  test("rebuilds following offsets when a packed entry changes size", () => {
+    const upstream = makeMultiArchive({ "first.js": Buffer.from("one"), "second.js": Buffer.from("two") });
+    const output = replacePackedAsarEntry(upstream, "first.js", Buffer.from("one-expanded"));
+    const archive = AsarArchive.fromBuffer(output);
+    expect(archive.read("first.js").toString()).toBe("one-expanded");
+    expect(archive.read("second.js").toString()).toBe("two");
   });
 
   test("rejects a malformed size pickle", () => {

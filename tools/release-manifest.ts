@@ -23,6 +23,7 @@ import {
   BRIDGE_EXECUTABLE_NAME,
   BRIDGE_PROFILE_DIRECTORY,
 } from "./launcher-config";
+import { BLACKGLASS_CAPTION, BLACKGLASS_ICON_ENVIRONMENT } from "../packages/client-adapter/src/branding";
 
 export const BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION = 10;
 
@@ -135,6 +136,15 @@ export function assertBlackglassReleaseManifest(value: unknown): asserts value i
     value.macOS.officialCodeInventorySha256, value.macOS.applicationTreeSha256,
     value.macOS.codeInventory?.sha256, value.macOS.rootMetadata?.sha256,
   ]) if (!isSha256(hash)) throw new Error("Blackglass release manifest contains an invalid SHA-256");
+  if (value.renderer.branding !== undefined) {
+    const branding = value.renderer.branding;
+    if (!isRecord(branding) || !/^blackglass-branding-\d+\.\d+\.\d+$/u.test(String(branding.planId)) ||
+        branding.incisionCount !== 13 || branding.caption !== BLACKGLASS_CAPTION ||
+        branding.iconEnvironment !== BLACKGLASS_ICON_ENVIRONMENT ||
+        !isSha256(branding.upstreamIconSha256) || !isSha256(branding.blackglassIconSha256)) {
+      throw new Error("Blackglass release manifest contains invalid branding evidence");
+    }
+  }
   assertMacOSCodeInventory(value.macOS.codeInventory);
   assertMacOSRootMetadata(value.macOS.rootMetadata);
   assertTreeIdentity(value.macOS.applicationTreeIdentity);

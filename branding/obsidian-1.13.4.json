@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "blackglass-branding-1.13.4",
+  "rendererVersion": "1.13.4",
+  "rendererAsarSha256": "51218495ad940a8515b202d380bde638be6570a198e121f7ca6d484a8a158917",
+  "sourceFiles": {
+    "main.js": "965a6e4613cb28b04821cfcf2a75ee8e1bf3904f26c630fc5cd310896be137dd",
+    "app.js": "8173a8631d7bf6096e32d303b13c80e2995076970ed8a77afb11d8b8c5d8e7d1",
+    "starter.js": "5fb6c4c40630286106006d19df6779ae7e379a24054aa8b3ac6d7ec444914294",
+    "icon.png": "eb979906d8258fc9ea69548a8f743f2480e99790354e0de39aa18720675b39d8"
+  },
+  "incisions": [
+    { "id": "application-menu", "file": "main.js", "offset": 175253, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
+    { "id": "about-menu", "file": "main.js", "offset": 175286, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
+    { "id": "about-dialog", "file": "main.js", "offset": 175411, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
+    { "id": "about-copy", "file": "main.js", "offset": 175620, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
+    { "id": "hide-menu", "file": "main.js", "offset": 175773, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
+    { "id": "quit-menu", "file": "main.js", "offset": 175895, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
+    { "id": "about-panel", "file": "main.js", "offset": 198035, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
+    { "id": "application-name-bootstrap", "file": "main.js", "offset": 197990, "length": 26, "sha256": "b896c50f2e44bc115a5f6fe776ef66318b026799001a7c4eea80ae9b98185d5a", "replacement": "application-name-bootstrap" },
+    { "id": "dock-icon", "file": "main.js", "offset": 198198, "length": 22, "sha256": "76839d1a220fbf90bd67b8fef1174425289ffb08413cd5ad290817d4f9b8826b", "replacement": "dock-icon" },
+    { "id": "document-title-1", "file": "app.js", "offset": 2826763, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
+    { "id": "document-title-2", "file": "app.js", "offset": 3275832, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
+    { "id": "main-window-title", "file": "app.js", "offset": 3874014, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
+    { "id": "starter-title", "file": "starter.js", "offset": 385757, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" }
+  ]
+}
