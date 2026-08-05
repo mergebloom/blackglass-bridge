@@ -251,10 +251,10 @@ if (parsed.booleans.has("--prepare-client")) {
   const sourceAsar = join(officialApp, "Contents/Resources/obsidian.asar");
   const patchedAsarA = join(rendererRoot, "blackglass-a.asar");
   const patchedAsarB = join(rendererRoot, "blackglass-b.asar");
-  const firstApp = join(firstRoot, "Blackglass Bridge.app");
+  const firstApp = join(firstRoot, "Blackglass.app");
   const firstManifest = join(firstRoot, "release.json");
   const firstReceipt = join(firstRoot, "package-receipt.json");
-  const secondApp = join(secondRoot, "Blackglass Bridge.app");
+  const secondApp = join(secondRoot, "Blackglass.app");
   const secondManifest = join(secondRoot, "release.json");
   const secondReceipt = join(secondRoot, "package-receipt.json");
   const reproducibility = join(rendererRoot, "reproducibility.json");

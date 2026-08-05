@@ -80,7 +80,7 @@ let gui: { checked: false } | {
 if (parsed.booleans.has("--require-gui")) {
   const expectedApp = parsed.values.has("--app")
     ? await canonicalExistingPath(parsed.values.get("--app")!, "Blackglass app", "directory")
-    : "/private/tmp/blackglass-release-doctor/Blackglass Bridge.app";
+    : "/private/tmp/blackglass-release-doctor/Blackglass.app";
   const snapshot = await inspectMacOSLaunchPreflight();
   assertMacOSLaunchPreflight(snapshot, expectedApp);
   const ports = [3000, 3003, 8443, 9320, 9321, 9322, 9323];
@@ -176,7 +176,7 @@ function assertPortUnused(port: number): void {
 function usage(): never {
   console.error(
     "Usage: bun run tools/doctor-release-candidate.ts <candidate.json> " +
-      "--server-repo <blackglass-server> [--app <Blackglass Bridge.app>] " +
+      "--server-repo <blackglass-server> [--app <Blackglass.app>] " +
       "[--require-gui] [--require-stable-signing]",
   );
   process.exit(2);

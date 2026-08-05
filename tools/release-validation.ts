@@ -22,6 +22,12 @@ import {
   type MacOSPackagingToolchain,
 } from "./packaging-toolchain";
 import {
+  BRIDGE_APPLICATION_NAME,
+  BRIDGE_BUNDLE_IDENTIFIER,
+  BRIDGE_BUNDLE_NAME,
+  BRIDGE_EXECUTABLE_NAME,
+} from "./launcher-config";
+import {
   assertCanonicalRecoveryCorpusIdentity,
   type RecoveryCorpusIdentity,
 } from "./recovery-corpus";
@@ -315,13 +321,23 @@ export function assertReleaseValidationRecord(
   const macOS = value.artifacts.macOS;
   assertMacOSCodeInventory(macOS.codeInventory);
   assertMacOSRootMetadata(macOS.rootMetadata);
+  const recognizedApplicationIdentity =
+    (
+      macOS.schemaVersion === 10 &&
+      macOS.appBundleName === BRIDGE_BUNDLE_NAME &&
+      macOS.bundleName === BRIDGE_APPLICATION_NAME &&
+      macOS.displayName === BRIDGE_APPLICATION_NAME
+    ) ||
+    (
+      macOS.schemaVersion === 9 &&
+      macOS.appBundleName === "Blackglass Bridge.app" &&
+      macOS.bundleName === "Blackglass Bridge" &&
+      macOS.displayName === "Blackglass Bridge"
+    );
   if (
-    macOS.schemaVersion !== 9 ||
-    macOS.appBundleName !== "Blackglass Bridge.app" ||
-    macOS.bundleIdentifier !== "com.blackglass.bridge" ||
-    macOS.bundleName !== "Blackglass Bridge" ||
-    macOS.displayName !== "Blackglass Bridge" ||
-    macOS.executableName !== "blackglass-bridge" ||
+    !recognizedApplicationIdentity ||
+    macOS.bundleIdentifier !== BRIDGE_BUNDLE_IDENTIFIER ||
+    macOS.executableName !== BRIDGE_EXECUTABLE_NAME ||
     macOS.cliExecutableName !== "blackglass-cli" ||
     macOS.cliSocketName !== BLACKGLASS_CLI_SOCKET_NAME ||
     macOS.version !== value.rendererVersion ||

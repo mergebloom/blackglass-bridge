@@ -134,6 +134,7 @@ describe("immutable release runner", () => {
     const wrapper = await readFile(resolve(root, "tools/macos-preflight.ts"), "utf8");
     expect(source).toContain("proc_listallpids");
     expect(source).toContain("proc_pidpath");
+    expect(source).toContain("/Blackglass.app/Contents/MacOS/");
     expect(source).toContain("/Blackglass Bridge.app/Contents/MacOS/");
     expect(wrapper).toContain('"-lproc"');
   });

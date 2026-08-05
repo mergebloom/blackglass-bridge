@@ -29,7 +29,7 @@ import type { MacOSArtifact } from "../tools/macos-artifact";
 
 const digest = (character: string): string => character.repeat(64);
 const root = "/workspace/blackglass/.data/e2e/release";
-const appPath = "/workspace/blackglass/.data/build/Blackglass Bridge.app";
+const appPath = "/workspace/blackglass/.data/build/Blackglass.app";
 const officialAppPath = "/Applications/Obsidian.app";
 const launcherExecutablePath = join(appPath, "Contents/MacOS/blackglass-bridge");
 const controlOrigin = "https://blackglass.example.com";
@@ -49,11 +49,11 @@ const tlsSpkiSha256Base64 = `${"A".repeat(43)}=`;
 const launchHomePath = "/private/tmp/blackglass-launch-ABC123/h";
 const nativeHomePath = "/Users/example";
 const artifact: Omit<MacOSArtifact, "appPath"> = {
-  schemaVersion: 9,
-  appBundleName: "Blackglass Bridge.app",
+  schemaVersion: 10,
+  appBundleName: "Blackglass.app",
   bundleIdentifier: "com.blackglass.bridge",
-  bundleName: "Blackglass Bridge",
-  displayName: "Blackglass Bridge",
+  bundleName: "Blackglass",
+  displayName: "Blackglass",
   blackglassVersion: "0.4.0",
   rendererVersion: "1.12.7",
   version: "1.12.7",
@@ -189,7 +189,7 @@ function evidence(): FinderLaunchSmokeEvidence {
     debugListenerPid: 100,
     debugListenerEndpoints: [`${FINDER_LAUNCH_DEBUG_ADDRESS}:${FINDER_LAUNCH_DEBUG_PORT}`],
     debugTargetId: "starter-target",
-    debugTargetUrl: "file:///Applications/Blackglass Bridge.app/Contents/Resources/starter.html",
+    debugTargetUrl: "file:///Applications/Blackglass.app/Contents/Resources/starter.html",
     startedAt: "2026-07-28T12:00:00.000Z",
     healthStartedAt: "2026-07-28T12:00:01.000Z",
     healthyAt: "2026-07-28T12:00:09.000Z",
@@ -321,8 +321,8 @@ describe("packaged macOS LaunchServices smoke", () => {
     const installedBlackglass = {
       pid: 11,
       bundleIdentifier: BLACKGLASS_BUNDLE_IDENTIFIER,
-      bundlePath: "/Applications/Blackglass Bridge.app",
-      executablePath: "/Applications/Blackglass Bridge.app/Contents/MacOS/Obsidian",
+      bundlePath: "/Applications/Blackglass.app",
+      executablePath: "/Applications/Blackglass.app/Contents/MacOS/Obsidian",
     };
     expect(() =>
       assertMacOSLaunchPreflight(

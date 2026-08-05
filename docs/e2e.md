@@ -75,7 +75,7 @@ unlocked desktop session; that final preflight checks conflicting processes
 and ports before the interactive qualification below. To retry a failed GUI
 qualification, pass a fresh `--run` directory: candidate checks, builds, and
 packages are reused while only that run's E2E and TLS outputs are prepared.
-The preflight finds generated `Blackglass Bridge.app` processes even when
+The preflight finds generated `Blackglass.app` processes even when
 LaunchServices omits them. Generated state remains under ignored `.data` paths
 and contains no credentials.
 
@@ -87,9 +87,9 @@ or release manifest differs:
 
 ```sh
 bun run package:macos:verify-reproducibility -- \
-  '/path/to/build-a/Blackglass Bridge.app' /path/to/build-a/release.json \
+  '/path/to/build-a/Blackglass.app' /path/to/build-a/release.json \
   /path/to/build-a/package-receipt.json \
-  '/path/to/build-b/Blackglass Bridge.app' /path/to/build-b/release.json \
+  '/path/to/build-b/Blackglass.app' /path/to/build-b/release.json \
   /path/to/build-b/package-receipt.json \
   /path/to/client-reproducibility.json
 ```
@@ -98,10 +98,10 @@ Then create a fresh run and its scoped TLS material:
 
 ```sh
 bun run e2e:prepare -- .data/e2e/<run> /path/to/blackglass.asar \
-  --app '/path/to/build-a/Blackglass Bridge.app' \
+  --app '/path/to/build-a/Blackglass.app' \
   --release-manifest /path/to/build-a/release.json \
   --package-receipt /path/to/build-a/package-receipt.json \
-  --second-app '/path/to/build-b/Blackglass Bridge.app' \
+  --second-app '/path/to/build-b/Blackglass.app' \
   --second-release-manifest /path/to/build-b/release.json \
   --second-package-receipt /path/to/build-b/package-receipt.json \
   --reproducibility-evidence /path/to/client-reproducibility.json
@@ -141,7 +141,7 @@ packaged-app smoke in a third terminal and let it finish before launching the
 two E2E clients:
 
 Run the smoke from the active, unlocked macOS desktop session with Xcode Command
-Line Tools available. Quit every Obsidian and Blackglass Bridge application
+Line Tools available. Quit every Obsidian and Blackglass application
 first; the smoke fails closed before launch if either bundle identifier is
 running. It also requires its loopback debugging port to be unused.
 
@@ -179,7 +179,7 @@ bun run client:launch -- \
   .data/e2e/<run>/client-a/user-data/obsidian-1.12.7.asar \
   .data/e2e/<run>/client-a/user-data \
   .data/e2e/<run>/client-a/vault \
-  --app '/path/to/Blackglass Bridge.app' \
+  --app '/path/to/Blackglass.app' \
   --debug-port 9321 \
   --e2e-tls-metadata .data/e2e/<run>/tls-metadata.json \
   --identity-out .data/e2e/<run>/client-a-launch.json
@@ -188,7 +188,7 @@ bun run client:launch -- \
   .data/e2e/<run>/client-b/user-data/obsidian-1.12.7.asar \
   .data/e2e/<run>/client-b/user-data \
   .data/e2e/<run>/client-b/vault \
-  --app '/path/to/Blackglass Bridge.app' \
+  --app '/path/to/Blackglass.app' \
   --debug-port 9322 \
   --e2e-tls-metadata .data/e2e/<run>/tls-metadata.json \
   --identity-out .data/e2e/<run>/client-b-launch.json
@@ -300,7 +300,7 @@ bun run client:launch -- \
   .data/e2e/<run>/client-b/user-data/obsidian-1.12.7.asar \
   .data/e2e/<run>/client-b/user-data \
   .data/e2e/<run>/client-b/vault \
-  --app '/path/to/Blackglass Bridge.app' \
+  --app '/path/to/Blackglass.app' \
   --debug-port 9323 \
   --e2e-tls-metadata .data/e2e/<run>/tls-metadata.json \
   --identity-out .data/e2e/<run>/client-b-recovery-launch.json

@@ -328,7 +328,7 @@ export async function verifyLiveClientLaunchBinding(
     throw new Error("Live client files changed after launch identity was recorded");
   }
   assertProcessAlive(identity.pid, "launched client");
-  assertProcessAlive(identity.launcherPid, "Blackglass Bridge launcher");
+  assertProcessAlive(identity.launcherPid, "Blackglass launcher");
   const listenerPid = listenerOwner(identity.debugPort);
   const launchCommand = processInfo(identity.pid).command;
   const launcherCommand = processInfo(identity.launcherPid).command;

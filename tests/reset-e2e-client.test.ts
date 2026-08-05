@@ -118,7 +118,7 @@ function clientLaunchIdentity(root: string, runManifestSha256: string, adapterSh
     executablePath: "/test/Obsidian",
     executableSha256: "e".repeat(64),
     officialAppPath: "/test/Obsidian.app",
-    appBundlePath: "/test/Blackglass Bridge.app",
+    appBundlePath: "/test/Blackglass.app",
     appArtifactSha256: "f".repeat(64),
     appArtifact: {},
     adapterPath: join(root, "client-b", "user-data", "adapter.bin"),

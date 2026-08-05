@@ -18,7 +18,7 @@ blackglass-bridge-vVERSION-macos-arm64 adapt \
 ```
 
 The common path needs no Bun, Node.js, source checkout, or development tools.
-It creates a locally generated `Blackglass Bridge.app`, manifest, and receipt,
+It creates a locally generated `Blackglass.app`, manifest, and receipt,
 plus an owner-only hash-addressed copy of the verified official runtime. Close
 ordinary Obsidian before opening the launcher. Blackglass uses a separate
 profile and local CLI socket, disables upstream renderer updates, and refuses

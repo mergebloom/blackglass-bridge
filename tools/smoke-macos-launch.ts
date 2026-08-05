@@ -117,7 +117,7 @@ const executablePath = await canonicalExistingPath(
 );
 const launcherExecutablePath = await canonicalExistingPath(
   join(appPath, "Contents/MacOS/blackglass-bridge"),
-  "Prepared Blackglass Bridge executable",
+  "Prepared Blackglass executable",
   "file",
 );
 const launchPreflight = await inspectMacOSLaunchPreflight();
@@ -329,7 +329,7 @@ try {
   starterControlRequests = starterProof.requests;
   runtimeHomeObserved = starterProof.runtimeHomeObserved;
   if (!isDescendant(mainPid, launcherPid, listProcesses())) {
-    throw new Error("Official Obsidian process is not supervised by Blackglass Bridge");
+    throw new Error("Official Obsidian process is not supervised by Blackglass");
   }
   const liveProcesses = listProcesses();
   launcherCommand = liveProcesses.find((entry) => entry.pid === launcherPid)?.command;
@@ -1347,7 +1347,7 @@ async function waitForBridgeRuntimeReceipt(
       }
       return value as BridgeRuntimeReceipt;
     }
-    assertProcessAlive(launcherPid, "Blackglass Bridge launcher");
+    assertProcessAlive(launcherPid, "Blackglass launcher");
     await Bun.sleep(100);
   }
   throw new Error("Timed out waiting for LaunchServices runtime receipt");

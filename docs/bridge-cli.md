@@ -25,7 +25,7 @@ upstream provenance required for formal conformance and publication.
 
 The command fails if the upstream identity, renderer inventory, wrapper,
 incision hashes, code inventory, endpoint format, or output path differs from
-the reviewed contract. It creates `Blackglass Bridge.app`, a release manifest,
+the reviewed contract. It creates `Blackglass.app`, a release manifest,
 and a package receipt. It also installs an owner-only, hash-addressed copy of the
 official runtime under `~/Library/Application Support/Blackglass Runtimes/Official`;
 neither the supplied artifact nor an installed Obsidian app is

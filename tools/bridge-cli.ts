@@ -76,7 +76,7 @@ async function adapt(arguments_: string[]): Promise<void> {
   if (!compiled) {
     throw new Error("The adapt command requires the official standalone Blackglass Bridge executable");
   }
-  const outputApp = await canonicalOutputPath(join(output, BRIDGE_BUNDLE_NAME), "Blackglass Bridge app");
+  const outputApp = await canonicalOutputPath(join(output, BRIDGE_BUNDLE_NAME), "Blackglass app");
   const manifest = await canonicalOutputPath(join(output, "blackglass-release.json"), "release manifest");
   const receipt = await canonicalOutputPath(
     join(output, "blackglass-package-receipt.json"),

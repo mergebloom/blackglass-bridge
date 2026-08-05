@@ -34,9 +34,11 @@ test("packages only the open launcher and locally generated adapter", async () =
   const secondPaths = await packageFixture(fixture, second);
   const artifact = await inspectMacOSArtifact(firstPaths.app);
   expect(artifact).toMatchObject({
-    schemaVersion: 9,
-    appBundleName: "Blackglass Bridge.app",
+    schemaVersion: 10,
+    appBundleName: "Blackglass.app",
     bundleIdentifier: "com.blackglass.bridge",
+    bundleName: "Blackglass",
+    displayName: "Blackglass",
     executableName: "blackglass-bridge",
     rendererVersion: "1.12.7",
     officialAppUnmodified: true,
@@ -96,9 +98,9 @@ test("fails closed for a changed official tree, adapter, or output identity", as
 
   const wrongName = join(fixture.root, "wrong-name");
   await mkdir(wrongName);
-  const wrong = runPackage(fixture, wrongName, "Blackglass.app");
+  const wrong = runPackage(fixture, wrongName, "Blackglass Bridge.app");
   expect(wrong.exitCode).not.toBe(0);
-  expect(wrong.stderr.toString()).toContain("Blackglass Bridge.app");
+  expect(wrong.stderr.toString()).toContain("Blackglass.app");
 }, 60_000);
 
 test("rejects an arbitrary executable in place of the source-bound Bridge", async () => {
@@ -193,13 +195,13 @@ async function packageFixture(fixture: Fixture, output: string) {
   const result = runPackage(fixture, output);
   expect(result.exitCode, result.stderr.toString()).toBe(0);
   return {
-    app: join(output, "Blackglass Bridge.app"),
+    app: join(output, "Blackglass.app"),
     manifest: join(output, "release.json"),
     receipt: join(output, "receipt.json"),
   };
 }
 
-function runPackage(fixture: Fixture, output: string, appName = "Blackglass Bridge.app") {
+function runPackage(fixture: Fixture, output: string, appName = "Blackglass.app") {
   return Bun.spawnSync([
     Bun.which("bun")!, "run", "tools/package-macos.ts",
     fixture.sourceApp, fixture.patchedAsar, join(output, appName),

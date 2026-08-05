@@ -11,6 +11,7 @@ import { createMacOSPackageReceipt, serializeMacOSPackageReceipt } from "./macos
 import { clearMacOSAppExtendedAttributes } from "./macos-root-metadata";
 import {
   adapterProfileFileName,
+  BRIDGE_APPLICATION_NAME,
   BRIDGE_BUNDLE_IDENTIFIER,
   BRIDGE_BUNDLE_NAME,
   BRIDGE_EXECUTABLE_NAME,
@@ -60,7 +61,7 @@ const officialDmg = flags.values.get("--official-dmg")
 const toolingSourcePath = flags.values.get("--tooling-source")
   ? await canonicalExistingPath(flags.values.get("--tooling-source")!, "Tooling source identity", "file")
   : undefined;
-const outputApp = await canonicalOutputPath(outputArgument, "Blackglass Bridge app");
+const outputApp = await canonicalOutputPath(outputArgument, "Blackglass app");
 const manifestPath = await canonicalOutputPath(manifestArgument, "Release manifest");
 const receiptPath = await canonicalOutputPath(
   flags.values.get("--receipt") ?? join(dirname(manifestPath), "blackglass-package-receipt.json"),
@@ -75,7 +76,7 @@ assertNonOverlappingPaths([
   { label: "Official Obsidian app", path: sourceApp },
   { label: "Patched renderer", path: patchedAsar },
   { label: "Standalone Bridge executable", path: standaloneExecutable },
-  { label: "Blackglass Bridge app", path: outputApp },
+  { label: "Blackglass app", path: outputApp },
   { label: "Release manifest", path: manifestPath },
   { label: "Package receipt", path: receiptPath },
 ]);
@@ -267,12 +268,12 @@ function infoPlist(version: string, rendererVersion: string): string {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleDevelopmentRegion</key><string>en</string>
-<key>CFBundleDisplayName</key><string>Blackglass Bridge</string>
+<key>CFBundleDisplayName</key><string>${BRIDGE_APPLICATION_NAME}</string>
 <key>CFBundleExecutable</key><string>${BRIDGE_EXECUTABLE_NAME}</string>
 <key>CFBundleIdentifier</key><string>${BRIDGE_BUNDLE_IDENTIFIER}</string>
 <key>CFBundleIconFile</key><string>${BRIDGE_ICON_FILE}</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-<key>CFBundleName</key><string>Blackglass Bridge</string>
+<key>CFBundleName</key><string>${BRIDGE_APPLICATION_NAME}</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>${version}</string>
 <key>CFBundleVersion</key><string>${version}</string>

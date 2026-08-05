@@ -101,7 +101,7 @@ const asar = await canonicalExistingPath(asarArgument, "Compatibility ASAR", "fi
 const profile = await canonicalExistingPath(profileArgument, "Client profile", "directory");
 const vault = await canonicalExistingPath(vaultArgument, "Client vault", "directory");
 const appBundle = await canonicalExistingPath(
-  flags.values.get("--app") ?? "/Applications/Blackglass Bridge.app",
+  flags.values.get("--app") ?? "/Applications/Blackglass.app",
   "macOS app bundle",
   "directory",
 );
@@ -145,7 +145,7 @@ const adapterSha256 = await fileSha256(asar);
 const infoPlist = join(appBundle, "Contents/Info.plist");
 const bundleIdentifier = plistString(infoPlist, "CFBundleIdentifier");
 if (bundleIdentifier !== "com.blackglass.bridge") {
-  throw new Error(`Refusing non-Blackglass Bridge app ${bundleIdentifier}`);
+  throw new Error(`Refusing non-Blackglass app ${bundleIdentifier}`);
 }
 const appArtifact = await inspectMacOSArtifact(appBundle);
 const launchConfig = await verifyPackagedOfficialRuntime(appBundle);
@@ -159,7 +159,7 @@ const executable = await canonicalExistingPath(
 const executableSha256 = await fileSha256(executable);
 const launcherExecutable = await canonicalExistingPath(
   join(appBundle, "Contents/MacOS", BRIDGE_EXECUTABLE_NAME),
-  "Blackglass Bridge launcher executable",
+  "Blackglass launcher executable",
   "file",
 );
 const launcherExecutableSha256 = await fileSha256(launcherExecutable);
@@ -1070,7 +1070,7 @@ function plistString(infoPlist: string, key: string): string {
 function usage(): never {
   console.error(
     "Usage: bun run tools/launch-macos.ts <patched.asar> <existing-profile> <existing-vault> " +
-      "[--app <Blackglass Bridge.app>] [--replace-adapter] [--prepare-only] " +
+      "[--app <Blackglass.app>] [--replace-adapter] [--prepare-only] " +
       "[--debug-port <port> " +
       "--debug-readiness-timeout-ms <30000..300000> " +
       "--e2e-tls-metadata <metadata.json> " +

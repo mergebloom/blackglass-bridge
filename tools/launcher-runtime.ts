@@ -9,6 +9,7 @@ import {
   assertBridgeLaunchConfig,
   type BridgeLaunchConfig,
   BRIDGE_BUNDLE_NAME,
+  LEGACY_BRIDGE_BUNDLE_NAME,
   BRIDGE_PROFILE_DIRECTORY,
 } from "./launcher-config";
 import { inspectMacOSCodeInventory, macOSCodeInventoriesEqual } from "./macos-code-inventory";
@@ -46,7 +47,7 @@ export interface BridgeRuntimeOptions {
 }
 
 export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promise<number> {
-  const bundlePath = await canonicalExistingPath(options.bundlePath, "Blackglass Bridge app", "directory");
+  const bundlePath = await canonicalExistingPath(options.bundlePath, "Blackglass app", "directory");
   const configPath = join(bundlePath, "Contents/Resources/bridge-launch.json");
   const config = JSON.parse(await readFile(configPath, "utf8")) as unknown;
   assertBridgeLaunchConfig(config);
@@ -367,7 +368,10 @@ export function unmanagedOfficialProcesses(processes: ProcessEntry[]): ProcessEn
     for (let current = pid; current > 1 && !seen.has(current); current = parent.get(current) ?? 0) {
       seen.add(current);
       const process = processes.find((entry) => entry.pid === current);
-      if (process?.command.includes(`/${BRIDGE_BUNDLE_NAME}/Contents/MacOS/blackglass-bridge`)) {
+      if (
+        process?.command.includes(`/${BRIDGE_BUNDLE_NAME}/Contents/MacOS/blackglass-bridge`) ||
+        process?.command.includes(`/${LEGACY_BRIDGE_BUNDLE_NAME}/Contents/MacOS/blackglass-bridge`)
+      ) {
         return true;
       }
     }
@@ -692,7 +696,7 @@ export async function acquireRuntimeLaunchLease(
       processIsAlive(Number(value.pid)) &&
       launcherProcessStartIdentity(Number(value.pid)) === value.processStartIdentity
     ) {
-      throw new Error(`Another Blackglass Bridge launcher owns ${path}`);
+      throw new Error(`Another Blackglass launcher owns ${path}`);
     }
     if (!(await readFile(path)).equals(existing)) {
       throw new Error(`Blackglass launch lease changed during stale-owner recovery: ${path}`);

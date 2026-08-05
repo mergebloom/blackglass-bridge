@@ -67,9 +67,9 @@ if (
 ) {
   console.error(
     "Usage: bun run tools/prepare-e2e.ts <run-directory> <patched.asar> " +
-      "--app <Blackglass Bridge.app> --release-manifest <release.json> " +
+      "--app <Blackglass.app> --release-manifest <release.json> " +
       "--package-receipt <receipt.json> " +
-      "--second-app <Blackglass Bridge.app> " +
+      "--second-app <Blackglass.app> " +
       "--second-release-manifest <release.json> " +
       "--second-package-receipt <receipt.json> " +
       "--reproducibility-evidence <reproducibility.json> " +

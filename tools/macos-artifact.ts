@@ -5,6 +5,7 @@ import { inspectMacOSCodeInventory, type MacOSCodeInventory } from "./macos-code
 import { inspectMacOSRootMetadata, type MacOSRootMetadata } from "./macos-root-metadata";
 import {
   assertBridgeLaunchConfig,
+  BRIDGE_APPLICATION_NAME,
   BRIDGE_BUNDLE_IDENTIFIER,
   BRIDGE_BUNDLE_NAME,
   BRIDGE_EXECUTABLE_NAME,
@@ -26,12 +27,12 @@ export interface MacOSLauncherSigningEvidence {
 }
 
 export interface MacOSArtifact {
-  schemaVersion: 9;
+  schemaVersion: 10;
   appPath: string;
   appBundleName: typeof BRIDGE_BUNDLE_NAME;
   bundleIdentifier: typeof BRIDGE_BUNDLE_IDENTIFIER;
-  bundleName: "Blackglass Bridge";
-  displayName: "Blackglass Bridge";
+  bundleName: typeof BRIDGE_APPLICATION_NAME;
+  displayName: typeof BRIDGE_APPLICATION_NAME;
   blackglassVersion: string;
   rendererVersion: string;
   version: string;
@@ -79,21 +80,21 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   const infoPlist = join(appPath, "Contents/Info.plist");
   if (
     plistString(infoPlist, "CFBundleIdentifier") !== BRIDGE_BUNDLE_IDENTIFIER ||
-    plistString(infoPlist, "CFBundleName") !== "Blackglass Bridge" ||
-    plistString(infoPlist, "CFBundleDisplayName") !== "Blackglass Bridge" ||
+    plistString(infoPlist, "CFBundleName") !== BRIDGE_APPLICATION_NAME ||
+    plistString(infoPlist, "CFBundleDisplayName") !== BRIDGE_APPLICATION_NAME ||
     plistString(infoPlist, "CFBundleExecutable") !== BRIDGE_EXECUTABLE_NAME ||
     plistString(infoPlist, "CFBundleIconFile") !== BRIDGE_ICON_FILE
   ) {
-    throw new Error("Unexpected Blackglass Bridge application identity");
+    throw new Error("Unexpected Blackglass application identity");
   }
   if (hasPlistKey(infoPlist, "CFBundleURLTypes") || hasPlistKey(infoPlist, "NSUbiquitousContainers")) {
-    throw new Error("Blackglass Bridge must not claim upstream URL or iCloud identities");
+    throw new Error("Blackglass must not claim upstream URL or iCloud identities");
   }
   run([MACOS_PACKAGING_EXECUTABLES.codesign, "--verify", "--deep", "--strict", "--all-architectures", appPath]);
   const executable = join(appPath, "Contents/MacOS", BRIDGE_EXECUTABLE_NAME);
   const architectures = runText([MACOS_PACKAGING_EXECUTABLES.lipo, "-archs", executable]).split(/\s+/u);
   if (architectures.length !== 1 || architectures[0] !== "arm64") {
-    throw new Error("Blackglass Bridge launcher must contain exactly one arm64 executable");
+    throw new Error("Blackglass launcher must contain exactly one arm64 executable");
   }
   const executableSignature = signatureDetails(executable);
   const appSignature = signatureDetails(appPath);
@@ -103,13 +104,13 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     !executableSignature.adHoc || !appSignature.adHoc
   ) {
     throw new Error(
-      `Blackglass Bridge launcher has an unexpected code signature: executable=${executableSignature.identifier}/${executableSignature.adHoc}, app=${appSignature.identifier}/${appSignature.adHoc}`,
+      `Blackglass launcher has an unexpected code signature: executable=${executableSignature.identifier}/${executableSignature.adHoc}, app=${appSignature.identifier}/${appSignature.adHoc}`,
     );
   }
   const configBytes = await readFile(join(appPath, "Contents/Resources/bridge-launch.json"));
   const iconBytes = await readFile(join(appPath, "Contents/Resources", BRIDGE_ICON_FILE));
   if (iconBytes.length < 100_000 || iconBytes.subarray(0, 4).toString("ascii") !== "icns") {
-    throw new Error("Blackglass Bridge has no valid application icon");
+    throw new Error("Blackglass has no valid application icon");
   }
   const config = JSON.parse(configBytes.toString("utf8")) as unknown;
   assertBridgeLaunchConfig(config);
@@ -117,7 +118,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     config.blackglassVersion !== plistString(infoPlist, "CFBundleShortVersionString") ||
     config.rendererVersion !== plistString(infoPlist, "BlackglassRendererVersion")
   ) {
-    throw new Error("Blackglass Bridge plist and launch contract versions differ");
+    throw new Error("Blackglass plist and launch contract versions differ");
   }
   const adapterSha256 = await sha256File(join(appPath, "Contents/Resources", config.adapterFileName));
   if (adapterSha256 !== config.adapterSha256) throw new Error("Embedded adapter does not match launch contract");
@@ -128,12 +129,12 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   const rootMetadata = await inspectMacOSRootMetadata(appPath);
   const applicationTreeIdentity = await computeTreeIdentity(appPath);
   return {
-    schemaVersion: 9,
+    schemaVersion: 10,
     appPath,
     appBundleName: BRIDGE_BUNDLE_NAME,
     bundleIdentifier: BRIDGE_BUNDLE_IDENTIFIER,
-    bundleName: "Blackglass Bridge",
-    displayName: "Blackglass Bridge",
+    bundleName: BRIDGE_APPLICATION_NAME,
+    displayName: BRIDGE_APPLICATION_NAME,
     blackglassVersion: config.blackglassVersion,
     rendererVersion: config.rendererVersion,
     version: config.rendererVersion,

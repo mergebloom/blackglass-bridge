@@ -84,11 +84,11 @@ const packagingToolchain: MacOSPackagingToolchain = {
 };
 
 const macOS: Omit<MacOSArtifact, "appPath"> = {
-  schemaVersion: 9,
-  appBundleName: "Blackglass Bridge.app",
+  schemaVersion: 10,
+  appBundleName: "Blackglass.app",
   bundleIdentifier: "com.blackglass.bridge",
-  bundleName: "Blackglass Bridge",
-  displayName: "Blackglass Bridge",
+  bundleName: "Blackglass",
+  displayName: "Blackglass",
   blackglassVersion: "0.3.0",
   rendererVersion: "1.12.7",
   version: "1.12.7",
@@ -278,6 +278,8 @@ test("fails closed on distribution, runtime, and source binding changes", () => 
     (value: any) => value.launchPolicy.exactOfficialAppVerifiedAtEveryLaunch = false,
     (value: any) => value.macOS.officialChildSupervisionRequired = false,
     (value: any) => value.macOS.officialAppTreeSha256 = digest("0"),
+    (value: any) => value.macOS.appBundleName = "Blackglass Bridge.app",
+    (value: any) => value.macOS.displayName = "Blackglass Bridge",
     (value: any) => value.renderer.cliExecutableEnvironment = "PATH",
     (value: any) => value.source.unchanged = false,
   ]) {

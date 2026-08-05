@@ -12,7 +12,7 @@ path as new Obsidian releases appear.
 
 The Bridge verifies an exact reviewed upstream artifact, applies narrow
 endpoint and CLI incisions to a local renderer, and emits an independently
-identified `Blackglass Bridge.app` launcher plus an auditable manifest and
+identified `Blackglass.app` launcher plus an auditable manifest and
 receipt. The launcher uses a private, byte-verified copy of the official runtime
 without modifying the installed app, starts it with a separate mode-`0700`
 profile, disables upstream renderer updates, and supervises the complete

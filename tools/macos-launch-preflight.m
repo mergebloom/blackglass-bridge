@@ -78,7 +78,7 @@ int main(int argc, const char *argv[]) {
 
     // LaunchServices can omit generated copies that were started with an
     // isolated profile. Inspect kernel-reported executable paths as a
-    // fail-closed fallback so any running generated Blackglass Bridge.app is found.
+    // fail-closed fallback so any running generated Blackglass.app is found.
     int processCount = proc_listallpids(NULL, 0);
     if (processCount <= 0) {
       fputs("Unable to enumerate running macOS processes\n", stderr);
@@ -93,18 +93,33 @@ int main(int argc, const char *argv[]) {
       fputs("Unable to read running macOS processes\n", stderr);
       return EX_UNAVAILABLE;
     }
-    NSString *generatedMarker = @"/Blackglass Bridge.app/Contents/MacOS/";
+    NSArray<NSDictionary<NSString *, NSString *> *> *generatedBundles = @[
+      @{
+        @"marker" : @"/Blackglass.app/Contents/MacOS/",
+        @"name" : @"/Blackglass.app",
+      },
+      @{
+        @"marker" : @"/Blackglass Bridge.app/Contents/MacOS/",
+        @"name" : @"/Blackglass Bridge.app",
+      },
+    ];
     for (int index = 0; index < populatedCount; index++) {
       pid_t pid = processes[index];
       if (pid <= 0 || [applicationPIDs containsObject:@(pid)]) continue;
       char pathBuffer[PROC_PIDPATHINFO_MAXSIZE] = {0};
       if (proc_pidpath(pid, pathBuffer, sizeof(pathBuffer)) <= 0) continue;
       NSString *executablePath = [NSString stringWithUTF8String:pathBuffer];
-      NSRange markerRange = [executablePath rangeOfString:generatedMarker];
-      if (markerRange.location == NSNotFound) continue;
-      NSString *bundlePath = [[executablePath
-          substringToIndex:markerRange.location]
-          stringByAppendingString:@"/Blackglass Bridge.app"];
+      NSString *bundlePath = nil;
+      for (NSDictionary<NSString *, NSString *> *generatedBundle in
+           generatedBundles) {
+        NSRange markerRange =
+            [executablePath rangeOfString:generatedBundle[@"marker"]];
+        if (markerRange.location == NSNotFound) continue;
+        bundlePath = [[executablePath substringToIndex:markerRange.location]
+            stringByAppendingString:generatedBundle[@"name"]];
+        break;
+      }
+      if (bundlePath == nil) continue;
       [applications addObject:@{
         @"pid" : @(pid),
         @"bundleIdentifier" : blackglassBundleIdentifier,

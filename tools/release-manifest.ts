@@ -16,7 +16,13 @@ import { COMPATIBILITY_BASELINE_SCHEMA_VERSION } from "./release-compatibility";
 import { isSupportedSemver, isSupportedStableSemver } from "./semver";
 import { assertToolingSourceIdentity, type ToolingSourceIdentity } from "./tooling-source";
 import { TREE_IDENTITY_FORMAT_VERSION, type TreeIdentity } from "./tree-identity";
-import { BRIDGE_PROFILE_DIRECTORY } from "./launcher-config";
+import {
+  BRIDGE_APPLICATION_NAME,
+  BRIDGE_BUNDLE_IDENTIFIER,
+  BRIDGE_BUNDLE_NAME,
+  BRIDGE_EXECUTABLE_NAME,
+  BRIDGE_PROFILE_DIRECTORY,
+} from "./launcher-config";
 
 export const BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION = 10;
 
@@ -139,11 +145,11 @@ export function assertBlackglassReleaseManifest(value: unknown): asserts value i
     value.renderer.cliExecutableEnvironment !== BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT ||
     value.renderer.upstreamSha256 !== value.source.rendererAsarSha256 ||
     value.renderer.patchedSha256 !== value.macOS.embeddedAsarSha256 ||
-    value.macOS.schemaVersion !== 9 || value.macOS.appBundleName !== "Blackglass Bridge.app" ||
-    value.macOS.bundleIdentifier !== "com.blackglass.bridge" ||
-    value.macOS.bundleName !== "Blackglass Bridge" || value.macOS.displayName !== "Blackglass Bridge" ||
+    value.macOS.schemaVersion !== 10 || value.macOS.appBundleName !== BRIDGE_BUNDLE_NAME ||
+    value.macOS.bundleIdentifier !== BRIDGE_BUNDLE_IDENTIFIER ||
+    value.macOS.bundleName !== BRIDGE_APPLICATION_NAME || value.macOS.displayName !== BRIDGE_APPLICATION_NAME ||
     value.macOS.blackglassVersion !== value.blackglassVersion || value.macOS.rendererVersion !== value.rendererVersion ||
-    value.macOS.executableName !== "blackglass-bridge" || value.macOS.officialExecutableName !== "Obsidian" ||
+    value.macOS.executableName !== BRIDGE_EXECUTABLE_NAME || value.macOS.officialExecutableName !== "Obsidian" ||
     value.macOS.officialAppTreeSha256 !== value.source.appTree.sha256 ||
     value.macOS.officialCodeInventorySha256 !== value.source.macOSCodeInventory.sha256 ||
     value.macOS.applicationTreeSha256 !== value.macOS.applicationTreeIdentity.sha256 ||
@@ -159,8 +165,8 @@ export function assertBlackglassReleaseManifest(value: unknown): asserts value i
   if (
     !isRecord(value.macOS.codeSigning) || value.macOS.codeSigning.signature !== "ad-hoc" ||
     value.macOS.codeSigning.strictVerification !== true || value.macOS.codeSigning.allArchitecturesVerified !== true ||
-    value.macOS.codeSigning.bundleIdentifier !== "com.blackglass.bridge" ||
-    value.macOS.codeSigning.executableIdentifier !== "com.blackglass.bridge" ||
+    value.macOS.codeSigning.bundleIdentifier !== BRIDGE_BUNDLE_IDENTIFIER ||
+    value.macOS.codeSigning.executableIdentifier !== BRIDGE_BUNDLE_IDENTIFIER ||
     !Array.isArray(value.macOS.codeSigning.executableArchitectures) ||
     value.macOS.codeSigning.executableArchitectures.length !== 1 ||
     value.macOS.codeSigning.executableArchitectures[0] !== "arm64"

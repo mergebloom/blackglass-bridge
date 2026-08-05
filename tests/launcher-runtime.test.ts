@@ -66,7 +66,7 @@ test("cancels termination escalation after a clean child exit", async () => {
 
 test("allows the canonical profile inside an isolated runtime home only", () => {
   const base = {
-    bundlePath: "/build/Blackglass Bridge.app",
+    bundlePath: "/build/Blackglass.app",
     officialAppPath: "/private/runtime/Obsidian.app",
     normalObsidianProfilePath: "/Users/example/Library/Application Support/Obsidian",
     vaultPath: "/vaults/example",
@@ -146,11 +146,13 @@ test("uses distinct immutable receipts for initial and clean-recovery launches",
 
 test("allows separately supervised Bridge clients but rejects ordinary Obsidian", () => {
   const processes = [
-    { pid: 10, ppid: 1, command: "/A/Blackglass Bridge.app/Contents/MacOS/blackglass-bridge" },
+    { pid: 10, ppid: 1, command: "/A/Blackglass.app/Contents/MacOS/blackglass-bridge" },
     { pid: 11, ppid: 10, command: "/private/A/Obsidian.app/Contents/MacOS/Obsidian" },
     { pid: 12, ppid: 11, command: "/private/A/Obsidian Helper (Renderer)" },
-    { pid: 20, ppid: 1, command: "/B/Blackglass Bridge.app/Contents/MacOS/blackglass-bridge" },
+    { pid: 20, ppid: 1, command: "/B/Blackglass.app/Contents/MacOS/blackglass-bridge" },
     { pid: 21, ppid: 20, command: "/private/B/Obsidian.app/Contents/MacOS/Obsidian" },
+    { pid: 22, ppid: 1, command: "/Legacy/Blackglass Bridge.app/Contents/MacOS/blackglass-bridge" },
+    { pid: 23, ppid: 22, command: "/private/Legacy/Obsidian.app/Contents/MacOS/Obsidian" },
   ];
   expect(unmanagedOfficialProcesses(processes)).toEqual([]);
   expect(unmanagedOfficialProcesses([
@@ -185,7 +187,7 @@ test("serializes launches and recovers a PID-reuse lease", async () => {
   const other = await mkdtemp(join(tmpdir(), "blackglass-launcher-lock-other-"));
   const first = await acquireRuntimeLaunchLease(home, "/apps/bridge-a", home);
   await expect(acquireRuntimeLaunchLease(home, "/apps/bridge-b", home))
-    .rejects.toThrow("Another Blackglass Bridge launcher owns");
+    .rejects.toThrow("Another Blackglass launcher owns");
   const independent = await acquireRuntimeLaunchLease(other, "/apps/bridge-b", other);
   await releaseRuntimeLaunchLease(independent);
   await releaseRuntimeLaunchLease(first);

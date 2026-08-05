@@ -4,7 +4,9 @@ import type { TreeIdentity } from "./tree-identity";
 import { stableJson } from "./stable-json";
 
 export const BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION = 1;
-export const BRIDGE_BUNDLE_NAME = "Blackglass Bridge.app" as const;
+export const BRIDGE_BUNDLE_NAME = "Blackglass.app" as const;
+export const LEGACY_BRIDGE_BUNDLE_NAME = "Blackglass Bridge.app" as const;
+export const BRIDGE_APPLICATION_NAME = "Blackglass" as const;
 export const BRIDGE_BUNDLE_IDENTIFIER = "com.blackglass.bridge" as const;
 export const BRIDGE_EXECUTABLE_NAME = "blackglass-bridge" as const;
 export const BRIDGE_ICON_FILE = "blackglass-prism.icns" as const;
