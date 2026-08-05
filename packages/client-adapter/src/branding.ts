@@ -7,7 +7,8 @@ export const BLACKGLASS_CAPTION = "Blackglass" as const;
 export const BLACKGLASS_ICON_ENVIRONMENT = "BLACKGLASS_ICON" as const;
 export const BRANDING_PLAN_SCHEMA_VERSION = 1;
 
-type BrandingReplacement = "caption" | "application-name-bootstrap" | "dock-icon" | "account-url";
+type BrandingReplacement = "caption" | "application-name-bootstrap" | "dock-icon" | "account-url" |
+  "onboarding-logo" | "onboarding-wordmark" | "onboarding-vault-description" | "onboarding-sync-title";
 interface BrandingIncision {
   id: string;
   file: "main.js" | "app.js" | "starter.js";
@@ -32,6 +33,7 @@ export interface BrandingReport {
   upstreamIconSha256: string;
   blackglassIconSha256: string;
   accountManagementUrl: string;
+  onboardingBranded: true;
 }
 
 const plans = [
@@ -70,6 +72,7 @@ export function applyReviewedBranding(sourceRenderer: Buffer, adaptedRenderer: B
       upstreamIconSha256: plan.sourceFiles["icon.png"],
       blackglassIconSha256: sha256(blackglassIcon),
       accountManagementUrl,
+      onboardingBranded: true,
     },
   };
 }
@@ -96,6 +99,15 @@ function replacement(original: Buffer, kind: BrandingReplacement, controlOrigin:
   if (kind === "caption") return BLACKGLASS_CAPTION;
   if (kind === "account-url") return `${controlOrigin}/account`;
   const source = original.toString("utf8");
+  if (kind === "onboarding-logo" && source.startsWith('createDiv("splash-brand-logo").appendChild(')) {
+    return `createEl("img",{cls:"splash-brand-logo",attr:{src:"icon.png",width:"128",height:"128",alt:${JSON.stringify(BLACKGLASS_CAPTION)}}})`;
+  }
+  const onboardingAlias = /^([A-Za-z_$][\w$]*)\.createDiv/u.exec(source)?.[1];
+  if (kind === "onboarding-wordmark" && onboardingAlias) {
+    return `${onboardingAlias}.createDiv({cls:"splash-brand-logo-text",text:${JSON.stringify(BLACKGLASS_CAPTION)},attr:{style:"font-size:48px;font-weight:700;line-height:1.2"}})`;
+  }
+  if (kind === "onboarding-vault-description") return "Create a new Blackglass vault under a folder.";
+  if (kind === "onboarding-sync-title") return "Open vault from Blackglass Sync";
   const alias = /^([A-Za-z_$][\w$]*)\.app\./u.exec(source)?.[1];
   if (!alias) throw new Error(`Branding ${kind} incision has an unknown shape`);
   if (kind === "application-name-bootstrap" && source === `${alias}.app.setAboutPanelOptions`) {
@@ -121,7 +133,10 @@ function inspectReviewedBranding(output: Buffer, plan: BrandingPlan, iconSha256:
       !main.includes(`process.env.${BLACKGLASS_ICON_ENVIRONMENT}`) ||
       count(main, BLACKGLASS_CAPTION) < 8 || count(app, BLACKGLASS_CAPTION) < 3 ||
       !app.includes(`window.open(${JSON.stringify(accountManagementUrl)})`) ||
-      count(starter, BLACKGLASS_CAPTION) < 1 || plan.incisions.length !== 14) {
+      !starter.includes('src:"icon.png"') || count(starter, BLACKGLASS_CAPTION) < 3 ||
+      (plan.rendererVersion === "1.13.4" &&
+        (!main.includes("Create a new Blackglass vault under a folder.") ||
+         !main.includes("Open vault from Blackglass Sync")))) {
     throw new Error("Generated renderer does not satisfy the reviewed branding contract");
   }
 }
@@ -130,7 +145,7 @@ function parsePlan(text: string): BrandingPlan {
   const value = JSON.parse(text) as BrandingPlan;
   if (value.schemaVersion !== BRANDING_PLAN_SCHEMA_VERSION || !/^blackglass-branding-\d+\.\d+\.\d+$/u.test(value.id) ||
       !/^\d+\.\d+\.\d+$/u.test(value.rendererVersion) || !isSha256(value.rendererAsarSha256) ||
-      value.incisions.length !== 14 || Object.values(value.sourceFiles).some((digest) => !isSha256(digest))) {
+      value.incisions.length < 16 || Object.values(value.sourceFiles).some((digest) => !isSha256(digest))) {
     throw new Error("Invalid Blackglass branding plan");
   }
   const ids = new Set<string>();
@@ -138,7 +153,8 @@ function parsePlan(text: string): BrandingPlan {
     if (!incision.id || ids.has(incision.id) || !["main.js", "app.js", "starter.js"].includes(incision.file) ||
         !Number.isSafeInteger(incision.offset) || incision.offset < 0 || !Number.isSafeInteger(incision.length) ||
         incision.length < 1 || !isSha256(incision.sha256) ||
-        !["caption", "application-name-bootstrap", "dock-icon", "account-url"].includes(incision.replacement)) {
+        !["caption", "application-name-bootstrap", "dock-icon", "account-url", "onboarding-logo",
+          "onboarding-wordmark", "onboarding-vault-description", "onboarding-sync-title"].includes(incision.replacement)) {
       throw new Error("Invalid Blackglass branding incision");
     }
     ids.add(incision.id);

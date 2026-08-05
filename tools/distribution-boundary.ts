@@ -104,8 +104,8 @@ function inspectBrandingPlan(label: string, path: string, value: unknown): void 
       ["main.js", "app.js", "starter.js", "icon.png"].some((file) => !isSha256((sourceFiles as Record<string, unknown>)[file]))) {
     failures.push(`${label}: malformed branding source hashes`);
   }
-  if (!Array.isArray(record.incisions) || record.incisions.length !== 14) {
-    failures.push(`${label}: expected exactly 14 reviewed branding incisions`);
+  if (!Array.isArray(record.incisions) || record.incisions.length < 16) {
+    failures.push(`${label}: expected at least 16 reviewed branding incisions`);
     return;
   }
   const ids = new Set<string>();
@@ -117,7 +117,8 @@ function inspectBrandingPlan(label: string, path: string, value: unknown): void 
         !Number.isSafeInteger(range.offset) || Number(range.offset) < 0 ||
         !Number.isSafeInteger(range.length) || Number(range.length) < 1 ||
         !isSha256(range.sha256) ||
-        !["caption", "application-name-bootstrap", "dock-icon", "account-url"].includes(String(range.replacement))) {
+        !["caption", "application-name-bootstrap", "dock-icon", "account-url", "onboarding-logo",
+          "onboarding-wordmark", "onboarding-vault-description", "onboarding-sync-title"].includes(String(range.replacement))) {
       failures.push(`${label}: malformed hash-and-offset branding incision`);
     }
     if (typeof range.id === "string") ids.add(range.id);

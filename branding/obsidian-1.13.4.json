@@ -23,6 +23,10 @@
     { "id": "document-title-1", "file": "app.js", "offset": 2826763, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
     { "id": "document-title-2", "file": "app.js", "offset": 3275832, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
     { "id": "main-window-title", "file": "app.js", "offset": 3874014, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
-    { "id": "starter-title", "file": "starter.js", "offset": 385757, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" }
+    { "id": "starter-title", "file": "starter.js", "offset": 385757, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
+    { "id": "onboarding-vault-description", "file": "main.js", "offset": 58796, "length": 43, "sha256": "ce54d6fb49a565c5c3a620b3438d4cca32ed2dc0c18c697a3de55f0530f9d9e8", "replacement": "onboarding-vault-description" },
+    { "id": "onboarding-sync-title", "file": "main.js", "offset": 58868, "length": 29, "sha256": "e6911324cbbbc2d2167ca9cba1a0c192fc70cd79490caee0ca6caa6777670953", "replacement": "onboarding-sync-title" },
+    { "id": "onboarding-logo", "file": "starter.js", "offset": 426224, "length": 4780, "sha256": "593d4680dabfeddbdb1c607003618b69c69763ff236fb4b28add28500a52d377", "replacement": "onboarding-logo" },
+    { "id": "onboarding-wordmark", "file": "starter.js", "offset": 431005, "length": 1809, "sha256": "49fdd4acc9f5c0faedc04ff08c74a36abc0e1cc158524f4b9846173ed1bd0779", "replacement": "onboarding-wordmark" }
   ]
 }

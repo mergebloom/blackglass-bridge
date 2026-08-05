@@ -23,6 +23,8 @@
     { "id": "document-title-1", "file": "app.js", "offset": 2671103, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
     { "id": "document-title-2", "file": "app.js", "offset": 3121080, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
     { "id": "main-window-title", "file": "app.js", "offset": 3728445, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
-    { "id": "starter-title", "file": "starter.js", "offset": 376900, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" }
+    { "id": "starter-title", "file": "starter.js", "offset": 376900, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
+    { "id": "onboarding-logo", "file": "starter.js", "offset": 402462, "length": 4780, "sha256": "fb932a468bced76b37ff77cc1d9a7b41eb8f7b929b36f717b1473bb25120bd98", "replacement": "onboarding-logo" },
+    { "id": "onboarding-wordmark", "file": "starter.js", "offset": 407243, "length": 1809, "sha256": "bf3894ed5747295697cd5e28bebf1b9240fb5529f56f20e6649160e225863407", "replacement": "onboarding-wordmark" }
   ]
 }

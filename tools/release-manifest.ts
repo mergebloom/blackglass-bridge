@@ -23,7 +23,7 @@ import {
   BRIDGE_EXECUTABLE_NAME,
   BRIDGE_PROFILE_DIRECTORY,
 } from "./launcher-config";
-import { BLACKGLASS_CAPTION, BLACKGLASS_ICON_ENVIRONMENT } from "../packages/client-adapter/src/branding";
+import { BLACKGLASS_CAPTION, BLACKGLASS_ICON_ENVIRONMENT, brandingPlanForSource } from "../packages/client-adapter/src/branding";
 
 export const BLACKGLASS_RELEASE_MANIFEST_SCHEMA_VERSION = 10;
 
@@ -138,10 +138,12 @@ export function assertBlackglassReleaseManifest(value: unknown): asserts value i
   ]) if (!isSha256(hash)) throw new Error("Blackglass release manifest contains an invalid SHA-256");
   if (value.renderer.branding !== undefined) {
     const branding = value.renderer.branding;
+    const brandingPlan = brandingPlanForSource(value.rendererVersion, String(value.source.rendererAsarSha256));
     if (!isRecord(branding) || !/^blackglass-branding-\d+\.\d+\.\d+$/u.test(String(branding.planId)) ||
-        branding.incisionCount !== 14 || branding.caption !== BLACKGLASS_CAPTION ||
+        !brandingPlan || branding.incisionCount !== brandingPlan.incisions.length || branding.caption !== BLACKGLASS_CAPTION ||
         branding.iconEnvironment !== BLACKGLASS_ICON_ENVIRONMENT ||
         branding.accountManagementUrl !== `${endpoints.controlOrigin}/account` ||
+        branding.onboardingBranded !== true ||
         !isSha256(branding.upstreamIconSha256) || !isSha256(branding.blackglassIconSha256)) {
       throw new Error("Blackglass release manifest contains invalid branding evidence");
     }
