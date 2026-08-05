@@ -105,6 +105,7 @@ output—control support claims.
 
 | Guide | Owner |
 | --- | --- |
+| [User guide](https://mergebloom.github.io/blackglass-bridge/) | Beginner setup, client adaptation, operations, and guided prompts |
 | [Architecture](docs/architecture.md) | Client adaptation and safety boundary |
 | [Standalone Bridge](docs/bridge-cli.md) | No-development-dependency user workflow |
 | [Compatibility maintenance](compatibility/README.md) | Future renderer review and promotion |

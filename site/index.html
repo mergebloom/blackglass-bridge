@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#070a0e">
+    <meta name="description" content="Beginner-friendly documentation for self-hosting Blackglass Server and adapting a supported Obsidian desktop installation into Blackglass.app.">
+    <title>Blackglass — Self-hosted Sync</title>
+    <link rel="icon" href="assets/blackglass-prism.png" type="image/png">
+    <link rel="stylesheet" href="styles.css">
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to documentation</a>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Blackglass documentation home">
+        <img src="assets/blackglass-prism.png" width="34" height="34" alt="">
+        <span>Blackglass</span>
+        <small>Docs</small>
+      </a>
+      <button class="menu-button" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav id="site-nav" aria-label="Primary navigation">
+        <a href="#overview">Overview</a>
+        <a href="#server">Set up the server</a>
+        <a href="#client">Create the app</a>
+        <a href="#prompts">AI walkthroughs</a>
+        <a href="#operate">Operate</a>
+      </nav>
+      <a class="header-link" href="https://github.com/mergebloom/blackglass-bridge">GitHub</a>
+    </header>
+
+    <main id="content">
+      <section class="hero" id="top">
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span> Self-hosted desktop Sync</p>
+          <h1>Your notes.<br>Your server.<br><em>The app you know.</em></h1>
+          <p class="hero-lede">Blackglass lets a supported Obsidian desktop installation use a server you control—while preserving the qualified Sync flow and native application experience.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#server">Start the walkthrough</a>
+            <a class="button secondary" href="https://github.com/mergebloom/blackglass-bridge/blob/main/compatibility/MATRIX.md">Check supported versions</a>
+          </div>
+          <p class="hero-note">Desktop first · Apple Silicon macOS client · Linux server on amd64 or arm64</p>
+        </div>
+        <div class="hero-visual" aria-label="Blackglass has a server, adapter, and locally generated desktop app">
+          <div class="prism-glow">
+            <img src="assets/blackglass-prism.png" width="210" height="210" alt="Blackglass prism">
+          </div>
+          <ol class="flow-card">
+            <li><span>01</span><div><strong>Blackglass Server</strong><small>Rust + SQLite on your Linux host</small></div></li>
+            <li><span>02</span><div><strong>Blackglass Bridge</strong><small>Verifies and adapts your official installer</small></div></li>
+            <li><span>03</span><div><strong>Blackglass.app</strong><small>Your locally generated macOS client</small></div></li>
+          </ol>
+        </div>
+      </section>
+
+      <div class="trust-strip" aria-label="Product principles">
+        <span>No telemetry</span>
+        <span>Portable SQLite data</span>
+        <span>Your domains and TLS</span>
+        <span>Exact-version compatibility</span>
+      </div>
+
+      <section class="section" id="overview">
+        <div class="section-heading">
+          <p class="eyebrow">The basic idea</p>
+          <h2>What is Blackglass?</h2>
+          <p>It is an open self-hosting platform for the Sync connection between a supported Obsidian desktop client and its server.</p>
+        </div>
+        <div class="plain-grid">
+          <article class="plain-card">
+            <span class="number">1</span>
+            <h3>You run the server</h3>
+            <p>Blackglass Server stores accounts, encrypted revisions, attachments, sharing state, and history in a portable data directory built around SQLite.</p>
+          </article>
+          <article class="plain-card">
+            <span class="number">2</span>
+            <h3>You supply Obsidian</h3>
+            <p>Blackglass does not distribute Obsidian. You provide your legitimate official DMG or installed application on your own Mac.</p>
+          </article>
+          <article class="plain-card">
+            <span class="number">3</span>
+            <h3>Bridge connects them</h3>
+            <p>The Bridge checks the exact release, changes only reviewed local connection points, and creates an independently named <code>Blackglass.app</code>.</p>
+          </article>
+        </div>
+
+        <div class="architecture">
+          <div class="arch-node client"><small>Your Mac</small><strong>Blackglass.app</strong><span>Native desktop experience</span></div>
+          <div class="arch-link"><span>HTTPS</span><i></i><span>WSS</span></div>
+          <div class="arch-node server"><small>Your Linux host</small><strong>Blackglass Server</strong><span>Rust · SQLite · encrypted data</span></div>
+        </div>
+
+        <div class="callout important">
+          <strong>What “supported” means</strong>
+          <p>Blackglass does not guess that every Obsidian release works. A client and server combination is supported only after the complete conformance suite passes for that exact renderer, Bridge revision, Server revision, operating system, and architecture.</p>
+          <a href="https://github.com/mergebloom/blackglass-bridge/blob/main/compatibility/MATRIX.md">Open the compatibility matrix →</a>
+        </div>
+      </section>
+
+      <section class="section prerequisites" id="before-you-begin">
+        <div class="section-heading split-heading">
+          <div><p class="eyebrow">Before you begin</p><h2>What you need</h2></div>
+          <p>You do not need to be a software developer. You do need a server, a domain, and comfort following terminal instructions—or an AI coding agent that can do so with your approval.</p>
+        </div>
+        <div class="check-grid">
+          <div><span>✓</span><p><strong>A Linux server</strong> with an amd64 or arm64 CPU, Git, Docker Engine, and Docker Compose.</p></div>
+          <div><span>✓</span><p><strong>Two DNS names</strong> such as <code>sync.example.com</code> and <code>sync-data.example.com</code>.</p></div>
+          <div><span>✓</span><p><strong>Ports 80 and 443</strong> reaching the server so Caddy can obtain and renew TLS certificates.</p></div>
+          <div><span>✓</span><p><strong>An Apple Silicon Mac</strong> and your own supported official Obsidian DMG or installation.</p></div>
+          <div><span>✓</span><p><strong>A backup destination</strong> outside the server, with enough space for your encrypted vault data.</p></div>
+          <div><span>✓</span><p><strong>The exact release versions</strong> listed in the compatibility matrix. Do not substitute “close enough” versions.</p></div>
+        </div>
+      </section>
+
+      <section class="section walkthrough" id="server">
+        <div class="section-heading split-heading">
+          <div><p class="eyebrow">Walkthrough 01</p><h2>Set up Blackglass Server</h2></div>
+          <p>This is the simplest production path: one Linux host, Docker Compose, Caddy for HTTPS, and one portable Blackglass data volume.</p>
+        </div>
+
+        <div class="steps">
+          <article class="step">
+            <div class="step-index">1</div>
+            <div class="step-body">
+              <h3>Point two DNS names at your server</h3>
+              <p>Create two DNS records. The control name carries sign-in and vault-management requests. The data name carries the live encrypted Sync connection.</p>
+              <div class="example-row"><code>sync.example.com</code><span>→</span><span>Your server IP</span></div>
+              <div class="example-row"><code>sync-data.example.com</code><span>→</span><span>Your server IP</span></div>
+            </div>
+          </article>
+
+          <article class="step">
+            <div class="step-index">2</div>
+            <div class="step-body">
+              <h3>Get an exact Server release</h3>
+              <p>Choose a version from GitHub Releases, then check out that exact tag instead of deploying an arbitrary moving branch.</p>
+              <div class="code-shell">
+                <div class="code-title"><span>On the Linux server</span><button class="copy-button" data-copy="server-clone">Copy</button></div>
+                <pre id="server-clone"><code>git clone https://github.com/mergebloom/blackglass-server.git
+cd blackglass-server
+git checkout vVERSION</code></pre>
+              </div>
+              <p class="microcopy">Replace <code>VERSION</code> with the exact published Server version required by the compatibility matrix.</p>
+            </div>
+          </article>
+
+          <article class="step">
+            <div class="step-index">3</div>
+            <div class="step-body">
+              <h3>Configure your image and domains</h3>
+              <p>Copy the example configuration, protect it from other local users, then replace every example value. Pin the Server image to a published version or immutable digest.</p>
+              <div class="code-shell">
+                <div class="code-title"><span>Prepare configuration</span><button class="copy-button" data-copy="server-config">Copy</button></div>
+                <pre id="server-config"><code>cp .env.example .env
+chmod 0600 .env
+${EDITOR:-vi} .env
+./ops/compose-ops.sh config</code></pre>
+              </div>
+              <div class="env-card">
+                <code>BLACKGLASS_SERVER_IMAGE</code><span>Published image tag or digest</span>
+                <code>BLACKGLASS_CONTROL_DOMAIN</code><span>Your control DNS name</span>
+                <code>BLACKGLASS_DATA_DOMAIN</code><span>Your data DNS name</span>
+                <code>BLACKGLASS_ACME_EMAIL</code><span>Email used for TLS certificate notices</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="step">
+            <div class="step-index">4</div>
+            <div class="step-body">
+              <h3>Create the first account, then start</h3>
+              <p>The password is read privately from standard input. It is not placed in your shell history or a process argument.</p>
+              <div class="code-shell">
+                <div class="code-title"><span>Initialize and start</span><button class="copy-button" data-copy="server-start">Copy</button></div>
+                <pre id="server-start"><code>read -r -s BLACKGLASS_INITIAL_PASSWORD
+printf '%s\n' "$BLACKGLASS_INITIAL_PASSWORD" | \
+  ./ops/compose-ops.sh init owner@example.com 'Vault owner'
+unset BLACKGLASS_INITIAL_PASSWORD
+
+./ops/compose-ops.sh up
+./ops/compose-ops.sh health</code></pre>
+              </div>
+              <p class="success-line"><span>✓</span> A successful health check means the Server and its SQLite database are ready.</p>
+            </div>
+          </article>
+
+          <article class="step">
+            <div class="step-index">5</div>
+            <div class="step-body">
+              <h3>Make and test the first backup</h3>
+              <p>Do this before adding valuable data. Store the resulting database and adjacent checksum off the server.</p>
+              <div class="code-shell">
+                <div class="code-title"><span>Verified backup and restore drill</span><button class="copy-button" data-copy="server-backup">Copy</button></div>
+                <pre id="server-backup"><code>./ops/compose-ops.sh backup /safe/off-host/blackglass.sqlite
+./ops/compose-ops.sh verify-backup /safe/off-host/blackglass.sqlite
+./ops/compose-ops.sh restore-drill /safe/off-host/blackglass.sqlite</code></pre>
+              </div>
+              <p class="microcopy">Never copy a live SQLite, WAL, and SHM file set independently. Use the built-in online backup command.</p>
+            </div>
+          </article>
+        </div>
+        <div class="next-link"><span>Server ready?</span><a href="#client">Create your Blackglass Mac app →</a></div>
+      </section>
+
+      <section class="section walkthrough" id="client">
+        <div class="section-heading split-heading">
+          <div><p class="eyebrow">Walkthrough 02</p><h2>Create Blackglass.app</h2></div>
+          <p>The Bridge runs locally on your Mac. It verifies your official Obsidian input and creates the independently named application without changing your installed Obsidian app.</p>
+        </div>
+        <div class="callout boundary">
+          <strong>You must supply Obsidian</strong>
+          <p>Download a legitimate official Obsidian DMG yourself, and make sure its exact renderer version is listed as supported. Blackglass releases never include Obsidian binaries, ASAR files, source, or proprietary assets.</p>
+        </div>
+        <div class="steps compact">
+          <article class="step">
+            <div class="step-index">1</div>
+            <div class="step-body">
+              <h3>Download and verify the Bridge release</h3>
+              <p>Get the Apple Silicon standalone executable and its adjacent checksum from the Bridge release required by the compatibility matrix.</p>
+              <div class="code-shell">
+                <div class="code-title"><span>On your Mac</span><button class="copy-button" data-copy="bridge-verify">Copy</button></div>
+                <pre id="bridge-verify"><code>shasum -a 256 -c blackglass-bridge-vVERSION-macos-arm64.sha256
+chmod 0755 blackglass-bridge-vVERSION-macos-arm64</code></pre>
+              </div>
+            </div>
+          </article>
+          <article class="step">
+            <div class="step-index">2</div>
+            <div class="step-body">
+              <h3>Adapt your supported official DMG</h3>
+              <p>Use the same control and data names configured on the Server. The control endpoint includes <code>https://</code>; the data host does not.</p>
+              <div class="code-shell">
+                <div class="code-title"><span>Create Blackglass.app</span><button class="copy-button" data-copy="bridge-adapt">Copy</button></div>
+                <pre id="bridge-adapt"><code>./blackglass-bridge-vVERSION-macos-arm64 adapt \
+  --dmg /path/to/Obsidian-VERSION.dmg \
+  --control-origin https://sync.example.com \
+  --data-host sync-data.example.com \
+  --output "$HOME/Desktop/Blackglass-output"</code></pre>
+              </div>
+            </div>
+          </article>
+          <article class="step">
+            <div class="step-index">3</div>
+            <div class="step-body">
+              <h3>Open the generated application</h3>
+              <p>The output directory contains <code>Blackglass.app</code>, a release manifest, and a packaging receipt. Quit ordinary Obsidian before opening Blackglass.</p>
+              <ul class="result-list">
+                <li>Blackglass uses an isolated profile.</li>
+                <li>Upstream renderer updates are disabled for this generated app.</li>
+                <li>The verified official runtime remains private on your Mac.</li>
+                <li>If any reviewed identity differs, adaptation stops instead of guessing.</li>
+              </ul>
+            </div>
+          </article>
+          <article class="step">
+            <div class="step-index">4</div>
+            <div class="step-body">
+              <h3>Sign in and enable Sync</h3>
+              <p>Use the account created on your Server. Create or connect a remote vault from the native Sync interface, choose custom-password E2EE or managed encryption, and confirm a test note appears on another clean profile before moving important data.</p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section prompts" id="prompts">
+        <div class="section-heading split-heading">
+          <div><p class="eyebrow">Guided with an AI agent</p><h2>Copy-ready walkthrough prompts</h2></div>
+          <p>Paste one prompt into Codex or another capable coding agent that has terminal access. Replace the bracketed values first. Keep passwords, tokens, private keys, and vault data out of chat.</p>
+        </div>
+        <div class="prompt-warning"><strong>Stay in control.</strong> Ask the agent to pause before DNS, firewall, account, destructive, or public deployment changes. Read each proposed change and keep a tested backup.</div>
+
+        <article class="prompt-card">
+          <div class="prompt-head"><div><span>Prompt 01</span><h3>Deploy my Blackglass Server</h3></div><button class="copy-button large" data-copy="prompt-server">Copy prompt</button></div>
+          <pre id="prompt-server"><code>You are helping me deploy Blackglass Server on a Linux host I control.
+
+Authoritative repository:
+https://github.com/mergebloom/blackglass-server
+
+My deployment details:
+- Server OS: [UBUNTU/DEBIAN/OTHER]
+- CPU architecture: [AMD64/ARM64]
+- Control domain: [SYNC.EXAMPLE.COM]
+- Data domain: [SYNC-DATA.EXAMPLE.COM]
+- Account email: [OWNER@EXAMPLE.COM]
+- Off-host backup directory: [PATH]
+
+Use the repository's production Docker Compose path and an exact published release. Read the current README, .env.example, compose.yaml, and docs/production.md before changing anything. Verify release identity and checksums. Do not invent configuration keys, use a moving image tag, weaken TLS, use wildcard CORS, or expose the plaintext Server listeners publicly.
+
+First inspect the host, DNS readiness, open ports, Docker/Compose availability, existing services on ports 80/443, disk space, and CPU architecture. Then show me a short plan and identify every value I must choose. Pause for my approval before changing DNS, firewall rules, public listeners, accounts, or existing services.
+
+During setup:
+1. Check out the exact selected release.
+2. Create a mode-0600 .env from the example using my two domains and a pinned Server image.
+3. Validate the Compose configuration.
+4. Create the first account with the password read from standard input. Never ask me to paste the password into chat, save it in shell history, or pass it as a command argument.
+5. Start the service and verify health and TLS for both domains.
+6. Create a verified online backup and perform a restore drill into disposable state.
+7. Report the exact release, image digest, domains, health result, backup paths, and any remaining operational work.
+
+Stop and explain if the repository instructions, release metadata, DNS, architecture, or host state do not match. Do not bypass a safety or compatibility gate.</code></pre>
+        </article>
+
+        <article class="prompt-card">
+          <div class="prompt-head"><div><span>Prompt 02</span><h3>Create my Blackglass Mac app</h3></div><button class="copy-button large" data-copy="prompt-client">Copy prompt</button></div>
+          <pre id="prompt-client"><code>You are helping me create Blackglass.app from an official Obsidian installation that I legitimately supplied.
+
+Authoritative repository:
+https://github.com/mergebloom/blackglass-bridge
+
+My inputs:
+- Mac: Apple Silicon
+- Official Obsidian DMG or app: [ABSOLUTE PATH]
+- Control origin: https://[SYNC.EXAMPLE.COM]
+- Data host: [SYNC-DATA.EXAMPLE.COM]
+- Output directory: [ABSOLUTE PATH]
+
+Read the current README, compatibility/MATRIX.md, and docs/bridge-cli.md first. Determine the exact renderer and wrapper versions from my supplied artifact and confirm that the complete Bridge/Server/client combination is supported. Select the exact published Bridge release named by that support record and verify its checksum.
+
+Use only the official standalone Bridge workflow. Do not extract or commit proprietary source, redistribute Obsidian, modify my installed Obsidian application, weaken artifact verification, bypass an incision mismatch, or silently claim an unqualified release works. Quit conflicting Obsidian or older Blackglass processes safely before adaptation.
+
+Run the adapt command with my exact control origin and data host. Verify that the output contains Blackglass.app, the release manifest, and the packaging receipt; that its visible application name is Blackglass; that it uses the Black Prism icon and isolated profile; and that upstream renderer updates are disabled. Do not publish or upload the locally generated app or adapted renderer.
+
+Finally, launch the packaged application, confirm it remains open without a crash, and give me the exact output paths, versions, hashes, endpoint identities, and any limitations. Stop rather than guessing if any source hash, semantic anchor, protocol shape, package identity, or compatibility check differs.</code></pre>
+        </article>
+
+        <article class="prompt-card">
+          <div class="prompt-head"><div><span>Prompt 03</span><h3>Upgrade an existing installation</h3></div><button class="copy-button large" data-copy="prompt-upgrade">Copy prompt</button></div>
+          <pre id="prompt-upgrade"><code>You are helping me safely upgrade an existing Blackglass deployment.
+
+Repositories:
+- https://github.com/mergebloom/blackglass-server
+- https://github.com/mergebloom/blackglass-bridge
+
+Current deployment:
+- Server version and digest: [VALUE]
+- Bridge version: [VALUE]
+- Obsidian renderer version: [VALUE]
+- Server architecture: [AMD64/ARM64]
+- Existing control and data domains: [VALUES]
+
+Target versions: [VALUES OR "DETERMINE FROM CURRENT QUALIFIED MATRIX"]
+
+Read both release notes, the compatibility matrix, release contracts, Server production upgrade/rollback instructions, and Bridge client guide. Confirm the exact target combination is fully qualified before making changes. Inspect the current deployment and preserve unrelated configuration.
+
+Before upgrading, create and verify an online off-host backup and complete a restore drill. Record the current image digest, database schema, source revisions, client artifact identities, and rollback boundary. Explain whether rollback is allowed by the exact release contract.
+
+Upgrade in the documented order, verify Server health and TLS, then create a newly adapted Blackglass.app from my user-supplied supported official Obsidian artifact. Do not carry forward an old compatibility claim, reuse stale partial outputs, weaken a source/artifact binding, or modify historical qualification evidence.
+
+Run the relevant packaged-client checks and a small real Sync test with a note plus attachment. Report exact versions, commits, artifact hashes, backup identity, health results, compatibility result, and rollback instructions. Stop before any destructive migration or unsupported version.</code></pre>
+        </article>
+
+        <article class="prompt-card">
+          <div class="prompt-head"><div><span>Prompt 04</span><h3>Investigate a future Obsidian release</h3></div><button class="copy-button large" data-copy="prompt-future">Copy prompt</button></div>
+          <pre id="prompt-future"><code>You are qualifying a new user-supplied official Obsidian release for Blackglass. Work in the existing blackglass-bridge and blackglass-server repositories and follow blackglass-bridge/.agents/skills/qualify-obsidian-release/SKILL.md exactly.
+
+New official artifact: [ABSOLUTE PATH TO DMG]
+Candidate renderer version: [VERSION]
+Control origin for qualification: https://sync-control.example.com
+Data host for qualification: sync-data.example.com
+
+Begin read-only. Verify artifact provenance and identities, compare the wrapper, renderer, CLI, code inventory, protocol routes, WebSocket shapes, and every semantic incision with the previous reviewed baseline. Produce an untrusted candidate first and require explicit review for every changed or new incision.
+
+Do not store or commit extracted/minified proprietary source or assets. Do not modify historical validation records. Do not mark the release supported from static analysis or unit tests alone.
+
+After review, run fast checks, full protocol and packaging checks, two independent reproducible Blackglass.app builds, and the full packaged-client E2E matrix: tenancy/isolation, custom E2EE collaboration, managed-encryption collaboration, background bidirectional Sync, mixed files, deletion, restart continuity, backup/restore/migration, and clean-profile recovery. Bind all evidence to exact Bridge and Server revisions and redact secrets.
+
+Only update the machine-readable and human-readable compatibility matrix if every required scenario passes. Finish with exact commits, versions, hashes, validation records, known limitations, and deferred work. Stop and explain any mismatch instead of weakening a gate.</code></pre>
+        </article>
+      </section>
+
+      <section class="section operations" id="operate">
+        <div class="section-heading split-heading">
+          <div><p class="eyebrow">Keep it healthy</p><h2>Everyday operations</h2></div>
+          <p>Self-hosting means you own recovery as well as storage. These habits matter more than clever infrastructure.</p>
+        </div>
+        <div class="operation-grid">
+          <article><span>Daily</span><h3>Watch health and disk</h3><p>Check service readiness, restarts, sign-in failures, SQLite contention, and free storage. The optional admin console is read-only and loopback-only.</p></article>
+          <article><span>Scheduled</span><h3>Back up off-host</h3><p>Use the online backup command, keep its checksum, encrypt the destination, and send it to a different failure domain.</p></article>
+          <article><span>Regularly</span><h3>Practice restore</h3><p>A backup is only useful if it restores. Run the supplied restore drill on a schedule and before every upgrade.</p></article>
+          <article><span>Before updates</span><h3>Read the exact contract</h3><p>Pin versions and digests. Confirm schema migration and rollback rules. Rebuild the client for an exactly qualified renderer.</p></article>
+        </div>
+        <div class="resource-links">
+          <a href="https://github.com/mergebloom/blackglass-server/blob/main/docs/production.md"><span>Server guide</span><strong>Production, backup, upgrade, rollback →</strong></a>
+          <a href="https://github.com/mergebloom/blackglass-server/blob/main/docs/security.md"><span>Security model</span><strong>Threats, controls, encryption choices →</strong></a>
+          <a href="https://github.com/mergebloom/blackglass-bridge/blob/main/docs/bridge-cli.md"><span>Client guide</span><strong>Standalone adaptation details →</strong></a>
+          <a href="https://github.com/mergebloom/blackglass-bridge/blob/main/compatibility/MATRIX.md"><span>Support</span><strong>Exact compatibility matrix →</strong></a>
+        </div>
+      </section>
+
+      <section class="section faq" id="faq">
+        <div class="section-heading"><p class="eyebrow">Common questions</p><h2>Before you commit</h2></div>
+        <div class="faq-list">
+          <details><summary>Does Blackglass replace Obsidian?</summary><p>No. Blackglass Server replaces the hosted Sync service for qualified flows. Blackglass Bridge adapts an official desktop installation that you supply. The editor and its native UX remain the third-party Obsidian application.</p></details>
+          <details><summary>Can I download a ready-made Blackglass.app?</summary><p>No. Public releases contain the open Bridge tool, not Obsidian or a pre-adapted client. You create Blackglass.app locally from your own legitimate supported installation.</p></details>
+          <details><summary>Can I use any Obsidian version?</summary><p>No. Use only exact combinations marked supported in the compatibility matrix. The Bridge fails closed when an upstream artifact or reviewed semantic anchor differs.</p></details>
+          <details><summary>Are mobile, Windows, or Linux desktop clients supported?</summary><p>Not in the current claimed scope. The initial client is Apple Silicon macOS. Linux amd64 and arm64 are supported for the Server.</p></details>
+          <details><summary>Can the Server read my notes?</summary><p>With custom-password E2EE, the vault password never reaches the Server. Managed encryption is easier to recover but stores its generated recovery password in SQLite and backups. Choose the mode that matches your trust boundary.</p></details>
+          <details><summary>Does Blackglass send telemetry?</summary><p>Blackglass code sends no telemetry and requires no Blackglass-operated service. Obsidian, plugins, embeds, Help, and other upstream features are outside Blackglass's network boundary.</p></details>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="footer-brand"><img src="assets/blackglass-prism.png" width="42" height="42" alt=""><div><strong>Blackglass</strong><span>Self-hosted Sync infrastructure</span></div></div>
+      <p>Blackglass is independent and is not affiliated with or endorsed by Obsidian. Users must supply their own legitimate Obsidian installation. Blackglass began as a research project exploring frontier LLM capabilities in software analysis, compatibility engineering, implementation, and end-to-end validation.</p>
+      <div class="footer-links"><a href="https://github.com/mergebloom/blackglass-bridge">Bridge</a><a href="https://github.com/mergebloom/blackglass-server">Server</a><a href="https://github.com/mergebloom/blackglass-bridge/blob/main/SECURITY.md">Security</a><span>© <span id="year">2026</span></span></div>
+    </footer>
+    <div class="copy-status" role="status" aria-live="polite"></div>
+  </body>
+</html>

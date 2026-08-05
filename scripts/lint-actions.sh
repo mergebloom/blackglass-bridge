@@ -24,4 +24,5 @@ exec docker run --rm \
   -w /repo \
   "$actionlint_image" \
   .github/workflows/ci.yml \
+  .github/workflows/pages.yml \
   .github/workflows/release.yml
