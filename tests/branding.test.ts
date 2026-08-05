@@ -16,8 +16,9 @@ test("selects branding only for an exact reviewed renderer", () => {
   for (const [version, sha256] of known) {
     const plan = brandingPlanForSource(version, sha256);
     expect(plan?.id).toBe(`blackglass-branding-${version}`);
-    expect(plan?.incisions).toHaveLength(13);
-    expect(new Set(plan?.incisions.map((incision) => incision.id)).size).toBe(13);
+    expect(plan?.incisions).toHaveLength(14);
+    expect(new Set(plan?.incisions.map((incision) => incision.id)).size).toBe(14);
+    expect(plan?.incisions.some((incision) => incision.id === "account-manage-url" && incision.replacement === "account-url")).toBe(true);
   }
   expect(brandingPlanForSource("1.13.4", "0".repeat(64))).toBeUndefined();
   expect(brandingPlanForSource("1.13.5", known[1][1])).toBeUndefined();

@@ -139,8 +139,9 @@ export function assertBlackglassReleaseManifest(value: unknown): asserts value i
   if (value.renderer.branding !== undefined) {
     const branding = value.renderer.branding;
     if (!isRecord(branding) || !/^blackglass-branding-\d+\.\d+\.\d+$/u.test(String(branding.planId)) ||
-        branding.incisionCount !== 13 || branding.caption !== BLACKGLASS_CAPTION ||
+        branding.incisionCount !== 14 || branding.caption !== BLACKGLASS_CAPTION ||
         branding.iconEnvironment !== BLACKGLASS_ICON_ENVIRONMENT ||
+        branding.accountManagementUrl !== `${endpoints.controlOrigin}/account` ||
         !isSha256(branding.upstreamIconSha256) || !isSha256(branding.blackglassIconSha256)) {
       throw new Error("Blackglass release manifest contains invalid branding evidence");
     }

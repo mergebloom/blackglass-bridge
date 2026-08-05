@@ -133,7 +133,7 @@ export function patchAsar(
   const starterOutput = replacePackedAsarEntry(rendererOutput, "starter.js", starterAfter);
   const coreOutput = replacePackedAsarEntry(starterOutput, "main.js", mainAfter);
   if (brandingPlan && !brandingIcon) throw new Error("Reviewed branding requires the Blackglass icon");
-  const branding = brandingPlan ? applyReviewedBranding(upstream, coreOutput, brandingPlan, brandingIcon!) : undefined;
+  const branding = brandingPlan ? applyReviewedBranding(upstream, coreOutput, brandingPlan, brandingIcon!, canonical.controlOrigin) : undefined;
   const output = branding?.buffer ?? coreOutput;
 
   // Re-open and verify the generated artifact before returning it.

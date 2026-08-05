@@ -19,6 +19,7 @@
     { "id": "about-panel", "file": "main.js", "offset": 198035, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
     { "id": "application-name-bootstrap", "file": "main.js", "offset": 197990, "length": 26, "sha256": "b896c50f2e44bc115a5f6fe776ef66318b026799001a7c4eea80ae9b98185d5a", "replacement": "application-name-bootstrap" },
     { "id": "dock-icon", "file": "main.js", "offset": 198198, "length": 22, "sha256": "76839d1a220fbf90bd67b8fef1174425289ffb08413cd5ad290817d4f9b8826b", "replacement": "dock-icon" },
+    { "id": "account-manage-url", "file": "app.js", "offset": 3480521, "length": 27, "sha256": "26ab1ba57eb16526138ef6795cff31d00cc5f5e5a1f7e20c1ccc4065ec8b413b", "replacement": "account-url" },
     { "id": "document-title-1", "file": "app.js", "offset": 2826763, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
     { "id": "document-title-2", "file": "app.js", "offset": 3275832, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },
     { "id": "main-window-title", "file": "app.js", "offset": 3874014, "length": 8, "sha256": "9db22d416e293660fbf7496b7bfaa3823852666eda0cb7373d099a0b7278e193", "replacement": "caption" },

@@ -41,7 +41,7 @@ test("rejects branding plans containing extracted source", async () => {
     rendererVersion: "1.2.3",
     rendererAsarSha256: "a".repeat(64),
     sourceFiles: Object.fromEntries(["main.js", "app.js", "starter.js", "icon.png"].map((file) => [file, "b".repeat(64)])),
-    incisions: Array.from({ length: 13 }, (_, index) => ({
+    incisions: Array.from({ length: 14 }, (_, index) => ({
       id: `caption-${index}`,
       file: "main.js",
       offset: index,
