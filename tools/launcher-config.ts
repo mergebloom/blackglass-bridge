@@ -7,6 +7,7 @@ export const BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION = 1;
 export const BRIDGE_BUNDLE_NAME = "Blackglass Bridge.app" as const;
 export const BRIDGE_BUNDLE_IDENTIFIER = "com.blackglass.bridge" as const;
 export const BRIDGE_EXECUTABLE_NAME = "blackglass-bridge" as const;
+export const BRIDGE_ICON_FILE = "blackglass-prism.icns" as const;
 export const BRIDGE_PROFILE_DIRECTORY = "Blackglass Profile" as const;
 
 export interface BridgeLaunchConfig {

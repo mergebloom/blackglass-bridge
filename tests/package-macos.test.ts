@@ -8,6 +8,7 @@ import type { RendererIncision, WrapperIncision } from "../packages/client-adapt
 import { AsarArchive } from "../tools/asar";
 import { inspectMacOSArtifact } from "../tools/macos-artifact";
 import { inspectMacOSCodeInventory } from "../tools/macos-code-inventory";
+import { BRIDGE_ICON_FILE } from "../tools/launcher-config";
 import { inspectMacOSPackagingToolchain, packagingExecutionMode } from "../tools/packaging-toolchain";
 import { stableJson } from "../tools/stable-json";
 import { parseBlackglassReleaseManifest } from "../tools/release-manifest";
@@ -45,6 +46,9 @@ test("packages only the open launcher and locally generated adapter", async () =
     ".",
     "Contents/MacOS/blackglass-bridge",
   ]);
+  const packagedIcon = join(firstPaths.app, "Contents/Resources", BRIDGE_ICON_FILE);
+  expect(await Bun.file(packagedIcon).exists()).toBe(true);
+  expect((await readFile(packagedIcon)).subarray(0, 4).toString("ascii")).toBe("icns");
   for (const forbidden of [
     "Contents/MacOS/Obsidian",
     "Contents/MacOS/obsidian-cli",

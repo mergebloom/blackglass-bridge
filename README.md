@@ -1,4 +1,8 @@
-# Blackglass Bridge
+<p align="center">
+  <img src="assets/blackglass-prism.png" width="144" alt="Blackglass prism">
+</p>
+
+<h1 align="center">Blackglass Bridge</h1>
 
 Blackglass Bridge adapts a user-supplied official Obsidian desktop installation
 to a user-selected [Blackglass Server](https://github.com/mergebloom/blackglass-server).

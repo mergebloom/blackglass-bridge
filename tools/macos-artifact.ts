@@ -8,6 +8,7 @@ import {
   BRIDGE_BUNDLE_IDENTIFIER,
   BRIDGE_BUNDLE_NAME,
   BRIDGE_EXECUTABLE_NAME,
+  BRIDGE_ICON_FILE,
   BRIDGE_PROFILE_DIRECTORY,
   type BridgeLaunchConfig,
 } from "./launcher-config";
@@ -80,7 +81,8 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     plistString(infoPlist, "CFBundleIdentifier") !== BRIDGE_BUNDLE_IDENTIFIER ||
     plistString(infoPlist, "CFBundleName") !== "Blackglass Bridge" ||
     plistString(infoPlist, "CFBundleDisplayName") !== "Blackglass Bridge" ||
-    plistString(infoPlist, "CFBundleExecutable") !== BRIDGE_EXECUTABLE_NAME
+    plistString(infoPlist, "CFBundleExecutable") !== BRIDGE_EXECUTABLE_NAME ||
+    plistString(infoPlist, "CFBundleIconFile") !== BRIDGE_ICON_FILE
   ) {
     throw new Error("Unexpected Blackglass Bridge application identity");
   }
@@ -105,6 +107,10 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     );
   }
   const configBytes = await readFile(join(appPath, "Contents/Resources/bridge-launch.json"));
+  const iconBytes = await readFile(join(appPath, "Contents/Resources", BRIDGE_ICON_FILE));
+  if (iconBytes.length < 100_000 || iconBytes.subarray(0, 4).toString("ascii") !== "icns") {
+    throw new Error("Blackglass Bridge has no valid application icon");
+  }
   const config = JSON.parse(configBytes.toString("utf8")) as unknown;
   assertBridgeLaunchConfig(config);
   if (

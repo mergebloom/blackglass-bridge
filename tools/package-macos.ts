@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { chmod, copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { patchAsar, RENDERER_INCISION_COUNT, RENDERER_PATCH_FORMAT_VERSION } from "../packages/client-adapter/src/patch";
+import bridgeIconPath from "../assets/blackglass-prism.icns" with { type: "file" };
 import { AsarArchive } from "./asar";
 import { parseStrictFlags } from "./cli-flags";
 import { inspectMacOSCodeInventory, macOSCodeInventoriesEqual } from "./macos-code-inventory";
@@ -13,6 +14,7 @@ import {
   BRIDGE_BUNDLE_IDENTIFIER,
   BRIDGE_BUNDLE_NAME,
   BRIDGE_EXECUTABLE_NAME,
+  BRIDGE_ICON_FILE,
   BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION,
   BRIDGE_PROFILE_DIRECTORY,
   type BridgeLaunchConfig,
@@ -159,10 +161,13 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   await mkdir(resources, { recursive: true, mode: 0o755 });
   const launcherExecutable = join(macos, BRIDGE_EXECUTABLE_NAME);
   const embeddedAdapter = join(resources, "blackglass.asar");
+  const embeddedIcon = join(resources, BRIDGE_ICON_FILE);
   await copyFile(standaloneExecutable, launcherExecutable);
   await chmod(launcherExecutable, 0o755);
   await copyFile(patchedAsar, embeddedAdapter);
   await chmod(embeddedAdapter, 0o600);
+  await copyFile(bridgeIconPath, embeddedIcon);
+  await chmod(embeddedIcon, 0o644);
   const launchConfig: BridgeLaunchConfig = {
     schemaVersion: BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION,
     blackglassVersion,
@@ -258,7 +263,25 @@ function archiveVersion(archive: AsarArchive): string {
 }
 
 function infoPlist(version: string, rendererVersion: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>CFBundleDevelopmentRegion</key><string>en</string>\n<key>CFBundleDisplayName</key><string>Blackglass Bridge</string>\n<key>CFBundleExecutable</key><string>${BRIDGE_EXECUTABLE_NAME}</string>\n<key>CFBundleIdentifier</key><string>${BRIDGE_BUNDLE_IDENTIFIER}</string>\n<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>\n<key>CFBundleName</key><string>Blackglass Bridge</string>\n<key>CFBundlePackageType</key><string>APPL</string>\n<key>CFBundleShortVersionString</key><string>${version}</string>\n<key>CFBundleVersion</key><string>${version}</string>\n<key>BlackglassRendererVersion</key><string>${rendererVersion}</string>\n<key>LSMinimumSystemVersion</key><string>13.0</string>\n<key>LSMultipleInstancesProhibited</key><true/>\n<key>NSHighResolutionCapable</key><true/>\n</dict></plist>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleDisplayName</key><string>Blackglass Bridge</string>
+<key>CFBundleExecutable</key><string>${BRIDGE_EXECUTABLE_NAME}</string>
+<key>CFBundleIdentifier</key><string>${BRIDGE_BUNDLE_IDENTIFIER}</string>
+<key>CFBundleIconFile</key><string>${BRIDGE_ICON_FILE}</string>
+<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+<key>CFBundleName</key><string>Blackglass Bridge</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>${version}</string>
+<key>CFBundleVersion</key><string>${version}</string>
+<key>BlackglassRendererVersion</key><string>${rendererVersion}</string>
+<key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>LSMultipleInstancesProhibited</key><true/>
+<key>NSHighResolutionCapable</key><true/>
+</dict></plist>
+`;
 }
 
 function signLauncher(executable: string, app: string): void {
