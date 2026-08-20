@@ -15,19 +15,25 @@ for (const directory of [first, second]) {
   ], { stdout: "pipe", stderr: "pipe" });
   if (verified.exitCode !== 0) throw new Error(verified.stderr.toString("utf8").trim());
 }
-const manifests = await Array.fromAsync(new Bun.Glob("blackglass-bridge-v*-macos-arm64.json").scan({ cwd: first, onlyFiles: true }));
-if (manifests.length !== 1) throw new Error("First standalone output has no unique manifest");
-const base = manifests[0]!.replace(/\.json$/u, "");
-const files = [base, `${base}.sha256`, `${base}.zip`, `${base}.zip.sha256`, `${base}.json`];
+const manifests = (
+  await Array.fromAsync(
+    new Bun.Glob("blackglass-bridge-v*-{macos-arm64,linux-amd64,linux-arm64}.json")
+      .scan({ cwd: first, onlyFiles: true }),
+  )
+).sort();
+if (manifests.length !== 3) throw new Error("First standalone output does not contain three manifests");
 const identities = [];
-for (const name of files) {
-  const firstBytes = await readFile(join(first, name));
-  const secondBytes = await readFile(join(second, name));
-  if (!firstBytes.equals(secondBytes)) throw new Error(`Independent standalone assets differ: ${name}`);
-  identities.push({ name: basename(name), sha256: createHash("sha256").update(firstBytes).digest("hex") });
+for (const manifest of manifests) {
+  const base = manifest.replace(/\.json$/u, "");
+  for (const name of [base, `${base}.sha256`, `${base}.zip`, `${base}.zip.sha256`, `${base}.json`]) {
+    const firstBytes = await readFile(join(first, name));
+    const secondBytes = await readFile(join(second, name));
+    if (!firstBytes.equals(secondBytes)) throw new Error(`Independent standalone assets differ: ${name}`);
+    identities.push({ name: basename(name), sha256: createHash("sha256").update(firstBytes).digest("hex") });
+  }
 }
 const output = resolve(outputArgument);
 await writeFile(output, `${JSON.stringify({
-  schemaVersion: 1, passed: true, sourceRevision: revision, separateOutputs: true, assets: identities,
+  schemaVersion: 2, passed: true, sourceRevision: revision, separateOutputs: true, assets: identities,
 }, null, 2)}\n`, { flag: "wx", mode: 0o600 });
 console.log(JSON.stringify({ passed: true, output, assets: identities }, null, 2));

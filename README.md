@@ -12,18 +12,21 @@ path as new Obsidian releases appear.
 
 The Bridge verifies an exact reviewed upstream artifact, applies narrow
 endpoint and CLI incisions to a local renderer, and emits an independently
-identified `Blackglass.app` launcher plus an auditable manifest and
-receipt. The launcher uses a private, byte-verified copy of the official runtime
-without modifying the installed app, starts it with a separate mode-`0700`
-profile, disables upstream renderer updates, and supervises the complete
-session. Keeping the official executable and helper identity avoids the runtime
-instability caused by renaming proprietary Electron components.
+identified Blackglass launcher plus an auditable receipt. It supports
+`Blackglass.app` on Apple Silicon macOS and rootless desktop/CLI installation
+images on Linux amd64 and arm64. The launcher uses a private, byte-verified copy
+of the official runtime without modifying the installed app, starts it with a
+separate mode-`0700` profile, disables upstream renderer updates, and supervises
+the complete session. Keeping the official executable and helper identity
+avoids the runtime instability caused by renaming proprietary Electron
+components.
 
 ## Install and adapt
 
-The Apple Silicon macOS release provides a standalone executable and ZIP. End
-users need macOS and their own official Obsidian DMG or application; Bun, Node,
-npm, and a source checkout are not required.
+Each release provides standalone executables and ZIPs for Apple Silicon macOS,
+Linux amd64, and Linux arm64. End users need the matching official Obsidian DMG,
+application, or Linux tar archive; Bun, Node, npm, and a source checkout are not
+required.
 
 ```sh
 shasum -a 256 -c blackglass-bridge-vVERSION-macos-arm64.sha256
@@ -39,16 +42,34 @@ See the [standalone guide](docs/bridge-cli.md) for app input and output details.
 Operators should deploy the companion Server first so the two exact HTTPS/WSS
 endpoints are ready.
 
+On Linux, select the executable matching `uname -m`, replace `VERSION`, and use
+the matching official 1.13.4 archive:
+
+```sh
+chmod 0755 blackglass-bridge-vVERSION-linux-amd64
+./blackglass-bridge-vVERSION-linux-amd64 adapt \
+  --tar "$HOME/Downloads/obsidian-1.13.4.tar.gz" \
+  --control-origin https://sync-control.example.com \
+  --data-host sync-data.example.com \
+  --output "$HOME/Downloads/Blackglass-linux"
+"$HOME/Downloads/Blackglass-linux/install.sh"
+blackglass --launch
+```
+
 ## Support and conformance
 
-Desktop Apple Silicon macOS and Sync are the initial product surface. The
+Desktop Apple Silicon macOS and Sync are the initial fully conformed product
+surface. The
 [generated compatibility matrix](compatibility/MATRIX.md) is the sole support
 claim for exact renderer, Bridge, Server, platform, scenario, report, and date
 combinations. A row appears only after packaged-client release/recovery,
 tenancy, custom-E2EE collaboration, and managed-encryption collaboration all
 pass against source-bound artifacts.
 
-Windows, Linux desktop, Intel Mac, mobile, Publish, and unrelated Obsidian
+Linux 1.13.4 desktop/CLI installers for amd64 and arm64 pass exact upstream,
+adaptation, installation, launch, isolated-socket, and CLI forwarding checks.
+They are not yet in the compatibility matrix because the full Linux Sync E2E
+suite has not run. Windows, Intel Mac, mobile, Publish, and unrelated Obsidian
 services are future work. Blackglass redirects the account and Sync traffic; it
 is not a network sandbox for plugins, embeds, Help, or other upstream features.
 
@@ -77,8 +98,8 @@ revision-mismatched state fails closed. See [E2E](docs/e2e.md) and
 ## Project boundary
 
 This repository owns client inspection, reviewed compatibility baselines,
-local adaptation, macOS packaging, client release artifacts, E2E orchestration,
-and the conformance suite. The Server repository owns the Rust service, SQLite
+local adaptation, macOS/Linux packaging, client release artifacts, E2E
+orchestration, and the conformance suite. The Server repository owns the Rust service, SQLite
 schema and migrations, Linux/container artifacts, deployment, backups, and
 operations. Detailed concerns live in their owning repository and are linked
 rather than duplicated.

@@ -1,10 +1,12 @@
 # Standalone Bridge
 
-The macOS Apple Silicon release includes a separately downloadable
-`blackglass-bridge-vVERSION-macos-arm64` executable and ZIP. It embeds only the
-independent adapter and reviewed hash-and-offset compatibility baselines. It
-does not contain Obsidian code, assets, or application binaries. End users do
-not need Bun, Node.js, npm, or a source checkout.
+Releases include separately downloadable executables and ZIPs for Apple Silicon
+macOS, Linux amd64, and Linux arm64. They embed only the independent adapter and
+reviewed hash-and-offset compatibility baselines. They do not contain Obsidian
+code, assets, or application binaries. End users do not need Bun, Node.js, npm,
+or a source checkout.
+
+## macOS
 
 Verify the adjacent checksum, make the executable runnable, and adapt an
 official artifact you obtained legitimately:
@@ -45,3 +47,50 @@ Official Blackglass Bridge release assets contain neither. Blackglass is
 independent from and not endorsed by Obsidian; users must supply their own
 legitimate Obsidian installation. This is a distribution boundary, not a legal
 conclusion.
+
+## Linux desktop and CLI
+
+Use `linux-amd64` when `uname -m` prints `x86_64`; use `linux-arm64` when it
+prints `aarch64` or `arm64`. Blackglass 0.5.0 Linux tooling accepts only the
+reviewed official Obsidian 1.13.4 tar archive for that architecture:
+
+| Architecture | Official archive | SHA-256 |
+| --- | --- | --- |
+| amd64 | `obsidian-1.13.4.tar.gz` | `ebac249f949b6894819fbb4bc5657ec8892f006cefed955d34a6c1ffe262f16b` |
+| arm64 | `obsidian-1.13.4-arm64.tar.gz` | `e2d44d26369bd035e1ad58f63113073fb791b52f4c26cce22ced63b492a7136e` |
+
+Verify and adapt without root access:
+
+```sh
+sha256sum -c blackglass-bridge-vVERSION-linux-amd64.sha256
+chmod 0755 blackglass-bridge-vVERSION-linux-amd64
+./blackglass-bridge-vVERSION-linux-amd64 adapt \
+  --tar "$HOME/Downloads/obsidian-1.13.4.tar.gz" \
+  --control-origin https://sync-control.example.com \
+  --data-host sync-data.example.com \
+  --output "$HOME/Downloads/Blackglass-linux"
+"$HOME/Downloads/Blackglass-linux/install.sh"
+```
+
+The installer writes one versioned client below
+`${XDG_DATA_HOME:-$HOME/.local/share}/blackglass`, a desktop entry and icon below
+the XDG data directory, and a `blackglass` command below
+`${XDG_BIN_HOME:-$HOME/.local/bin}`. Add that binary directory to `PATH` if your
+desktop distribution does not already do so.
+
+```sh
+blackglass --launch       # start the desktop client
+blackglass --help         # forward an Obsidian CLI request
+blackglass version        # CLI commands require a registered/open vault
+```
+
+The isolated Blackglass profile enables CLI access, disables upstream updates,
+and uses an owner-only runtime directory and `.blackglass-c.sock`; it does not
+reuse the upstream CLI socket. Every launch re-verifies the official runtime,
+adapted renderer, native CLI, and Bridge executable. The Linux client requires
+a graphical desktop session and the common shared libraries required by the
+official Obsidian tar distribution.
+
+The generated Linux directory contains the user's official runtime and adapted
+renderer. It is a local install image, not a public Blackglass release asset;
+do not redistribute it.

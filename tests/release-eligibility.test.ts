@@ -82,7 +82,7 @@ describe("current release qualification selection", () => {
     }
   });
 
-  test("routes tag publishing through the explicit eligibility command", async () => {
+  test("keeps stable eligibility while source-binding prerelease tooling", async () => {
     const packageMetadata = JSON.parse(
       await readFile(join(repositoryRoot, "package.json"), "utf8"),
     ) as { scripts: Record<string, string> };
@@ -97,7 +97,13 @@ describe("current release qualification selection", () => {
       'eligibility=$(bun run release:verify-eligibility -- "$GITHUB_SHA")',
     );
     expect(workflow).toContain(
-      'run: git checkout --detach "${{ steps.eligibility.outputs.source_revision }}"',
+      'if [[ "$GITHUB_REF_NAME" == *-* ]]; then',
+    );
+    expect(workflow).toContain(
+      'source_revision=$GITHUB_SHA',
+    );
+    expect(workflow).toContain(
+      'run: git checkout --detach "${{ steps.source.outputs.source_revision }}"',
     );
     expect(workflow).toContain(
       'bash scripts/build-standalone-bridge.sh "$source_revision" dist/release',

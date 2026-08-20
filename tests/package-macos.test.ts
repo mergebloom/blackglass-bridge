@@ -186,6 +186,8 @@ async function syntheticFixture(): Promise<Fixture> {
     "--define", `__BLACKGLASS_BRIDGE_VERSION__=${JSON.stringify("0.3.0")}`,
     "--define", `__BLACKGLASS_BRIDGE_REVISION__=${JSON.stringify(revision)}`,
     "--define", `__BLACKGLASS_TOOLING_SOURCE_JSON__=${JSON.stringify(JSON.stringify(sourceIdentity))}`,
+    "--define", `__BLACKGLASS_TARGET_OS__=${JSON.stringify("macOS")}`,
+    "--define", `__BLACKGLASS_TARGET_ARCH__=${JSON.stringify("arm64")}`,
   ], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
   expect(build.exitCode, build.stderr.toString()).toBe(0);
   return { root, sourceApp, patchedAsar, baseline, dmg, standalone, toolingSource, endpoints };

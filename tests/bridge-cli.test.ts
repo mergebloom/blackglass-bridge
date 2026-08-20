@@ -14,6 +14,8 @@ test("builds a self-contained Apple Silicon command with source attestation", as
       "--define", '__BLACKGLASS_BRIDGE_VERSION__="9.8.7"',
       "--define", `__BLACKGLASS_BRIDGE_REVISION__="${"a".repeat(40)}"`,
       "--define", '__BLACKGLASS_TOOLING_SOURCE_JSON__="{}"',
+      "--define", '__BLACKGLASS_TARGET_OS__="macOS"',
+      "--define", '__BLACKGLASS_TARGET_ARCH__="arm64"',
     ], { cwd: root, stdout: "pipe", stderr: "pipe" });
     expect(build.exitCode, build.stderr.toString()).toBe(0);
     const version = Bun.spawnSync([executable, "--version"], {

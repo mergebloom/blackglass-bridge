@@ -4,12 +4,16 @@ import { isSupportedSemver } from "./semver";
 
 export const STANDALONE_BRIDGE_BUILD_INFO_SCHEMA_VERSION = 1;
 
+export type StandaloneBridgeTarget =
+  | { operatingSystem: "macOS"; architecture: "arm64" }
+  | { operatingSystem: "Linux"; architecture: "amd64" | "arm64" };
+
 export interface StandaloneBridgeBuildInfo {
   schemaVersion: typeof STANDALONE_BRIDGE_BUILD_INFO_SCHEMA_VERSION;
   name: "blackglass-bridge";
   version: string;
   sourceRevision: string;
-  target: { operatingSystem: "macOS"; architecture: "arm64" };
+  target: StandaloneBridgeTarget;
   toolingSource: ToolingSourceIdentity;
 }
 
@@ -24,8 +28,7 @@ export function assertStandaloneBridgeBuildInfo(
     typeof value.sourceRevision !== "string" ||
     !/^[a-f0-9]{40}$/u.test(value.sourceRevision) ||
     !isRecord(value.target) ||
-    value.target.operatingSystem !== "macOS" ||
-    value.target.architecture !== "arm64"
+    !isStandaloneBridgeTarget(value.target)
   ) {
     throw new Error("Standalone Bridge build information is malformed");
   }
@@ -36,6 +39,16 @@ export function assertStandaloneBridgeBuildInfo(
   ) {
     throw new Error("Standalone Bridge is not bound to an exact clean tooling source");
   }
+}
+
+export function isStandaloneBridgeTarget(value: unknown): value is StandaloneBridgeTarget {
+  if (!isRecord(value)) return false;
+  return (
+    value.operatingSystem === "macOS" && value.architecture === "arm64"
+  ) || (
+    value.operatingSystem === "Linux" &&
+    (value.architecture === "amd64" || value.architecture === "arm64")
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -23,16 +23,16 @@ tooling_define=$(printf '%s' "$tooling_source" | bun -e 'process.stdout.write(JS
 
 mkdir -p "$output"
 output=$(cd -- "$output" && pwd -P)
-base="blackglass-bridge-v${version}-macos-arm64"
-binary="$output/$base"
-archive="$output/$base.zip"
-manifest="$output/$base.json"
 existing=0
-for path in "$binary" "$binary.sha256" "$archive" "$archive.sha256" "$manifest"; do
-  [[ ! -e "$path" && ! -L "$path" ]] || existing=$((existing + 1))
+for platform in macos-arm64 linux-amd64 linux-arm64; do
+  base="blackglass-bridge-v${version}-${platform}"
+  for suffix in '' .sha256 .zip .zip.sha256 .json; do
+    path="$output/$base$suffix"
+    [[ ! -e "$path" && ! -L "$path" ]] || existing=$((existing + 1))
+  done
 done
 if [[ $existing -gt 0 ]]; then
-  if [[ $existing -ne 5 ]]; then
+  if [[ $existing -ne 15 ]]; then
     echo "refusing partial standalone release output in $output" >&2
     exit 1
   fi
@@ -65,44 +65,64 @@ git -C "$root" archive --format=tar "$revision" | tar -xf - -C "$build_root"
 cp -R -- "$root/node_modules" "$build_root/node_modules"
 (cd -- "$build_root" && bun run tools/verify-release-dependencies.ts >/dev/null)
 
-cd -- "$build_root"
-bun build --compile --target=bun-darwin-arm64 tools/bridge-cli.ts \
-  --outfile "$binary" \
-  --define "__BLACKGLASS_BRIDGE_VERSION__=$version_define" \
-  --define "__BLACKGLASS_BRIDGE_REVISION__=$revision_define" \
-  --define "__BLACKGLASS_TOOLING_SOURCE_JSON__=$tooling_define"
-chmod 0755 "$binary"
-
-binary_sha=$(shasum -a 256 "$binary" | awk '{print $1}')
 baseline_1127=$(shasum -a 256 "$root/compatibility/obsidian-1.12.7.json" | awk '{print $1}')
 baseline_1134=$(shasum -a 256 "$root/compatibility/obsidian-1.13.4.json" | awk '{print $1}')
-bun -e '
-  const [path, version, revision, binary, binarySha, first, second, toolingSource] = Bun.argv.slice(1);
-  await Bun.write(path, JSON.stringify({
-    schemaVersion: 2,
-    name: "blackglass-bridge",
-    version,
-    sourceRevision: revision,
-    toolingSource: JSON.parse(toolingSource),
-    target: { operatingSystem: "macOS", architecture: "arm64" },
-    executable: binary,
-    executableSha256: binarySha,
-    embeddedCompatibilityBaselines: [
-      { rendererVersion: "1.12.7", sha256: first },
-      { rendererVersion: "1.13.4", sha256: second },
-    ],
-  }, null, 2) + "\n");
-' "$manifest" "$version" "$revision" "$base" "$binary_sha" "$baseline_1127" "$baseline_1134" "$tooling_source"
 
-staging=$(mktemp -d "${TMPDIR:-/tmp}/blackglass-bridge-release.XXXXXX")
-cp -- "$binary" "$manifest" "$root/LICENSE" "$root/docs/bridge-cli.md" "$staging/"
-mv -- "$staging/bridge-cli.md" "$staging/INSTALL.md"
-find "$staging" -exec touch -t 198001010000 {} +
-(cd -- "$staging" && COPYFILE_DISABLE=1 zip -X -9 -q "$archive" ./*)
+targets=(
+  "macos-arm64|bun-darwin-arm64|macOS|arm64"
+  "linux-amd64|bun-linux-x64-baseline|Linux|amd64"
+  "linux-arm64|bun-linux-arm64|Linux|arm64"
+)
+for target in "${targets[@]}"; do
+  IFS='|' read -r platform bun_target operating_system architecture <<<"$target"
+  base="blackglass-bridge-v${version}-${platform}"
+  binary="$output/$base"
+  archive="$output/$base.zip"
+  manifest="$output/$base.json"
+  os_define=$(printf '%s' "$operating_system" | bun -e 'process.stdout.write(JSON.stringify(await Bun.stdin.text()))')
+  architecture_define=$(printf '%s' "$architecture" | bun -e 'process.stdout.write(JSON.stringify(await Bun.stdin.text()))')
+  cd -- "$build_root"
+  bun build --compile --target="$bun_target" tools/bridge-cli.ts \
+    --outfile "$binary" \
+    --define "__BLACKGLASS_BRIDGE_VERSION__=$version_define" \
+    --define "__BLACKGLASS_BRIDGE_REVISION__=$revision_define" \
+    --define "__BLACKGLASS_TOOLING_SOURCE_JSON__=$tooling_define" \
+    --define "__BLACKGLASS_TARGET_OS__=$os_define" \
+    --define "__BLACKGLASS_TARGET_ARCH__=$architecture_define"
+  chmod 0755 "$binary"
+  binary_sha=$(shasum -a 256 "$binary" | awk '{print $1}')
+  bun -e '
+    const [path, version, revision, binary, binarySha, first, second, toolingSource, operatingSystem, architecture] = Bun.argv.slice(1);
+    await Bun.write(path, JSON.stringify({
+      schemaVersion: 3,
+      name: "blackglass-bridge",
+      version,
+      sourceRevision: revision,
+      toolingSource: JSON.parse(toolingSource),
+      target: { operatingSystem, architecture },
+      executable: binary,
+      executableSha256: binarySha,
+      embeddedCompatibilityBaselines: [
+        { rendererVersion: "1.12.7", sha256: first },
+        { rendererVersion: "1.13.4", sha256: second },
+      ],
+    }, null, 2) + "\n");
+  ' "$manifest" "$version" "$revision" "$base" "$binary_sha" "$baseline_1127" "$baseline_1134" "$tooling_source" "$operating_system" "$architecture"
 
-(cd -- "$output" && shasum -a 256 "$base" > "$base.sha256")
-(cd -- "$output" && shasum -a 256 "$base.zip" > "$base.zip.sha256")
+  staging=$(mktemp -d "${TMPDIR:-/tmp}/blackglass-bridge-release.XXXXXX")
+  cp -- "$binary" "$manifest" "$root/LICENSE" "$root/docs/bridge-cli.md" "$staging/"
+  mv -- "$staging/bridge-cli.md" "$staging/INSTALL.md"
+  find "$staging" -exec touch -t 198001010000 {} +
+  (cd -- "$staging" && COPYFILE_DISABLE=1 zip -X -9 -q "$archive" ./*)
+  rm -rf -- "$staging"
+  staging=
+  (cd -- "$output" && shasum -a 256 "$base" > "$base.sha256")
+  (cd -- "$output" && shasum -a 256 "$base.zip" > "$base.zip.sha256")
+done
 cd -- "$root"
 bun run tools/verify-standalone-bridge.ts "$output" "$revision"
-printf '%s\n%s\n%s\n%s\n%s\n' \
-  "$binary" "$binary.sha256" "$archive" "$archive.sha256" "$manifest"
+for platform in macos-arm64 linux-amd64 linux-arm64; do
+  base="$output/blackglass-bridge-v${version}-${platform}"
+  printf '%s\n%s\n%s\n%s\n%s\n' \
+    "$base" "$base.sha256" "$base.zip" "$base.zip.sha256" "$base.json"
+done

@@ -19,6 +19,8 @@ import {
 declare const __BLACKGLASS_BRIDGE_VERSION__: string;
 declare const __BLACKGLASS_BRIDGE_REVISION__: string;
 declare const __BLACKGLASS_TOOLING_SOURCE_JSON__: string;
+declare const __BLACKGLASS_TARGET_OS__: "macOS" | "Linux";
+declare const __BLACKGLASS_TARGET_ARCH__: "amd64" | "arm64";
 
 const compiled = typeof __BLACKGLASS_BRIDGE_VERSION__ !== "undefined";
 const rawArguments = Bun.argv.slice(2);
@@ -38,6 +40,13 @@ if (isPackagedLauncherInvocation()) {
   Bun.argv.splice(0, Bun.argv.length, process.execPath, "blackglass-bridge", ...commandArguments);
   if (command === "__patch") await import("./patch-client");
   else await import("./package-macos");
+} else if (command === "__linux-launch" || command === "__linux-cli") {
+  const bundle = commandArguments.shift();
+  if (!bundle || process.platform !== "linux") usage();
+  const runtime = await import("./linux-client-runtime");
+  process.exitCode = command === "__linux-launch"
+    ? await runtime.launchLinuxClient(bundle, commandArguments)
+    : await runtime.runLinuxCli(bundle, commandArguments);
 } else if (command === "adapt") {
   await adapt(commandArguments);
 } else if (command === "--version" || command === "version") {
@@ -49,7 +58,7 @@ if (isPackagedLauncherInvocation()) {
     name: "blackglass-bridge",
     version: await blackglassVersion(),
     sourceRevision: sourceRevision(),
-    target: { operatingSystem: "macOS", architecture: "arm64" },
+    target: standaloneTarget(),
     toolingSource: await toolingSourceIdentity() as StandaloneBridgeBuildInfo["toolingSource"],
   };
   console.log(JSON.stringify(info));
@@ -57,9 +66,45 @@ if (isPackagedLauncherInvocation()) {
   usage();
 }
 
+function standaloneTarget(): StandaloneBridgeBuildInfo["target"] {
+  if (compiled) {
+    return {
+      operatingSystem: __BLACKGLASS_TARGET_OS__,
+      architecture: __BLACKGLASS_TARGET_ARCH__,
+    } as StandaloneBridgeBuildInfo["target"];
+  }
+  return process.platform === "linux"
+    ? { operatingSystem: "Linux", architecture: process.arch === "arm64" ? "arm64" : "amd64" }
+    : { operatingSystem: "macOS", architecture: "arm64" };
+}
+
 async function adapt(arguments_: string[]): Promise<void> {
+  if (process.platform === "linux") {
+    if (!compiled) {
+      throw new Error("The adapt command requires the official standalone Blackglass Bridge executable");
+    }
+    const flags = parseStrictFlags(arguments_, {
+      valueFlags: ["--tar", "--control-origin", "--data-host", "--output"],
+    });
+    const archive = flags.values.get("--tar");
+    const controlOrigin = flags.values.get("--control-origin");
+    const dataHost = flags.values.get("--data-host");
+    const output = flags.values.get("--output");
+    if (!archive || !controlOrigin || !dataHost || !output) usage();
+    const { adaptLinuxClient } = await import("./adapt-linux");
+    await adaptLinuxClient({
+      archive,
+      controlOrigin,
+      dataHost,
+      output,
+      blackglassVersion: await blackglassVersion(),
+      bridgeRevision: sourceRevision(),
+      bridgeExecutable: process.execPath,
+    });
+    return;
+  }
   if (process.platform !== "darwin" || process.arch !== "arm64") {
-    throw new Error("Blackglass Bridge currently supports Apple Silicon macOS only");
+    throw new Error("Blackglass Bridge supports Apple Silicon macOS and Linux amd64/arm64");
   }
   const flags = parseStrictFlags(arguments_, {
     valueFlags: ["--dmg", "--app", "--control-origin", "--data-host", "--output"],
@@ -282,6 +327,8 @@ function run(arguments_: string[]): void {
 function usage(): never {
   console.error(
     "Usage: blackglass-bridge adapt (--dmg <official.dmg> | --app <official Obsidian.app>) " +
+      "--control-origin <https-origin> --data-host <host[:port]> --output <new-directory>\n" +
+      "       blackglass-bridge adapt --tar <official-linux.tar.gz> " +
       "--control-origin <https-origin> --data-host <host[:port]> --output <new-directory>\n" +
       "       blackglass-bridge --version\n" +
       "       blackglass-bridge build-info",
