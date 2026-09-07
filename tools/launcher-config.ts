@@ -75,6 +75,7 @@ export function bridgeLaunchConfigSha256(value: BridgeLaunchConfig): string {
 }
 
 export function packagedLauncherArguments(arguments_: string[]): {
+  previousAppPath?: string;
   profilePath?: string;
   vaultPath?: string;
   blackglassHomePath?: string;
@@ -84,6 +85,7 @@ export function packagedLauncherArguments(arguments_: string[]): {
   const values = new Map<string, string>();
   const runtimeArguments: string[] = [];
   const reserved = new Set([
+    "--blackglass-previous-app",
     "--blackglass-profile",
     "--blackglass-vault",
     "--blackglass-home",
@@ -103,6 +105,7 @@ export function packagedLauncherArguments(arguments_: string[]): {
     index += 1;
   }
   return {
+    ...(values.get("--blackglass-previous-app") ? { previousAppPath: values.get("--blackglass-previous-app")! } : {}),
     ...(values.get("--blackglass-profile") ? { profilePath: values.get("--blackglass-profile")! } : {}),
     ...(values.get("--blackglass-vault") ? { vaultPath: values.get("--blackglass-vault")! } : {}),
     ...(values.get("--blackglass-home") ? { blackglassHomePath: values.get("--blackglass-home")! } : {}),

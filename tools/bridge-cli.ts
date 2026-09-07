@@ -30,6 +30,7 @@ if (isPackagedLauncherInvocation()) {
   const launcher = packagedLauncherArguments(rawArguments);
   process.exitCode = await launchPackagedBridge({
     bundlePath: launcherBundlePath(),
+    ...(launcher.previousAppPath ? { previousAppPath: launcher.previousAppPath } : {}),
     ...(launcher.profilePath ? { profilePath: launcher.profilePath } : {}),
     ...(launcher.vaultPath ? { vaultPath: launcher.vaultPath } : {}),
     ...(launcher.blackglassHomePath ? { blackglassHomePath: launcher.blackglassHomePath } : {}),

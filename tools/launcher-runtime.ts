@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createConnection } from "node:net";
-import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { BLACKGLASS_HOME_ENVIRONMENT } from "../packages/client-adapter/src/runtime-home";
@@ -20,6 +20,7 @@ import { computeTreeIdentity } from "./tree-identity";
 import { stableJson } from "./stable-json";
 import { writeSignedPatchedCliBinary } from "./cli-binary";
 import { BLACKGLASS_CLI_EXECUTABLE_ENVIRONMENT } from "../packages/client-adapter/src/patch";
+import { readProfileSettings, selectProfileRenderer, type ProfileRenderer } from "./profile-renderer";
 
 export const BRIDGE_RUNTIME_RECEIPT_SCHEMA_VERSION = 1;
 
@@ -46,6 +47,7 @@ export interface BridgeRuntimeOptions {
   blackglassHomePath?: string;
   runtimeArguments?: string[];
   receiptPath?: string;
+  previousAppPath?: string;
 }
 
 export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promise<number> {
@@ -62,6 +64,15 @@ export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promi
     throw new Error("Embedded compatibility renderer no longer matches the signed launch contract");
   }
   await assertOfficialApp(config);
+  let previous: ProfileRenderer | undefined;
+  if (options.previousAppPath) {
+    const previousBundle = await canonicalExistingPath(options.previousAppPath, "previous Blackglass app", "directory");
+    const previousConfig = await verifyPackagedOfficialRuntime(previousBundle);
+    if (await sha256File(join(previousBundle, "Contents/Resources", previousConfig.adapterFileName)) !== previousConfig.adapterSha256) {
+      throw new Error("Previous app renderer does not match its launch contract");
+    }
+    previous = previousConfig;
+  }
   assertNoUnmanagedOfficialProcesses();
   assertSafeRuntimeArguments(options.runtimeArguments ?? []);
 
@@ -86,7 +97,7 @@ export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promi
   const launchLease = await acquireRuntimeLaunchLease(profile, bundlePath, profile);
   let primaryLaunchError: Error | undefined;
   try {
-    await prepareProfile(config, adapterPath, profile, vault);
+    await prepareProfile(config, adapterPath, profile, vault, previous);
     const localCli = await prepareLocalCli(config, profile);
     await clearStaleRendererLeases(blackglassHome);
 
@@ -398,35 +409,20 @@ async function prepareProfile(
   adapterPath: string,
   profile: string,
   vault: string | undefined,
+  previous?: ProfileRenderer,
 ): Promise<void> {
   await prepareProfileDirectory(profile);
-  const target = join(profile, config.adapterProfileFileName);
-  const aliases = (await readdir(profile)).filter((entry) => /^obsidian-\d+\.\d+\.\d+\.asar$/u.test(entry));
-  const unexpected = aliases.filter((entry) => entry !== config.adapterProfileFileName);
-  if (unexpected.length > 0) {
-    throw new Error(`Blackglass profile contains competing renderer aliases: ${unexpected.join(", ")}`);
-  }
-  if (await pathExists(target)) await assertOwnedRegularFile(target, "Blackglass profile renderer");
-  if (!(await pathExists(target)) || await sha256File(target) !== config.adapterSha256) {
-    const temporary = `${target}.next-${process.pid}-${randomUUID()}`;
-    await copyFile(adapterPath, temporary);
-    await chmod(temporary, 0o600);
-    await rename(temporary, target);
-  }
-  const archive = await AsarArchive.open(target);
+  const archive = await AsarArchive.open(adapterPath);
   const metadata = JSON.parse(archive.read("package.json").toString("utf8")) as { version?: unknown };
   if (metadata.version !== config.rendererVersion) {
     throw new Error("Installed compatibility renderer version does not match its launch contract");
   }
+  await selectProfileRenderer(profile, adapterPath, config, previous);
   const configPath = join(profile, "obsidian.json");
   let settings: Record<string, unknown> = {};
   if (await pathExists(configPath)) {
     await assertOwnedRegularFile(configPath, "Blackglass profile configuration");
-    const parsed = JSON.parse(await readFile(configPath, "utf8")) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error("Blackglass profile configuration is malformed");
-    }
-    settings = parsed as Record<string, unknown>;
+    settings = await readProfileSettings(configPath);
   }
   settings.updateDisabled = true;
   if (vault) {
@@ -466,7 +462,7 @@ export async function assertRuntimeProfile(config: BridgeLaunchConfig, profile: 
   if (await sha256File(join(profile, config.adapterProfileFileName)) !== config.adapterSha256) {
     throw new Error("Blackglass profile renderer changed during the session");
   }
-  const settings = JSON.parse(await readFile(join(profile, "obsidian.json"), "utf8")) as unknown;
+  const settings = await readProfileSettings(join(profile, "obsidian.json"));
   if (!settings || typeof settings !== "object" || Array.isArray(settings) ||
       (settings as Record<string, unknown>).updateDisabled !== true) {
     throw new Error("Blackglass profile update protection changed during the session");

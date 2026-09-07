@@ -48,6 +48,30 @@ independent from and not endorsed by Obsidian; users must supply their own
 legitimate Obsidian installation. This is a distribution boundary, not a legal
 conclusion.
 
+## macOS profile upgrades
+
+Quit the current client before opening a newly adapted, reviewed version. The
+launcher records the selected renderer hash in the isolated profile and keeps
+hash-addressed renderer history. A journal makes interrupted switches resumable
+by reopening the same new app. Account settings, vault registrations, and local
+notes are preserved; unknown aliases or mismatched hashes stop the launch.
+
+For a profile created before renderer receipts existed, keep the previous
+generated app and its private official runtime. Perform the first upgrade with:
+
+```sh
+open /path/to/new/Blackglass.app --args \
+  --blackglass-previous-app /path/to/previous/Blackglass.app
+```
+
+Both apps must verify, and the previous renderer must match the profile. Later
+upgrades use the receipt automatically. Renderer history is not a vault backup:
+back up local data before upgrades. Selecting an older renderer with a current
+launcher is supported, but does not guarantee downgrade compatibility of
+Obsidian's own local data formats. The runtime guard retries brief partial
+settings writes for up to 500 ms; persistent corruption, renderer changes, or
+disabled update protection still stop the client.
+
 ## Linux desktop and CLI
 
 Use `linux-amd64` when `uname -m` prints `x86_64`; use `linux-arm64` when it
