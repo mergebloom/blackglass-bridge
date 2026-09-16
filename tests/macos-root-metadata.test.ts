@@ -3,12 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import {
-  clearDetachedCodeSignatureAttributes,
   DETACHED_CODE_SIGNATURE_XATTRS,
   inspectMacOSRootMetadata,
 } from "../tools/macos-root-metadata";
 
-test("removes only detached signature caches from an embedded official app", async () => {
+test("permits only detached signature caches in an explicitly reviewed subtree", async () => {
   if (process.platform !== "darwin") return;
   const temporary = await mkdtemp(join(tmpdir(), "blackglass-root-metadata-"));
   const app = join(temporary, "Blackglass.app");
@@ -22,14 +21,18 @@ test("removes only detached signature caches from an embedded official app", asy
       expect(result.exitCode, result.stderr.toString()).toBe(0);
     }
     await expect(inspectMacOSRootMetadata(app)).rejects.toThrow("unsupported extended attribute");
-    await clearDetachedCodeSignatureAttributes(official);
-    const metadata = await inspectMacOSRootMetadata(app);
+    const metadata = await inspectMacOSRootMetadata(app, {
+      detachedSignatureCacheSubtrees: [official],
+    });
     expect(metadata.unsupportedXattrsAbsent).toBe(true);
-    const remaining = Bun.spawnSync(["/usr/bin/xattr", resource]);
-    expect(remaining.exitCode, remaining.stderr.toString()).toBe(0);
-    expect(remaining.stdout.toString().trim().split("\n")).toEqual([
-      "com.apple.provenance",
-    ]);
+    const unsupported = Bun.spawnSync(["/usr/bin/xattr", "-w", "com.example.unreviewed", "fixture", resource]);
+    expect(unsupported.exitCode, unsupported.stderr.toString()).toBe(0);
+    await expect(inspectMacOSRootMetadata(app, {
+      detachedSignatureCacheSubtrees: [official],
+    })).rejects.toThrow("unsupported extended attribute");
+    await expect(inspectMacOSRootMetadata(app, {
+      detachedSignatureCacheSubtrees: [temporary],
+    })).rejects.toThrow("escapes the app");
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }

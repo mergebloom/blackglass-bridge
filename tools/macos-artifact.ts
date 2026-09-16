@@ -128,7 +128,9 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     await readFile(join(officialAppPath, "Contents/MacOS/obsidian-cli")),
   );
   const codeInventory = await inspectMacOSCodeInventory(appPath, "strict-all-architectures");
-  const rootMetadata = await inspectMacOSRootMetadata(appPath);
+  const rootMetadata = await inspectMacOSRootMetadata(appPath, {
+    detachedSignatureCacheSubtrees: [officialAppPath],
+  });
   const applicationTreeIdentity = await computeTreeIdentity(appPath);
   return {
     schemaVersion: 10,

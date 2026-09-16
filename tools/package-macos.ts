@@ -11,10 +11,7 @@ import { embeddedAssetBytes } from "./embedded-asset";
 import { inspectMacOSCodeInventory, macOSCodeInventoriesEqual } from "./macos-code-inventory";
 import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
 import { createMacOSPackageReceipt, serializeMacOSPackageReceipt } from "./macos-package-receipt";
-import {
-  clearDetachedCodeSignatureAttributes,
-  clearMacOSAppExtendedAttributes,
-} from "./macos-root-metadata";
+import { clearMacOSAppExtendedAttributes } from "./macos-root-metadata";
 import {
   adapterProfileFileName,
   BRIDGE_APPLICATION_NAME,
@@ -184,11 +181,6 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     "--rsrc", "--extattr", "--noqtn", "--noacl", "--nopersistRootless",
     sourceApp, embeddedOfficialApp,
   ]);
-  // macOS can attach detached signature caches to files read from a DMG. They
-  // are not part of the signed application and become stale when provenance is
-  // added to the writable copy, invalidating an otherwise intact signature.
-  // Remove only those caches; preserve every application byte and other xattr.
-  await clearDetachedCodeSignatureAttributes(embeddedOfficialApp);
   const embeddedOfficialTree = await computeTreeIdentity(embeddedOfficialApp);
   if (stableJson(embeddedOfficialTree) !== stableJson(sourceTree)) {
     throw new Error("Embedded official runtime differs from its reviewed source");
