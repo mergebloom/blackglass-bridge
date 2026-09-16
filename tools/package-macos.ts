@@ -211,6 +211,22 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   };
   await writeFile(join(resources, "bridge-launch.json"), `${stableJson(launchConfig)}\n`, { mode: 0o600 });
   await writeFile(join(contents, "Info.plist"), infoPlist(blackglassVersion, rendererVersion), { mode: 0o644 });
+  // macOS 26 attaches provenance metadata asynchronously to files copied from
+  // a mounted DMG. Signing the containing app before that work settles can
+  // leave the preserved upstream nested signature invalid several seconds
+  // later. Release executables wait for quiescence, reverify the official app,
+  // and only then seal the Blackglass wrapper. Development tests retain their
+  // fast deterministic path and still exercise the same verification calls.
+  if (packagingExecutionMode(standaloneExecutable) === "standalone") {
+    await Bun.sleep(25_000);
+    const settledOfficialCodeInventory = await inspectMacOSCodeInventory(
+      embeddedOfficialApp,
+      "strict-all-architectures",
+    );
+    if (!macOSCodeInventoriesEqual(settledOfficialCodeInventory, sourceCodeInventory)) {
+      throw new Error("Embedded official runtime changed while macOS metadata settled");
+    }
+  }
   signLauncher(launcherExecutable, stagedApp);
   const artifact = await inspectMacOSArtifact(stagedApp);
   const publicArtifact = publicMacOSArtifact(artifact);
