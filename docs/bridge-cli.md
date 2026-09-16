@@ -27,15 +27,15 @@ upstream provenance required for formal conformance and publication.
 
 The command fails if the upstream identity, renderer inventory, wrapper,
 incision hashes, code inventory, endpoint format, or output path differs from
-the reviewed contract. It creates `Blackglass.app`, a release manifest,
-and a package receipt. It also installs an owner-only, hash-addressed copy of the
-official runtime under `~/Library/Application Support/Blackglass Runtimes/Official`;
-neither the supplied artifact nor an installed Obsidian app is
-modified.
+the reviewed contract. It creates a self-contained `Blackglass.app`, a release
+manifest, and a package receipt. The reviewed official runtime is copied into
+the generated app; neither the supplied artifact nor an installed Obsidian app
+is modified.
 
-The launcher contains only the standalone Blackglass executable and the
-locally adapted renderer. It verifies the private official runtime before every
-launch, refuses to run beside an unmanaged Obsidian instance, selects one exact
+The generated app contains the standalone Blackglass executable, the locally
+adapted renderer, and the user's reviewed official runtime. It verifies that
+embedded official runtime before every launch, refuses to run beside an
+unmanaged Obsidian instance, selects one exact
 reviewed renderer alias, uses an isolated Blackglass profile, disables renderer
 updates, generates a local `blackglass` CLI from the verified upstream CLI, and
 supervises the official child until shutdown. The private runtime preserves the
@@ -57,7 +57,7 @@ by reopening the same new app. Account settings, vault registrations, and local
 notes are preserved; unknown aliases or mismatched hashes stop the launch.
 
 For a profile created before renderer receipts existed, keep the previous
-generated app and its private official runtime. Perform the first upgrade with:
+generated app. Perform the first upgrade with:
 
 ```sh
 open /path/to/new/Blackglass.app --args \

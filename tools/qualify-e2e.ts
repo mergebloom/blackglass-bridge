@@ -33,6 +33,7 @@ import {
 import { inspectServerArtifact, publicServerArtifact } from "./server-artifact";
 import { parseBlackglassReleaseManifest } from "./release-manifest";
 import { readPackagedBridgeConfig } from "./launcher-runtime";
+import { embeddedOfficialAppPath } from "./launcher-config";
 import {
   assertRecoveryReportResetBinding,
   assertSourceLossResetRecord,
@@ -219,7 +220,7 @@ assertFinderLaunchSmokeEvidence(finderSmoke, {
   runManifestSha256: preparedRun.manifestSha256,
   releaseManifestSha256: preparedRun.manifest.releaseManifestSha256,
   appPath: recordedClient.appPath,
-  officialAppPath: finderLaunchConfig.officialAppPath,
+  officialAppPath: embeddedOfficialAppPath(recordedClient.appPath),
   launcherExecutablePath: join(recordedClient.appPath, "Contents/MacOS/blackglass-bridge"),
   artifact: publicMacOSArtifact(recordedClient),
   controlOrigin: preparedRun.manifest.endpoints.controlOrigin,

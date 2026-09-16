@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { resolve } from "node:path";
 import type { MacOSCodeInventory } from "./macos-code-inventory";
 import type { TreeIdentity } from "./tree-identity";
 import { stableJson } from "./stable-json";
 
-export const BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION = 1;
+export const BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION = 2;
 export const BRIDGE_BUNDLE_NAME = "Blackglass.app" as const;
 export const LEGACY_BRIDGE_BUNDLE_NAME = "Blackglass Bridge.app" as const;
 export const BRIDGE_APPLICATION_NAME = "Blackglass" as const;
@@ -11,6 +12,11 @@ export const BRIDGE_BUNDLE_IDENTIFIER = "com.blackglass.bridge" as const;
 export const BRIDGE_EXECUTABLE_NAME = "blackglass-bridge" as const;
 export const BRIDGE_ICON_FILE = "blackglass-prism.icns" as const;
 export const BRIDGE_PROFILE_DIRECTORY = "Blackglass Profile" as const;
+export const BRIDGE_OFFICIAL_APP_RELATIVE_PATH = "Contents/Resources/Obsidian.app" as const;
+
+export function embeddedOfficialAppPath(bundlePath: string): string {
+  return resolve(bundlePath, BRIDGE_OFFICIAL_APP_RELATIVE_PATH);
+}
 
 export interface BridgeLaunchConfig {
   schemaVersion: typeof BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION;
@@ -19,7 +25,7 @@ export interface BridgeLaunchConfig {
   adapterFileName: "blackglass.asar";
   adapterSha256: string;
   adapterProfileFileName: string;
-  officialAppPath: string;
+  officialAppRelativePath: typeof BRIDGE_OFFICIAL_APP_RELATIVE_PATH;
   officialBundleIdentifier: "md.obsidian";
   officialExecutableName: "Obsidian";
   officialAppTree: TreeIdentity;
@@ -53,9 +59,7 @@ export function assertBridgeLaunchConfig(
     value.adapterFileName !== "blackglass.asar" ||
     !isSha256(value.adapterSha256) ||
     value.adapterProfileFileName !== adapterProfileFileName(value.rendererVersion) ||
-    typeof value.officialAppPath !== "string" ||
-    !value.officialAppPath.startsWith("/") ||
-    !value.officialAppPath.endsWith("/Obsidian.app") ||
+    value.officialAppRelativePath !== BRIDGE_OFFICIAL_APP_RELATIVE_PATH ||
     value.officialBundleIdentifier !== "md.obsidian" ||
     value.officialExecutableName !== "Obsidian" ||
     !isTreeIdentity(value.officialAppTree) ||

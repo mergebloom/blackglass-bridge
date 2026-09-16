@@ -52,7 +52,7 @@ import {
   type BridgeRuntimeReceipt,
   verifyPackagedOfficialRuntime,
 } from "./launcher-runtime";
-import { BRIDGE_EXECUTABLE_NAME } from "./launcher-config";
+import { BRIDGE_EXECUTABLE_NAME, embeddedOfficialAppPath } from "./launcher-config";
 import { removeProfileSingletonArtifacts } from "./profile-singletons";
 import { superviseTerminationSignals } from "./termination-signal-supervisor";
 
@@ -149,7 +149,11 @@ if (bundleIdentifier !== "com.blackglass.bridge") {
 }
 const appArtifact = await inspectMacOSArtifact(appBundle);
 const launchConfig = await verifyPackagedOfficialRuntime(appBundle);
-const runtimeApp = await canonicalExistingPath(launchConfig.officialAppPath, "official Obsidian runtime", "directory");
+const runtimeApp = await canonicalExistingPath(
+  embeddedOfficialAppPath(appBundle),
+  "embedded official Obsidian runtime",
+  "directory",
+);
 const executableName = launchConfig.officialExecutableName;
 const executable = await canonicalExistingPath(
   join(runtimeApp, "Contents/MacOS", executableName),

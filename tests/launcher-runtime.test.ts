@@ -5,7 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import type { BridgeLaunchConfig } from "../tools/launcher-config";
-import { packagedLauncherArguments } from "../tools/launcher-config";
+import {
+  BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION,
+  BRIDGE_OFFICIAL_APP_RELATIVE_PATH,
+  assertBridgeLaunchConfig,
+  embeddedOfficialAppPath,
+  packagedLauncherArguments,
+} from "../tools/launcher-config";
 import { runtimeReceiptPathForClientIdentity } from "../tools/e2e-client";
 import {
   assertRuntimeProfile,
@@ -17,6 +23,42 @@ import {
   unmanagedOfficialProcesses,
 } from "../tools/launcher-runtime";
 import { superviseTerminationSignals } from "../tools/termination-signal-supervisor";
+
+test("binds the official runtime to the generated app instead of the build machine", () => {
+  const digest = "0".repeat(64);
+  const config = {
+    schemaVersion: BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION,
+    blackglassVersion: "0.4.1",
+    rendererVersion: "1.13.4",
+    adapterFileName: "blackglass.asar",
+    adapterSha256: digest,
+    adapterProfileFileName: "obsidian-1.13.5.asar",
+    officialAppRelativePath: BRIDGE_OFFICIAL_APP_RELATIVE_PATH,
+    officialBundleIdentifier: "md.obsidian",
+    officialExecutableName: "Obsidian",
+    officialAppTree: {
+      formatVersion: 1, sha256: digest, entries: 1, files: 1,
+      directories: 0, symlinks: 0, fileBytes: 1,
+    },
+    officialCodeInventory: {
+      formatVersion: 1,
+      sha256: digest,
+      entries: [{ path: ".", kind: "bundle", architectures: [] }],
+    },
+    profileDirectory: "Blackglass Profile",
+    profileMode: 0o700,
+    updateDisabled: true,
+    requireExclusiveOfficialInstance: true,
+  };
+  expect(() => assertBridgeLaunchConfig(config)).not.toThrow();
+  expect(embeddedOfficialAppPath("/Applications/Blackglass.app")).toBe(
+    "/Applications/Blackglass.app/Contents/Resources/Obsidian.app",
+  );
+  expect(() => assertBridgeLaunchConfig({
+    ...config,
+    officialAppRelativePath: "/Users/build/Obsidian.app",
+  })).toThrow("Invalid Blackglass Bridge launch configuration");
+});
 
 test("forwards termination while preserving the parent cleanup path", async () => {
   const signals = new EventEmitter();
@@ -67,7 +109,7 @@ test("cancels termination escalation after a clean child exit", async () => {
 test("allows the canonical profile inside an isolated runtime home only", () => {
   const base = {
     bundlePath: "/build/Blackglass.app",
-    officialAppPath: "/private/runtime/Obsidian.app",
+    officialAppPath: "/build/Blackglass.app/Contents/Resources/Obsidian.app",
     normalObsidianProfilePath: "/Users/example/Library/Application Support/Obsidian",
     vaultPath: "/vaults/example",
   };
@@ -81,6 +123,12 @@ test("allows the canonical profile inside an isolated runtime home only", () => 
     blackglassHomePath: "/runtime/separate",
     profilePath: "/profiles/separate",
   })).not.toThrow();
+  expect(() => assertSafeRuntimePathLayout({
+    ...base,
+    officialAppPath: "/private/runtime/Obsidian.app",
+    blackglassHomePath: "/runtime/separate",
+    profilePath: "/profiles/separate",
+  })).toThrow("must be embedded");
   expect(() => assertSafeRuntimePathLayout({
     ...base,
     blackglassHomePath: "/profiles/blackglass/runtime",

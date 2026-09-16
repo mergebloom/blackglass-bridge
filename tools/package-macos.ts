@@ -19,6 +19,7 @@ import {
   BRIDGE_EXECUTABLE_NAME,
   BRIDGE_ICON_FILE,
   BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION,
+  BRIDGE_OFFICIAL_APP_RELATIVE_PATH,
   BRIDGE_PROFILE_DIRECTORY,
   type BridgeLaunchConfig,
 } from "./launcher-config";
@@ -167,12 +168,22 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   const launcherExecutable = join(macos, BRIDGE_EXECUTABLE_NAME);
   const embeddedAdapter = join(resources, "blackglass.asar");
   const embeddedIcon = join(resources, BRIDGE_ICON_FILE);
+  const embeddedOfficialApp = join(stagedApp, BRIDGE_OFFICIAL_APP_RELATIVE_PATH);
   await copyFile(standaloneExecutable, launcherExecutable);
   await chmod(launcherExecutable, 0o755);
   await copyFile(patchedAsar, embeddedAdapter);
   await chmod(embeddedAdapter, 0o600);
   await copyFile(bridgeIconPath, embeddedIcon);
   await chmod(embeddedIcon, 0o644);
+  run([
+    MACOS_PACKAGING_EXECUTABLES.ditto,
+    "--norsrc", "--noextattr", "--noqtn", "--noacl", "--nopersistRootless",
+    sourceApp, embeddedOfficialApp,
+  ]);
+  const embeddedOfficialTree = await computeTreeIdentity(embeddedOfficialApp);
+  if (stableJson(embeddedOfficialTree) !== stableJson(sourceTree)) {
+    throw new Error("Embedded official runtime differs from its reviewed source");
+  }
   const launchConfig: BridgeLaunchConfig = {
     schemaVersion: BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION,
     blackglassVersion,
@@ -180,7 +191,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     adapterFileName: "blackglass.asar",
     adapterSha256: reproduced.report.patchedSha256,
     adapterProfileFileName: adapterProfileFileName(rendererVersion),
-    officialAppPath: sourceApp,
+    officialAppRelativePath: BRIDGE_OFFICIAL_APP_RELATIVE_PATH,
     officialBundleIdentifier: "md.obsidian",
     officialExecutableName: "Obsidian",
     officialAppTree: sourceTree,

@@ -61,6 +61,7 @@ import {
   type BridgeRuntimeReceipt,
   readPackagedBridgeConfig,
 } from "./launcher-runtime";
+import { embeddedOfficialAppPath } from "./launcher-config";
 import { computeTreeIdentity } from "./tree-identity";
 
 const [rootArgument, ...flags] = Bun.argv.slice(2);
@@ -99,8 +100,8 @@ const appPath = await canonicalExistingPath(
 const currentClient = await inspectMacOSArtifact(appPath);
 const launchConfig = await readPackagedBridgeConfig(appPath);
 const officialAppPath = await canonicalExistingPath(
-  launchConfig.officialAppPath,
-  "Prepared official Obsidian runtime",
+  embeddedOfficialAppPath(appPath),
+  "Prepared embedded official Obsidian runtime",
   "directory",
 );
 const officialTreeBefore = await computeTreeIdentity(officialAppPath);

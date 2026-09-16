@@ -24,7 +24,7 @@ import { verifyMacOSReproducibility } from "../tools/verify-macos-reproducibilit
 
 const projectRoot = resolve(import.meta.dir, "..");
 
-test("packages only the open launcher and locally generated adapter", async () => {
+test("packages a self-contained local app with its reviewed official runtime", async () => {
   if (process.platform !== "darwin" || process.arch !== "arm64") return;
   const fixture = await syntheticFixture();
   const first = join(fixture.root, "first");
@@ -44,21 +44,19 @@ test("packages only the open launcher and locally generated adapter", async () =
     officialAppUnmodified: true,
     exactOfficialAppVerifiedAtEveryLaunch: true,
   });
-  expect(artifact.codeInventory.entries.map((entry) => entry.path)).toEqual([
-    ".",
-    "Contents/MacOS/blackglass-bridge",
-  ]);
+  const codePaths = artifact.codeInventory.entries.map((entry) => entry.path);
+  expect(codePaths).toContain(".");
+  expect(codePaths).toContain("Contents/MacOS/blackglass-bridge");
+  expect(codePaths).toContain("Contents/Resources/Obsidian.app");
+  expect(codePaths).toContain("Contents/Resources/Obsidian.app/Contents/MacOS/Obsidian");
+  expect(codePaths).toContain("Contents/Resources/Obsidian.app/Contents/MacOS/obsidian-cli");
   const packagedIcon = join(firstPaths.app, "Contents/Resources", BRIDGE_ICON_FILE);
   expect(await Bun.file(packagedIcon).exists()).toBe(true);
   expect((await readFile(packagedIcon)).subarray(0, 4).toString("ascii")).toBe("icns");
-  for (const forbidden of [
-    "Contents/MacOS/Obsidian",
-    "Contents/MacOS/obsidian-cli",
-    "Contents/Resources/app.asar",
-    "Contents/Frameworks",
-  ]) {
-    expect(await Bun.file(join(firstPaths.app, forbidden)).exists()).toBe(false);
-  }
+  expect(await Bun.file(join(
+    firstPaths.app,
+    "Contents/Resources/Obsidian.app/Contents/Resources/app.asar",
+  )).exists()).toBe(true);
   const release = parseBlackglassReleaseManifest(await readFile(firstPaths.manifest));
   expect(release.packagingToolchain.executionMode).toBe("development");
   expect(stableJson(release.packagingToolchain)).toBe(

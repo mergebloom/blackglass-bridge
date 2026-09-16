@@ -11,11 +11,19 @@ import {
   type BridgeLaunchConfig,
   BRIDGE_BUNDLE_NAME,
   BRIDGE_ICON_FILE,
+  BRIDGE_OFFICIAL_APP_RELATIVE_PATH,
+  embeddedOfficialAppPath,
   LEGACY_BRIDGE_BUNDLE_NAME,
   BRIDGE_PROFILE_DIRECTORY,
 } from "./launcher-config";
 import { inspectMacOSCodeInventory, macOSCodeInventoriesEqual } from "./macos-code-inventory";
-import { assertNonOverlappingPaths, canonicalExistingPath, canonicalOutputPath, pathExists } from "./path-safety";
+import {
+  assertNonOverlappingPaths,
+  canonicalExistingPath,
+  canonicalOutputPath,
+  pathExists,
+  pathsEqual,
+} from "./path-safety";
 import { computeTreeIdentity } from "./tree-identity";
 import { stableJson } from "./stable-json";
 import { writeSignedPatchedCliBinary } from "./cli-binary";
@@ -63,7 +71,7 @@ export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promi
   if (await sha256File(adapterPath) !== config.adapterSha256) {
     throw new Error("Embedded compatibility renderer no longer matches the signed launch contract");
   }
-  await assertOfficialApp(config);
+  const officialAppPath = await assertOfficialApp(bundlePath, config);
   let previous: ProfileRenderer | undefined;
   if (options.previousAppPath) {
     const previousBundle = await canonicalExistingPath(options.previousAppPath, "previous Blackglass app", "directory");
@@ -87,7 +95,7 @@ export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promi
     : undefined;
   assertSafeRuntimePathLayout({
     bundlePath,
-    officialAppPath: config.officialAppPath,
+    officialAppPath,
     profilePath: profile,
     blackglassHomePath: blackglassHome,
     normalObsidianProfilePath: join(homedir(), "Library/Application Support/Obsidian"),
@@ -98,10 +106,10 @@ export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promi
   let primaryLaunchError: Error | undefined;
   try {
     await prepareProfile(config, adapterPath, profile, vault, previous);
-    const localCli = await prepareLocalCli(config, profile);
+    const localCli = await prepareLocalCli(config, profile, officialAppPath);
     await clearStaleRendererLeases(blackglassHome);
 
-    const executable = join(config.officialAppPath, "Contents/MacOS", config.officialExecutableName);
+    const executable = join(officialAppPath, "Contents/MacOS", config.officialExecutableName);
     const blackglassIcon = await canonicalExistingPath(
       join(bundlePath, "Contents/Resources", BRIDGE_ICON_FILE),
       "Blackglass application icon",
@@ -145,7 +153,7 @@ export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promi
           officialPid: child.pid,
           officialChildOfLauncher: true,
           bundlePath,
-          officialAppPath: config.officialAppPath,
+          officialAppPath,
           officialAppTreeSha256: config.officialAppTree.sha256,
           adapterSha256: config.adapterSha256,
           profilePath: profile,
@@ -166,7 +174,7 @@ export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promi
         ]);
         if (state.exited) {
           await waitForRuntimeShutdown(ownedProcesses, blackglassHome);
-          return await verifyOfficialRuntimeAfterSession(config, state.code);
+          return await verifyOfficialRuntimeAfterSession(config, officialAppPath, state.code);
         }
         trackOfficialProcessTree(child.pid, ownedProcesses);
         assertNoUnmanagedOfficialProcesses();
@@ -178,7 +186,7 @@ export async function launchPackagedBridge(options: BridgeRuntimeOptions): Promi
       for (const action of [
         () => terminateChild(child, ownedProcesses),
         () => waitForRuntimeShutdown(ownedProcesses, blackglassHome),
-        () => verifyOfficialRuntimeAfterSession(config, 0).then(() => undefined),
+        () => verifyOfficialRuntimeAfterSession(config, officialAppPath, 0).then(() => undefined),
       ]) {
         try { await action(); } catch (cleanupError) { cleanupErrors.push(asError(cleanupError)); }
       }
@@ -221,9 +229,11 @@ export function assertSafeRuntimePathLayout(paths: {
   normalObsidianProfilePath: string;
   vaultPath?: string;
 }): void {
+  if (!pathsEqual(paths.officialAppPath, embeddedOfficialAppPath(paths.bundlePath))) {
+    throw new Error("Official application must be embedded inside the Blackglass bundle");
+  }
   const protectedPaths = [
     { label: "Bridge bundle", path: paths.bundlePath },
-    { label: "Official application", path: paths.officialAppPath },
     { label: "Normal Obsidian profile", path: paths.normalObsidianProfilePath },
     ...(paths.vaultPath ? [{ label: "Vault", path: paths.vaultPath }] : []),
   ];
@@ -259,8 +269,12 @@ export function assertSafeRuntimePathLayout(paths: {
   }
 }
 
-async function verifyOfficialRuntimeAfterSession(config: BridgeLaunchConfig, exitCode: number): Promise<number> {
-  const finalTree = await computeTreeIdentity(config.officialAppPath);
+async function verifyOfficialRuntimeAfterSession(
+  config: BridgeLaunchConfig,
+  officialAppPath: string,
+  exitCode: number,
+): Promise<number> {
+  const finalTree = await computeTreeIdentity(officialAppPath);
   if (stableJson(finalTree) !== stableJson(config.officialAppTree)) {
     throw new Error("Official Obsidian runtime changed during the Blackglass session");
   }
@@ -352,12 +366,16 @@ export async function readPackagedBridgeConfig(bundlePath: string): Promise<Brid
 
 export async function verifyPackagedOfficialRuntime(bundlePath: string): Promise<BridgeLaunchConfig> {
   const config = await readPackagedBridgeConfig(bundlePath);
-  await assertOfficialApp(config);
+  await assertOfficialApp(bundlePath, config);
   return config;
 }
 
-async function assertOfficialApp(config: BridgeLaunchConfig): Promise<void> {
-  const official = await canonicalExistingPath(config.officialAppPath, "official Obsidian app", "directory");
+async function assertOfficialApp(bundlePath: string, config: BridgeLaunchConfig): Promise<string> {
+  const official = await canonicalExistingPath(
+    join(bundlePath, BRIDGE_OFFICIAL_APP_RELATIVE_PATH),
+    "embedded official Obsidian app",
+    "directory",
+  );
   if (basename(official) !== "Obsidian.app") throw new Error("Official application must be Obsidian.app");
   const actualTree = await computeTreeIdentity(official);
   if (stableJson(actualTree) !== stableJson(config.officialAppTree)) {
@@ -367,6 +385,7 @@ async function assertOfficialApp(config: BridgeLaunchConfig): Promise<void> {
   if (!macOSCodeInventoriesEqual(inventory, config.officialCodeInventory)) {
     throw new Error("Official Obsidian code inventory no longer matches the reviewed source");
   }
+  return official;
 }
 
 function assertNoUnmanagedOfficialProcesses(): void {
@@ -473,8 +492,12 @@ async function sha256File(path: string): Promise<string> {
   return createHash("sha256").update(await readFile(path)).digest("hex");
 }
 
-export async function prepareLocalCli(config: BridgeLaunchConfig, profile: string): Promise<string> {
-  const upstream = join(config.officialAppPath, "Contents/MacOS/obsidian-cli");
+export async function prepareLocalCli(
+  config: BridgeLaunchConfig,
+  profile: string,
+  officialAppPath: string,
+): Promise<string> {
+  const upstream = join(officialAppPath, "Contents/MacOS/obsidian-cli");
   const target = join(profile, "blackglass-cli");
   if (await pathExists(target)) await assertOwnedRegularFile(target, "Blackglass local CLI");
   const temporary = `${target}.next-${process.pid}-${randomUUID()}`;

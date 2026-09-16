@@ -10,6 +10,7 @@ import {
   BRIDGE_BUNDLE_NAME,
   BRIDGE_EXECUTABLE_NAME,
   BRIDGE_ICON_FILE,
+  BRIDGE_OFFICIAL_APP_RELATIVE_PATH,
   BRIDGE_PROFILE_DIRECTORY,
   type BridgeLaunchConfig,
 } from "./launcher-config";
@@ -114,6 +115,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   }
   const config = JSON.parse(configBytes.toString("utf8")) as unknown;
   assertBridgeLaunchConfig(config);
+  const officialAppPath = join(appPath, BRIDGE_OFFICIAL_APP_RELATIVE_PATH);
   if (
     config.blackglassVersion !== plistString(infoPlist, "CFBundleShortVersionString") ||
     config.rendererVersion !== plistString(infoPlist, "BlackglassRendererVersion")
@@ -123,7 +125,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
   const adapterSha256 = await sha256File(join(appPath, "Contents/Resources", config.adapterFileName));
   if (adapterSha256 !== config.adapterSha256) throw new Error("Embedded adapter does not match launch contract");
   const generatedCliSha256 = await signedPatchedCliBinarySha256(
-    await readFile(join(config.officialAppPath, "Contents/MacOS/obsidian-cli")),
+    await readFile(join(officialAppPath, "Contents/MacOS/obsidian-cli")),
   );
   const codeInventory = await inspectMacOSCodeInventory(appPath, "strict-all-architectures");
   const rootMetadata = await inspectMacOSRootMetadata(appPath);
@@ -150,7 +152,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     officialCodeInventorySha256: config.officialCodeInventory.sha256,
     officialExecutableName: config.officialExecutableName,
     officialExecutableSha256: await sha256File(
-      join(config.officialAppPath, "Contents/MacOS", config.officialExecutableName),
+      join(officialAppPath, "Contents/MacOS", config.officialExecutableName),
     ),
     codeDirectoryHash: appSignature.cdHash,
     applicationTreeSha256: applicationTreeIdentity.sha256,

@@ -37,6 +37,7 @@ import { parseBlackglassReleaseManifest } from "./release-manifest";
 import { isSupportedStableSemver } from "./semver";
 import { stableJson } from "./stable-json";
 import { readPackagedBridgeConfig } from "./launcher-runtime";
+import { embeddedOfficialAppPath } from "./launcher-config";
 import {
   releaseUiCheckpointPaths,
   releasePrimaryUiCheckpoints,
@@ -193,6 +194,7 @@ assertMacOSReproducibilityEvidenceBinds(
 );
 const clientLaunchIdentities = new Map<string, ClientLaunchIdentity>();
 const liveClientBindings = new Map<string, LiveClientLaunchBinding>();
+const officialAppPath = embeddedOfficialAppPath(recordedClient.appPath);
 for (const client of ["client-a", "client-b"] as const) {
   const identityPath = resolve(root, `${client}-launch.json`);
   const liveBinding = await verifyLiveClientLaunchBinding(identityPath);
@@ -207,9 +209,9 @@ for (const client of ["client-a", "client-b"] as const) {
     identity.launcherExecutablePath !==
       resolve(recordedClient.appPath, "Contents/MacOS", recordedClient.executableName) ||
     identity.launcherExecutableSha256 !== recordedClient.executableSha256 ||
-    identity.officialAppPath !== launchConfig.officialAppPath ||
+    identity.officialAppPath !== officialAppPath ||
     identity.executablePath !==
-      resolve(launchConfig.officialAppPath, "Contents/MacOS", launchConfig.officialExecutableName) ||
+      resolve(officialAppPath, "Contents/MacOS", launchConfig.officialExecutableName) ||
     identity.executableSha256 !== recordedClient.officialExecutableSha256 ||
     identity.appBundlePath !== recordedClient.appPath ||
     identity.appArtifactSha256 !== sha256(Buffer.from(stableJson(publicClient))) ||

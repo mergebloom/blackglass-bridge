@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import baseline1127 from "../compatibility/obsidian-1.12.7.json" with { type: "text" };
 import baseline1134 from "../compatibility/obsidian-1.13.4.json" with { type: "text" };
@@ -8,9 +8,12 @@ import { AsarArchive } from "./asar";
 import { parseStrictFlags } from "./cli-flags";
 import { canonicalExistingPath, canonicalOutputPath } from "./path-safety";
 import { computeToolingSourceIdentity } from "./tooling-source";
-import { computeTreeIdentity } from "./tree-identity";
 import { launchPackagedBridge } from "./launcher-runtime";
-import { BRIDGE_BUNDLE_NAME, packagedLauncherArguments } from "./launcher-config";
+import {
+  BRIDGE_BUNDLE_NAME,
+  BRIDGE_OFFICIAL_APP_RELATIVE_PATH,
+  packagedLauncherArguments,
+} from "./launcher-config";
 import {
   STANDALONE_BRIDGE_BUILD_INFO_SCHEMA_VERSION,
   type StandaloneBridgeBuildInfo,
@@ -157,20 +160,18 @@ async function adapt(arguments_: string[]): Promise<void> {
     }
     const baselinePath = join(temporary, "compatibility-baseline.json");
     await writeFile(baselinePath, baselineText, { flag: "wx", mode: 0o600 });
-    const sourceTree = await computeTreeIdentity(sourceApp);
-    const runtimeApp = await installPrivateRuntime(sourceApp, sourceTree.sha256, temporary);
     const patchedAsar = join(temporary, "blackglass.asar");
     await runSelf([
       "__patch",
-      join(runtimeApp, "Contents/Resources/obsidian.asar"),
+      join(sourceApp, "Contents/Resources/obsidian.asar"),
       patchedAsar,
       "--control-origin", controlOrigin,
       "--data-host", dataHost,
-      "--resources", join(runtimeApp, "Contents/Resources"),
+      "--resources", join(sourceApp, "Contents/Resources"),
       "--baseline", baselinePath,
     ]);
     const packageArguments = [
-      "__package", runtimeApp, patchedAsar, outputApp,
+      "__package", sourceApp, patchedAsar, outputApp,
       "--control-origin", controlOrigin,
       "--data-host", dataHost,
       "--manifest", manifest,
@@ -188,7 +189,7 @@ async function adapt(arguments_: string[]): Promise<void> {
       outputApp,
       manifest,
       receipt,
-      privateOfficialRuntime: runtimeApp,
+      embeddedOfficialRuntime: join(outputApp, BRIDGE_OFFICIAL_APP_RELATIVE_PATH),
     }, null, 2));
   } catch (error) {
     primaryError = error instanceof Error ? error : new Error(String(error));
@@ -207,46 +208,6 @@ async function adapt(arguments_: string[]): Promise<void> {
         "Bridge adaptation cleanup failed",
       );
     }
-  }
-}
-
-async function installPrivateRuntime(sourceApp: string, treeSha256: string, temporary: string): Promise<string> {
-  const runtimeRoot = join(
-    homedir(),
-    "Library/Application Support/Blackglass Runtimes/Official",
-    treeSha256,
-  );
-  const protectedRoot = join(homedir(), "Library/Application Support/Blackglass Runtimes");
-  await mkdir(protectedRoot, { recursive: true, mode: 0o700 });
-  await assertOwnerOnlyDirectory(protectedRoot, "Private runtime root");
-  await mkdir(dirname(runtimeRoot), { recursive: true, mode: 0o700 });
-  await assertOwnerOnlyDirectory(dirname(runtimeRoot), "Private runtime namespace");
-  const runtimeApp = join(runtimeRoot, "Obsidian.app");
-  if (await Bun.file(join(runtimeApp, "Contents/Info.plist")).exists()) {
-    const existing = await computeTreeIdentity(runtimeApp);
-    if (existing.sha256 !== treeSha256) {
-      throw new Error("Existing private official runtime does not match the reviewed source; remove it manually after inspection");
-    }
-    return canonicalExistingPath(runtimeApp, "Private official runtime", "directory");
-  }
-  const stagingRoot = join(temporary, "private-runtime");
-  const stagingApp = join(stagingRoot, "Obsidian.app");
-  await mkdir(stagingRoot, { mode: 0o700 });
-  run(["/usr/bin/ditto", "--norsrc", "--noextattr", "--noqtn", "--noacl", "--nopersistRootless", sourceApp, stagingApp]);
-  const copied = await computeTreeIdentity(stagingApp);
-  if (copied.sha256 !== treeSha256) throw new Error("Private official runtime copy differs from its reviewed source");
-  await rename(stagingRoot, runtimeRoot);
-  return canonicalExistingPath(runtimeApp, "Private official runtime", "directory");
-}
-
-async function assertOwnerOnlyDirectory(path: string, label: string): Promise<void> {
-  const metadata = await Bun.file(path).stat();
-  if (!metadata.isDirectory() || metadata.uid !== process.getuid!() ||
-    (metadata.mode & 0o777) !== 0o700) {
-    throw new Error(`${label} must be an owner-only directory`);
-  }
-  if (await canonicalExistingPath(path, label, "directory") !== path) {
-    throw new Error(`${label} must not contain symbolic-link path segments`);
   }
 }
 
