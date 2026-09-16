@@ -358,7 +358,7 @@ function resignEmbeddedOfficialRuntime(
   }
   run([
     MACOS_PACKAGING_EXECUTABLES.codesign,
-    "--force", "--sign", "-", "--timestamp=none",
+    "--force", "--deep", "--sign", "-", "--timestamp=none",
     "--preserve-metadata=identifier,entitlements,flags,requirements,runtime",
     app,
   ]);
