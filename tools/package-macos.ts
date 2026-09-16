@@ -204,11 +204,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   if (packagingExecutionMode(standaloneExecutable) === "standalone") {
     await Bun.sleep(25_000);
   }
-  run([
-    MACOS_PACKAGING_EXECUTABLES.codesign,
-    "--force", "--deep", "--sign", "-", "--timestamp=none",
-    embeddedOfficialApp,
-  ]);
+  resignEmbeddedOfficialRuntime(embeddedOfficialApp, sourceCodeInventory);
   const runtimeOfficialTree = await computeTreeIdentity(embeddedOfficialApp);
   const runtimeOfficialCodeInventory = await inspectMacOSCodeInventory(
     embeddedOfficialApp,
@@ -340,6 +336,36 @@ function signLauncher(executable: string, app: string): void {
   run([MACOS_PACKAGING_EXECUTABLES.codesign, "--force", "--sign", "-", "--timestamp=none", "--identifier", `${BRIDGE_BUNDLE_IDENTIFIER}.executable`, executable]);
   run([MACOS_PACKAGING_EXECUTABLES.codesign, "--force", "--sign", "-", "--timestamp=none", "--identifier", BRIDGE_BUNDLE_IDENTIFIER, app]);
   run([MACOS_PACKAGING_EXECUTABLES.codesign, "--verify", "--deep", "--strict", "--all-architectures", app]);
+}
+
+function resignEmbeddedOfficialRuntime(
+  app: string,
+  inventory: Awaited<ReturnType<typeof inspectMacOSCodeInventory>>,
+): void {
+  const entries = inventory.entries
+    .filter((entry) => entry.path !== ".")
+    .sort((left, right) => {
+      const depth = right.path.split("/").length - left.path.split("/").length;
+      return depth || Buffer.from(right.path).compare(Buffer.from(left.path));
+    });
+  for (const entry of entries) {
+    run([
+      MACOS_PACKAGING_EXECUTABLES.codesign,
+      "--force", "--sign", "-", "--timestamp=none",
+      "--preserve-metadata=identifier,entitlements,flags,requirements,runtime",
+      join(app, entry.path),
+    ]);
+  }
+  run([
+    MACOS_PACKAGING_EXECUTABLES.codesign,
+    "--force", "--sign", "-", "--timestamp=none",
+    "--preserve-metadata=identifier,entitlements,flags,requirements,runtime",
+    app,
+  ]);
+  run([
+    MACOS_PACKAGING_EXECUTABLES.codesign,
+    "--verify", "--deep", "--strict", "--all-architectures", app,
+  ]);
 }
 
 function run(args: string[]): void {
