@@ -2,9 +2,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
-import { inspectMacOSRootMetadata } from "../tools/macos-root-metadata";
+import {
+  clearDetachedCodeSignatureAttributes,
+  DETACHED_CODE_SIGNATURE_XATTRS,
+  inspectMacOSRootMetadata,
+} from "../tools/macos-root-metadata";
 
-test("delegates preserved signature xattrs only to an explicitly verified embedded subtree", async () => {
+test("removes only detached signature caches from an embedded official app", async () => {
   if (process.platform !== "darwin") return;
   const temporary = await mkdtemp(join(tmpdir(), "blackglass-root-metadata-"));
   const app = join(temporary, "Blackglass.app");
@@ -13,16 +17,19 @@ test("delegates preserved signature xattrs only to an explicitly verified embedd
   try {
     await mkdir(join(official, "Contents/Resources"), { recursive: true });
     await writeFile(resource, "signed resource");
-    const xattr = Bun.spawnSync(["/usr/bin/xattr", "-w", "com.apple.cs.CodeSignature", "fixture", resource]);
-    expect(xattr.exitCode, xattr.stderr.toString()).toBe(0);
+    for (const name of DETACHED_CODE_SIGNATURE_XATTRS) {
+      const result = Bun.spawnSync(["/usr/bin/xattr", "-w", name, "fixture", resource]);
+      expect(result.exitCode, result.stderr.toString()).toBe(0);
+    }
     await expect(inspectMacOSRootMetadata(app)).rejects.toThrow("unsupported extended attribute");
-    const metadata = await inspectMacOSRootMetadata(app, {
-      signatureValidatedSubtrees: [official],
-    });
+    await clearDetachedCodeSignatureAttributes(official);
+    const metadata = await inspectMacOSRootMetadata(app);
     expect(metadata.unsupportedXattrsAbsent).toBe(true);
-    await expect(inspectMacOSRootMetadata(app, {
-      signatureValidatedSubtrees: [temporary],
-    })).rejects.toThrow("escapes the app");
+    const remaining = Bun.spawnSync(["/usr/bin/xattr", resource]);
+    expect(remaining.exitCode, remaining.stderr.toString()).toBe(0);
+    expect(remaining.stdout.toString().trim().split("\n")).toEqual([
+      "com.apple.provenance",
+    ]);
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }

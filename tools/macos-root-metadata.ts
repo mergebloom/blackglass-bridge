@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstat, readdir } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import { stableJson } from "./stable-json";
 import { MACOS_PACKAGING_EXECUTABLES } from "./packaging-toolchain";
 
@@ -9,6 +9,13 @@ export const MACOS_ROOT_METADATA_FORMAT_VERSION = 2;
 export const ALLOWED_MACOS_APP_ROOT_XATTRS = [
   "com.apple.macl",
   "com.apple.provenance",
+] as const;
+
+export const DETACHED_CODE_SIGNATURE_XATTRS = [
+  "com.apple.cs.CodeDirectory",
+  "com.apple.cs.CodeRequirements",
+  "com.apple.cs.CodeRequirements-1",
+  "com.apple.cs.CodeSignature",
 ] as const;
 
 export interface MacOSRootMetadata {
@@ -52,19 +59,36 @@ export async function clearMacOSAppExtendedAttributes(
   }
 }
 
+export async function clearDetachedCodeSignatureAttributes(
+  appArgument: string,
+): Promise<void> {
+  const appPath = resolve(appArgument);
+  const rootStat = await lstat(appPath);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+    throw new Error(`Detached-signature xattr target must be a real directory: ${appPath}`);
+  }
+  for (const entry of await listMetadataEntries(appPath)) {
+    const names = listXattrs(entry.fullPath, entry.type === "symlink");
+    for (const name of names) {
+      if (!DETACHED_CODE_SIGNATURE_XATTRS.includes(
+        name as (typeof DETACHED_CODE_SIGNATURE_XATTRS)[number],
+      )) continue;
+      const arguments_: string[] = [MACOS_PACKAGING_EXECUTABLES.xattr, "-d", name];
+      if (entry.type === "symlink") arguments_.push("-s");
+      arguments_.push(entry.fullPath);
+      run(arguments_);
+    }
+  }
+}
+
 export async function inspectMacOSRootMetadata(
   appArgument: string,
-  options: { signatureValidatedSubtrees?: string[] } = {},
 ): Promise<MacOSRootMetadata> {
   const appPath = resolve(appArgument);
   const rootStat = await lstat(appPath);
   if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
     throw new Error(`macOS app root metadata target must be a real directory: ${appPath}`);
   }
-  const signatureValidatedSubtrees = await validatedSubtrees(
-    appPath,
-    options.signatureValidatedSubtrees ?? [],
-  );
   const mode = rootStat.mode & 0o777;
   if (mode !== 0o755) {
     throw new Error(`macOS app root mode must be 0755, found 0${mode.toString(8)}`);
@@ -97,9 +121,7 @@ export async function inspectMacOSRootMetadata(
     if (acl.split("\n").slice(1).some((line) => /^\s*\d+:\s/u.test(line))) {
       throw new Error(`macOS app entry has an unsupported ACL: ${entry.path}`);
     }
-    if (entry.path !== "." && !signatureValidatedSubtrees.some(
-      (subtree) => pathIsWithin(subtree, entry.fullPath),
-    )) {
+    if (entry.path !== ".") {
       const names = listXattrs(entry.fullPath, entry.type === "symlink");
       for (const name of names) {
         if (name !== "com.apple.provenance") {
@@ -161,27 +183,6 @@ export async function inspectMacOSRootMetadata(
   };
   assertMacOSRootMetadata(metadata);
   return metadata;
-}
-
-async function validatedSubtrees(appPath: string, candidates: string[]): Promise<string[]> {
-  const subtrees: string[] = [];
-  for (const candidate of candidates) {
-    const subtree = resolve(candidate);
-    if (subtree === appPath || !pathIsWithin(appPath, subtree)) {
-      throw new Error(`Signature-validated metadata subtree escapes the app: ${candidate}`);
-    }
-    const metadata = await lstat(subtree);
-    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
-      throw new Error(`Signature-validated metadata subtree must be a real directory: ${candidate}`);
-    }
-    subtrees.push(subtree);
-  }
-  return subtrees;
-}
-
-function pathIsWithin(root: string, path: string): boolean {
-  const child = relative(root, path);
-  return child === "" || (!isAbsolute(child) && child !== ".." && !child.startsWith(`..${sep}`));
 }
 
 function readBsdFlags(entries: MetadataEntry[]): number[] {
