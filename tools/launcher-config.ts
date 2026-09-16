@@ -12,7 +12,10 @@ export const BRIDGE_BUNDLE_IDENTIFIER = "com.blackglass.bridge" as const;
 export const BRIDGE_EXECUTABLE_NAME = "blackglass-bridge" as const;
 export const BRIDGE_ICON_FILE = "blackglass-prism.icns" as const;
 export const BRIDGE_PROFILE_DIRECTORY = "Blackglass Profile" as const;
-export const BRIDGE_OFFICIAL_APP_RELATIVE_PATH = "Contents/Resources/Obsidian.app" as const;
+// Nested signed code belongs in Frameworks. Placing the official app under
+// Resources makes codesign treat it as an ordinary sealed resource and can
+// invalidate its own upstream signature while signing the Blackglass wrapper.
+export const BRIDGE_OFFICIAL_APP_RELATIVE_PATH = "Contents/Frameworks/Obsidian.app" as const;
 
 export function embeddedOfficialAppPath(bundlePath: string): string {
   return resolve(bundlePath, BRIDGE_OFFICIAL_APP_RELATIVE_PATH);

@@ -47,15 +47,15 @@ test("packages a self-contained local app with its reviewed official runtime", a
   const codePaths = artifact.codeInventory.entries.map((entry) => entry.path);
   expect(codePaths).toContain(".");
   expect(codePaths).toContain("Contents/MacOS/blackglass-bridge");
-  expect(codePaths).toContain("Contents/Resources/Obsidian.app");
-  expect(codePaths).toContain("Contents/Resources/Obsidian.app/Contents/MacOS/Obsidian");
-  expect(codePaths).toContain("Contents/Resources/Obsidian.app/Contents/MacOS/obsidian-cli");
+  expect(codePaths).toContain("Contents/Frameworks/Obsidian.app");
+  expect(codePaths).toContain("Contents/Frameworks/Obsidian.app/Contents/MacOS/Obsidian");
+  expect(codePaths).toContain("Contents/Frameworks/Obsidian.app/Contents/MacOS/obsidian-cli");
   const packagedIcon = join(firstPaths.app, "Contents/Resources", BRIDGE_ICON_FILE);
   expect(await Bun.file(packagedIcon).exists()).toBe(true);
   expect((await readFile(packagedIcon)).subarray(0, 4).toString("ascii")).toBe("icns");
   expect(await Bun.file(join(
     firstPaths.app,
-    "Contents/Resources/Obsidian.app/Contents/Resources/app.asar",
+    "Contents/Frameworks/Obsidian.app/Contents/Resources/app.asar",
   )).exists()).toBe(true);
   const release = parseBlackglassReleaseManifest(await readFile(firstPaths.manifest));
   expect(release.packagingToolchain.executionMode).toBe("development");

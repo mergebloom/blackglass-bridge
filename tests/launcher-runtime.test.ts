@@ -52,7 +52,7 @@ test("binds the official runtime to the generated app instead of the build machi
   };
   expect(() => assertBridgeLaunchConfig(config)).not.toThrow();
   expect(embeddedOfficialAppPath("/Applications/Blackglass.app")).toBe(
-    "/Applications/Blackglass.app/Contents/Resources/Obsidian.app",
+    "/Applications/Blackglass.app/Contents/Frameworks/Obsidian.app",
   );
   expect(() => assertBridgeLaunchConfig({
     ...config,
@@ -109,7 +109,7 @@ test("cancels termination escalation after a clean child exit", async () => {
 test("allows the canonical profile inside an isolated runtime home only", () => {
   const base = {
     bundlePath: "/build/Blackglass.app",
-    officialAppPath: "/build/Blackglass.app/Contents/Resources/Obsidian.app",
+    officialAppPath: "/build/Blackglass.app/Contents/Frameworks/Obsidian.app",
     normalObsidianProfilePath: "/Users/example/Library/Application Support/Obsidian",
     vaultPath: "/vaults/example",
   };

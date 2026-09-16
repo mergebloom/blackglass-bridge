@@ -12,7 +12,7 @@ test("removes only detached signature caches from an embedded official app", asy
   if (process.platform !== "darwin") return;
   const temporary = await mkdtemp(join(tmpdir(), "blackglass-root-metadata-"));
   const app = join(temporary, "Blackglass.app");
-  const official = join(app, "Contents/Resources/Obsidian.app");
+  const official = join(app, "Contents/Frameworks/Obsidian.app");
   const resource = join(official, "Contents/Resources/locale.pak");
   try {
     await mkdir(join(official, "Contents/Resources"), { recursive: true });
