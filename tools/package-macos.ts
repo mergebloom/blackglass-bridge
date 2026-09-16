@@ -7,6 +7,7 @@ import bridgeIconPath from "../assets/blackglass-prism.icns" with { type: "file"
 import bridgeRendererIconPath from "../assets/blackglass-prism.png" with { type: "file" };
 import { AsarArchive } from "./asar";
 import { parseStrictFlags } from "./cli-flags";
+import { embeddedAssetBytes } from "./embedded-asset";
 import { inspectMacOSCodeInventory, macOSCodeInventoriesEqual } from "./macos-code-inventory";
 import { inspectMacOSArtifact, publicMacOSArtifact } from "./macos-artifact";
 import { createMacOSPackageReceipt, serializeMacOSPackageReceipt } from "./macos-package-receipt";
@@ -121,7 +122,7 @@ const reproduced = patchAsar(
   { controlOrigin, dataHost },
   qualification.loadedBaseline.baseline.patchIncisions,
   brandingPlanForSource(rendererVersion, sha256(sourceAsarBytes)),
-  await readFile(bridgeRendererIconPath),
+  await embeddedAssetBytes(bridgeRendererIconPath),
 );
 if (!reproduced.buffer.equals(patchedAsarBytes)) {
   throw new Error("Patched renderer is not the deterministic reviewed adaptation");
@@ -173,8 +174,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   await chmod(launcherExecutable, 0o755);
   await copyFile(patchedAsar, embeddedAdapter);
   await chmod(embeddedAdapter, 0o600);
-  await copyFile(bridgeIconPath, embeddedIcon);
-  await chmod(embeddedIcon, 0o644);
+  await writeFile(embeddedIcon, await embeddedAssetBytes(bridgeIconPath), { flag: "wx", mode: 0o644 });
   run([
     MACOS_PACKAGING_EXECUTABLES.ditto,
     "--norsrc", "--noextattr", "--noqtn", "--noacl", "--nopersistRootless",

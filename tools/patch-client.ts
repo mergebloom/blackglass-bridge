@@ -5,6 +5,7 @@ import { patchAsar } from "../packages/client-adapter/src/patch";
 import { brandingPlanForSource } from "../packages/client-adapter/src/branding";
 import { AsarArchive } from "./asar";
 import bridgeRendererIconPath from "../assets/blackglass-prism.png" with { type: "file" };
+import { embeddedAssetBytes } from "./embedded-asset";
 import { parseStrictFlags } from "./cli-flags";
 import {
   assertNonOverlappingPaths,
@@ -63,7 +64,7 @@ const generated = patchAsar(
   { controlOrigin, dataHost },
   qualification.loadedBaseline.baseline.patchIncisions,
   brandingPlan,
-  brandingPlan ? await readFile(bridgeRendererIconPath) : undefined,
+  brandingPlan ? await embeddedAssetBytes(bridgeRendererIconPath) : undefined,
 );
 await writeFile(output, generated.buffer, { flag: "wx", mode: 0o600 });
 console.log(

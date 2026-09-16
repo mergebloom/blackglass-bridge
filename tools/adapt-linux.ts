@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import baseline1134 from "../compatibility/obsidian-1.13.4.json" with { type: "text" };
 import bridgeIconPath from "../assets/blackglass-prism.png" with { type: "file" };
+import { embeddedAssetBytes } from "./embedded-asset";
 import { patchAsar, canonicalAdapterOptions } from "../packages/client-adapter/src/patch";
 import {
   applyReviewedBranding,
@@ -97,7 +98,7 @@ export async function adaptLinuxClient(options: LinuxAdaptOptions): Promise<void
       qualification.loadedBaseline.baseline.patchIncisions,
     );
     const linuxPatched = patchLinuxRendererAsar(corePatched.buffer);
-    const icon = await readFile(bridgeIconPath);
+    const icon = await embeddedAssetBytes(bridgeIconPath);
     const branded = applyReviewedBranding(
       upstreamRenderer,
       linuxPatched.buffer,
