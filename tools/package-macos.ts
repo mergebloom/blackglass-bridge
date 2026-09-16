@@ -175,14 +175,22 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   await copyFile(patchedAsar, embeddedAdapter);
   await chmod(embeddedAdapter, 0o600);
   await writeFile(embeddedIcon, await embeddedAssetBytes(bridgeIconPath), { flag: "wx", mode: 0o644 });
+  await clearMacOSAppExtendedAttributes(stagedApp);
   run([
     MACOS_PACKAGING_EXECUTABLES.ditto,
-    "--norsrc", "--noextattr", "--noqtn", "--noacl", "--nopersistRootless",
+    "--rsrc", "--extattr", "--noqtn", "--noacl", "--nopersistRootless",
     sourceApp, embeddedOfficialApp,
   ]);
   const embeddedOfficialTree = await computeTreeIdentity(embeddedOfficialApp);
   if (stableJson(embeddedOfficialTree) !== stableJson(sourceTree)) {
     throw new Error("Embedded official runtime differs from its reviewed source");
+  }
+  const embeddedOfficialCodeInventory = await inspectMacOSCodeInventory(
+    embeddedOfficialApp,
+    "strict-all-architectures",
+  );
+  if (!macOSCodeInventoriesEqual(embeddedOfficialCodeInventory, sourceCodeInventory)) {
+    throw new Error("Embedded official runtime code inventory differs from its reviewed source");
   }
   const launchConfig: BridgeLaunchConfig = {
     schemaVersion: BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION,
@@ -203,7 +211,6 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   };
   await writeFile(join(resources, "bridge-launch.json"), `${stableJson(launchConfig)}\n`, { mode: 0o600 });
   await writeFile(join(contents, "Info.plist"), infoPlist(blackglassVersion, rendererVersion), { mode: 0o644 });
-  await clearMacOSAppExtendedAttributes(stagedApp);
   signLauncher(launcherExecutable, stagedApp);
   const artifact = await inspectMacOSArtifact(stagedApp);
   const publicArtifact = publicMacOSArtifact(artifact);

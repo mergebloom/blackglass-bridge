@@ -8,7 +8,7 @@ import { AsarArchive } from "./asar";
 import { parseStrictFlags } from "./cli-flags";
 import { canonicalExistingPath, canonicalOutputPath } from "./path-safety";
 import { computeToolingSourceIdentity } from "./tooling-source";
-import { launchPackagedBridge } from "./launcher-runtime";
+import { launchPackagedBridge, verifyPackagedOfficialRuntime } from "./launcher-runtime";
 import {
   BRIDGE_BUNDLE_NAME,
   BRIDGE_OFFICIAL_APP_RELATIVE_PATH,
@@ -183,6 +183,7 @@ async function adapt(arguments_: string[]): Promise<void> {
     if (officialDmg) packageArguments.push("--official-dmg", officialDmg);
     if (compiled) packageArguments.push("--standalone-executable", process.execPath);
     await runSelf(packageArguments);
+    await verifyPackagedOfficialRuntime(outputApp);
     console.log(JSON.stringify({
       passed: true,
       sourceInput: officialDmg ? "official-dmg" : "reviewed-application",
