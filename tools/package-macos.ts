@@ -201,10 +201,10 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   // provenance attributes that invalidate the upstream nested signature. Wait
   // for that metadata pass in release executables, then ad-hoc sign the local
   // copy and bind every launch to its resulting exact tree and code inventory.
-  if (packagingExecutionMode(standaloneExecutable) === "standalone") {
-    await Bun.sleep(25_000);
-  }
-  resignEmbeddedOfficialRuntime(embeddedOfficialApp, sourceCodeInventory);
+  await resignEmbeddedOfficialRuntime(
+    embeddedOfficialApp,
+    packagingExecutionMode(standaloneExecutable) === "standalone",
+  );
   const runtimeOfficialTree = await computeTreeIdentity(embeddedOfficialApp);
   const runtimeOfficialCodeInventory = await inspectMacOSCodeInventory(
     embeddedOfficialApp,
@@ -338,30 +338,21 @@ function signLauncher(executable: string, app: string): void {
   run([MACOS_PACKAGING_EXECUTABLES.codesign, "--verify", "--deep", "--strict", "--all-architectures", app]);
 }
 
-function resignEmbeddedOfficialRuntime(
+async function resignEmbeddedOfficialRuntime(
   app: string,
-  inventory: Awaited<ReturnType<typeof inspectMacOSCodeInventory>>,
-): void {
-  const entries = inventory.entries
-    .filter((entry) => entry.path !== ".")
-    .sort((left, right) => {
-      const depth = right.path.split("/").length - left.path.split("/").length;
-      return depth || Buffer.from(right.path).compare(Buffer.from(left.path));
-    });
-  for (const entry of entries) {
-    run([
-      MACOS_PACKAGING_EXECUTABLES.codesign,
-      "--force", "--sign", "-", "--timestamp=none",
-      "--preserve-metadata=identifier,entitlements,flags,requirements,runtime",
-      join(app, entry.path),
-    ]);
-  }
-  run([
+  waitForProvenance: boolean,
+): Promise<void> {
+  const sign = () => run([
     MACOS_PACKAGING_EXECUTABLES.codesign,
     "--force", "--deep", "--sign", "-", "--timestamp=none",
     "--preserve-metadata=identifier,entitlements,flags,requirements,runtime",
     app,
   ]);
+  sign();
+  if (waitForProvenance) {
+    await Bun.sleep(25_000);
+    sign();
+  }
   run([
     MACOS_PACKAGING_EXECUTABLES.codesign,
     "--verify", "--deep", "--strict", "--all-architectures", app,
