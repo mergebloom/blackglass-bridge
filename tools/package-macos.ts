@@ -342,16 +342,22 @@ async function resignEmbeddedOfficialRuntime(
   app: string,
   waitForProvenance: boolean,
 ): Promise<void> {
-  const sign = () => run([
+  const signPreservingMetadata = () => run([
     MACOS_PACKAGING_EXECUTABLES.codesign,
     "--force", "--deep", "--sign", "-", "--timestamp=none",
     "--preserve-metadata=identifier,entitlements,flags,requirements,runtime",
     app,
   ]);
-  sign();
+  signPreservingMetadata();
   if (waitForProvenance) {
     await Bun.sleep(25_000);
-    sign();
+    // Do not carry forward the now-stale nested requirement graph on the
+    // replacement seal. The first pass already retained the runtime metadata;
+    // this pass makes every nested code object internally consistent.
+    run([
+      MACOS_PACKAGING_EXECUTABLES.codesign,
+      "--force", "--deep", "--sign", "-", "--timestamp=none", app,
+    ]);
   }
   run([
     MACOS_PACKAGING_EXECUTABLES.codesign,
