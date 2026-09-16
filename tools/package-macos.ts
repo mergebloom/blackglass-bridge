@@ -203,6 +203,7 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   // copy and bind every launch to its resulting exact tree and code inventory.
   await resignEmbeddedOfficialRuntime(
     embeddedOfficialApp,
+    sourceCodeInventory,
     packagingExecutionMode(standaloneExecutable) === "standalone",
   );
   const runtimeOfficialTree = await computeTreeIdentity(embeddedOfficialApp);
@@ -340,6 +341,7 @@ function signLauncher(executable: string, app: string): void {
 
 async function resignEmbeddedOfficialRuntime(
   app: string,
+  inventory: Awaited<ReturnType<typeof inspectMacOSCodeInventory>>,
   waitForProvenance: boolean,
 ): Promise<void> {
   const signPreservingMetadata = () => run([
@@ -351,9 +353,23 @@ async function resignEmbeddedOfficialRuntime(
   signPreservingMetadata();
   if (waitForProvenance) {
     await Bun.sleep(25_000);
-    // Do not carry forward the now-stale nested requirement graph on the
-    // replacement seal. The first pass already retained the runtime metadata;
-    // this pass makes every nested code object internally consistent.
+    // codesign --deep does not reliably replace signatures on individual
+    // Mach-O libraries. Replace every reviewed Mach-O after provenance has
+    // settled, preserving its runtime metadata, then reseal the bundle graph.
+    const machObjects = inventory.entries
+      .filter((entry) => entry.kind === "mach-o")
+      .sort((left, right) => {
+        const depth = right.path.split("/").length - left.path.split("/").length;
+        return depth || Buffer.from(right.path).compare(Buffer.from(left.path));
+      });
+    for (const entry of machObjects) {
+      run([
+        MACOS_PACKAGING_EXECUTABLES.codesign,
+        "--force", "--sign", "-", "--timestamp=none",
+        "--preserve-metadata=identifier,entitlements,flags,requirements,runtime",
+        join(app, entry.path),
+      ]);
+    }
     run([
       MACOS_PACKAGING_EXECUTABLES.codesign,
       "--force", "--deep", "--sign", "-", "--timestamp=none", app,
