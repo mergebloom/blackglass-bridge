@@ -41,7 +41,7 @@ test("packages a self-contained local app with its reviewed official runtime", a
     displayName: "Blackglass",
     executableName: "blackglass-bridge",
     rendererVersion: "1.12.7",
-    officialAppUnmodified: true,
+    officialAppUnmodified: false,
     exactOfficialAppVerifiedAtEveryLaunch: true,
   });
   const codePaths = artifact.codeInventory.entries.map((entry) => entry.path);
@@ -70,7 +70,10 @@ test("packages a self-contained local app with its reviewed official runtime", a
     adaptedRendererGeneratedLocally: true,
   });
   expect(release.source.unchanged).toBe(true);
-  expect(release.macOS.officialAppTreeSha256).toBe(release.source.appTree.sha256);
+  expect(release.macOS.officialAppUnmodified).toBe(false);
+  expect(release.reproduction.officialAppUnmodified).toBe(false);
+  expect(release.reproduction.officialAppLocallyResigned).toBe(true);
+  expect(release.reproduction.runtimeAppTreeSha256).toBe(release.macOS.officialAppTreeSha256);
 
   const reproducibility = await verifyMacOSReproducibility({
     firstApp: firstPaths.app,

@@ -75,7 +75,10 @@ export interface BlackglassReleaseManifest {
     sourceCliMatchesBaseline: true;
     rendererByteIdentical: true;
     launcherContainsOnlyBridgeCodeAndLocalAdapter: true;
-    officialAppUnmodified: true;
+    officialAppUnmodified: boolean;
+    officialAppLocallyResigned: boolean;
+    runtimeAppTreeSha256: string;
+    runtimeCodeInventorySha256: string;
   };
 }
 
@@ -163,15 +166,13 @@ export function assertBlackglassReleaseManifest(value: unknown): asserts value i
     value.macOS.bundleName !== BRIDGE_APPLICATION_NAME || value.macOS.displayName !== BRIDGE_APPLICATION_NAME ||
     value.macOS.blackglassVersion !== value.blackglassVersion || value.macOS.rendererVersion !== value.rendererVersion ||
     value.macOS.executableName !== BRIDGE_EXECUTABLE_NAME || value.macOS.officialExecutableName !== "Obsidian" ||
-    value.macOS.officialAppTreeSha256 !== value.source.appTree.sha256 ||
-    value.macOS.officialCodeInventorySha256 !== value.source.macOSCodeInventory.sha256 ||
     value.macOS.applicationTreeSha256 !== value.macOS.applicationTreeIdentity.sha256 ||
     value.macOS.profileDirectory !== BRIDGE_PROFILE_DIRECTORY || value.macOS.profileMode !== 0o700 ||
     value.macOS.explicitUserDataDir !== true || value.macOS.nativeHomePreserved !== true ||
     value.macOS.blackglassHomeEnvironment !== "BLACKGLASS_HOME" ||
     value.macOS.updateDisableSettingRequired !== true ||
     value.macOS.exactOfficialAppVerifiedAtEveryLaunch !== true ||
-    value.macOS.officialAppUnmodified !== true || value.macOS.officialChildSupervisionRequired !== true ||
+    typeof value.macOS.officialAppUnmodified !== "boolean" || value.macOS.officialChildSupervisionRequired !== true ||
     !Array.isArray(value.macOS.registeredUrlSchemes) || value.macOS.registeredUrlSchemes.length !== 0 ||
     value.macOS.upstreamICloudContainerRegistered !== false
   ) throw new Error("Blackglass release manifest artifact bindings are inconsistent");
@@ -201,7 +202,10 @@ export function assertBlackglassReleaseManifest(value: unknown): asserts value i
     value.reproduction.sourceAppTreeMatchedBaseline !== true || value.reproduction.sourceCodeInventoryMatchedBaseline !== true ||
     value.reproduction.sourceWrapperMatchesBaseline !== true || value.reproduction.sourceCliMatchesBaseline !== true ||
     value.reproduction.rendererByteIdentical !== true || value.reproduction.launcherContainsOnlyBridgeCodeAndLocalAdapter !== true ||
-    value.reproduction.officialAppUnmodified !== true
+    typeof value.reproduction.officialAppUnmodified !== "boolean" ||
+    typeof value.reproduction.officialAppLocallyResigned !== "boolean" ||
+    value.reproduction.runtimeAppTreeSha256 !== value.macOS.officialAppTreeSha256 ||
+    value.reproduction.runtimeCodeInventorySha256 !== value.macOS.officialCodeInventorySha256
   ) throw new Error("Blackglass release manifest reproduction evidence is incomplete");
 }
 

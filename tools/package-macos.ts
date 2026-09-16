@@ -197,6 +197,23 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   if (!macOSCodeInventoriesEqual(embeddedOfficialCodeInventory, sourceCodeInventory)) {
     throw new Error("Embedded official runtime code inventory differs from its reviewed source");
   }
+  // The copied source is proven exact above. macOS 26 later attaches protected
+  // provenance attributes that invalidate the upstream nested signature. Wait
+  // for that metadata pass in release executables, then ad-hoc sign the local
+  // copy and bind every launch to its resulting exact tree and code inventory.
+  if (packagingExecutionMode(standaloneExecutable) === "standalone") {
+    await Bun.sleep(25_000);
+  }
+  run([
+    MACOS_PACKAGING_EXECUTABLES.codesign,
+    "--force", "--deep", "--sign", "-", "--timestamp=none",
+    embeddedOfficialApp,
+  ]);
+  const runtimeOfficialTree = await computeTreeIdentity(embeddedOfficialApp);
+  const runtimeOfficialCodeInventory = await inspectMacOSCodeInventory(
+    embeddedOfficialApp,
+    "strict-all-architectures",
+  );
   const launchConfig: BridgeLaunchConfig = {
     schemaVersion: BRIDGE_LAUNCH_CONFIG_SCHEMA_VERSION,
     blackglassVersion,
@@ -207,8 +224,8 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     officialAppRelativePath: BRIDGE_OFFICIAL_APP_RELATIVE_PATH,
     officialBundleIdentifier: "md.obsidian",
     officialExecutableName: "Obsidian",
-    officialAppTree: sourceTree,
-    officialCodeInventory: sourceCodeInventory,
+    officialAppTree: runtimeOfficialTree,
+    officialCodeInventory: runtimeOfficialCodeInventory,
     profileDirectory: BRIDGE_PROFILE_DIRECTORY,
     profileMode: 0o700,
     updateDisabled: true,
@@ -216,22 +233,6 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
   };
   await writeFile(join(resources, "bridge-launch.json"), `${stableJson(launchConfig)}\n`, { mode: 0o600 });
   await writeFile(join(contents, "Info.plist"), infoPlist(blackglassVersion, rendererVersion), { mode: 0o644 });
-  // macOS 26 attaches provenance metadata asynchronously to files copied from
-  // a mounted DMG. Signing the containing app before that work settles can
-  // leave the preserved upstream nested signature invalid several seconds
-  // later. Release executables wait for quiescence, reverify the official app,
-  // and only then seal the Blackglass wrapper. Development tests retain their
-  // fast deterministic path and still exercise the same verification calls.
-  if (packagingExecutionMode(standaloneExecutable) === "standalone") {
-    await Bun.sleep(25_000);
-    const settledOfficialCodeInventory = await inspectMacOSCodeInventory(
-      embeddedOfficialApp,
-      "strict-all-architectures",
-    );
-    if (!macOSCodeInventoriesEqual(settledOfficialCodeInventory, sourceCodeInventory)) {
-      throw new Error("Embedded official runtime changed while macOS metadata settled");
-    }
-  }
   signLauncher(launcherExecutable, stagedApp);
   const artifact = await inspectMacOSArtifact(stagedApp);
   const publicArtifact = publicMacOSArtifact(artifact);
@@ -281,7 +282,10 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
       sourceCliMatchesBaseline: true,
       rendererByteIdentical: true,
       launcherContainsOnlyBridgeCodeAndLocalAdapter: true,
-      officialAppUnmodified: true,
+      officialAppUnmodified: false,
+      officialAppLocallyResigned: true,
+      runtimeAppTreeSha256: runtimeOfficialTree.sha256,
+      runtimeCodeInventorySha256: runtimeOfficialCodeInventory.sha256,
     },
   };
   assertBlackglassReleaseManifest(manifest);

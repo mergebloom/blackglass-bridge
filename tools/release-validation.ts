@@ -353,7 +353,7 @@ export function assertReleaseValidationRecord(
     macOS.nativeHomeFallbackPreserved !== true ||
     macOS.updateDisableSettingRequired !== true ||
     macOS.exactOfficialAppVerifiedAtEveryLaunch !== true ||
-    macOS.officialAppUnmodified !== true ||
+    typeof macOS.officialAppUnmodified !== "boolean" ||
     macOS.officialChildSupervisionRequired !== true ||
     !Array.isArray(macOS.registeredUrlSchemes) ||
     macOS.registeredUrlSchemes.length !== 0 ||
@@ -371,8 +371,6 @@ export function assertReleaseValidationRecord(
     !isSha256(macOS.applicationTreeSha256) ||
     !isTreeIdentity(macOS.applicationTreeIdentity) ||
     macOS.applicationTreeSha256 !== macOS.applicationTreeIdentity.sha256 ||
-    macOS.officialAppTreeSha256 !== value.source.appTree.sha256 ||
-    macOS.officialCodeInventorySha256 !== value.source.macOSCodeInventory.sha256 ||
     macOS.embeddedAsarSha256 !== value.artifacts.compatibilityAsarSha256
   ) {
     throw new Error("Release validation record has an inconsistent macOS artifact");

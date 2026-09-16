@@ -67,7 +67,7 @@ export interface MacOSArtifact {
   dedicatedRuntimeHomeRequired: true;
   updateDisableSettingRequired: true;
   exactOfficialAppVerifiedAtEveryLaunch: true;
-  officialAppUnmodified: true;
+  officialAppUnmodified: boolean;
   officialChildSupervisionRequired: true;
   registeredUrlSchemes: [];
   upstreamICloudContainerRegistered: false;
@@ -181,7 +181,7 @@ export async function inspectMacOSArtifact(appArgument: string): Promise<MacOSAr
     dedicatedRuntimeHomeRequired: true,
     updateDisableSettingRequired: config.updateDisabled,
     exactOfficialAppVerifiedAtEveryLaunch: true,
-    officialAppUnmodified: true,
+    officialAppUnmodified: false,
     officialChildSupervisionRequired: true,
     registeredUrlSchemes: [],
     upstreamICloudContainerRegistered: false,

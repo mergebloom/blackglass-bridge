@@ -190,6 +190,9 @@ function manifest(): BlackglassReleaseManifest {
       sourceCodeInventoryMatchedBaseline: true, sourceWrapperMatchesBaseline: true,
       sourceCliMatchesBaseline: true, rendererByteIdentical: true,
       launcherContainsOnlyBridgeCodeAndLocalAdapter: true, officialAppUnmodified: true,
+      officialAppLocallyResigned: false,
+      runtimeAppTreeSha256: macOS.officialAppTreeSha256,
+      runtimeCodeInventorySha256: macOS.officialCodeInventorySha256,
     },
   };
 }
