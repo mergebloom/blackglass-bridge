@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { patchAsar, RENDERER_INCISION_COUNT, RENDERER_PATCH_FORMAT_VERSION } from "../packages/client-adapter/src/patch";
 import { brandingPlanForSource } from "../packages/client-adapter/src/branding";
@@ -157,8 +157,13 @@ if (standaloneArchitectures.length !== 1 || standaloneArchitectures[0] !== "arm6
 
 const invocationId = randomUUID();
 const startedAt = new Date().toISOString();
+try {
 await withPackageStaging(outputApp, async (stagingRoot) => {
-  const stagedApp = join(stagingRoot, BRIDGE_BUNDLE_NAME);
+  // Build at the final path. On macOS 26, renaming a signed application can
+  // trigger another asynchronous provenance pass and invalidate preserved
+  // nested signatures. The enclosing catch removes this exact newly-created
+  // path on every failure, while manifests remain transactionally staged.
+  const stagedApp = outputApp;
   const stagedManifest = join(stagingRoot, basename(manifestPath));
   const stagedReceipt = join(stagingRoot, basename(receiptPath));
   const contents = join(stagedApp, "Contents");
@@ -291,9 +296,13 @@ await withPackageStaging(outputApp, async (stagingRoot) => {
     artifact: publicArtifact,
   });
   await writeFile(stagedReceipt, serializeMacOSPackageReceipt(receipt), { flag: "wx", mode: 0o600 });
-  await publish(stagedApp, outputApp, stagedManifest, manifestPath, stagedReceipt, receiptPath);
+  await publish(stagedManifest, manifestPath, stagedReceipt, receiptPath);
   console.log(JSON.stringify({ passed: true, outputApp, manifestPath, receiptPath, artifact: publicArtifact }, null, 2));
 });
+} catch (error) {
+  await rm(outputApp, { recursive: true, force: true });
+  throw error;
+}
 
 function archiveVersion(archive: AsarArchive): string {
   const value = JSON.parse(archive.read("package.json").toString("utf8")) as { version?: unknown };
@@ -366,11 +375,10 @@ async function packageVersion(): Promise<string> {
 async function sha256File(path: string): Promise<string> { return sha256(await readFile(path)); }
 function sha256(bytes: Uint8Array): string { return createHash("sha256").update(bytes).digest("hex"); }
 
-async function publish(app: string, outputApp: string, manifest: string, outputManifest: string, receipt: string, outputReceipt: string): Promise<void> {
+async function publish(manifest: string, outputManifest: string, receipt: string, outputReceipt: string): Promise<void> {
   const published: Array<[string, string]> = [];
   try {
     for (const [source, destination] of [
-      [app, outputApp],
       [manifest, outputManifest],
       [receipt, outputReceipt],
     ] as const) {
